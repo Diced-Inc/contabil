@@ -9,7 +9,7 @@ import { getEmpresa } from "./empresa";
 
 async function Shell({ params, children }: LayoutProps<"/e/[id]">) {
   await connection();
-  await requireUser();
+  const user = await requireUser();
   const { id } = await params;
   const empresa = await getEmpresa(id);
   const [{ pendentes }] = await db
@@ -20,15 +20,17 @@ async function Shell({ params, children }: LayoutProps<"/e/[id]">) {
 
   return (
     <div className="flex min-h-svh flex-1">
-      <AppSidebar empresaId={id} empresaNome={empresa.razaoSocial} pendentes={pendentes} />
-      <main className="min-w-0 flex-1 p-6">{children}</main>
+      <AppSidebar empresaId={id} empresaNome={empresa.razaoSocial} pendentes={pendentes} email={user.email ?? ""} />
+      <main className="min-w-0 flex-1 px-6 py-7 xl:px-8">
+        <div className="mx-auto w-full max-w-[1280px]">{children}</div>
+      </main>
     </div>
   );
 }
 
 export default function EmpresaLayout(props: LayoutProps<"/e/[id]">) {
   return (
-    <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Carregando...</p>}>
+    <Suspense fallback={<div className="min-h-svh flex-1 bg-background" />}>
       <Shell {...props} />
     </Suspense>
   );
