@@ -1,6 +1,6 @@
-import { eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { lancamentos, partidas, lancamentoLog, titulos } from "@/db/schema";
+import { lancamentos, partidas, lancamentoLog, planoContas, titulos } from "@/db/schema";
 import { cents, fromCents, primeiroDiaDoMes, hoje } from "./format";
 
 export type PartidaInput = { contaId: string; debito?: string; credito?: string };
@@ -43,8 +43,25 @@ function retrato(l: {
 }
 export type RetratoLancamento = ReturnType<typeof retrato>;
 
+/** Todas as contas das partidas precisam ser analíticas ativas da empresa (uma query). */
+async function exigirContasValidas(tx: Tx, empresaId: string, ps: PartidaInput[]) {
+  const ids = [...new Set(ps.map((p) => p.contaId))];
+  const cs = await tx
+    .select({ id: planoContas.id, codigo: planoContas.codigo, tipo: planoContas.tipo, ativa: planoContas.ativa })
+    .from(planoContas)
+    .where(and(eq(planoContas.empresaId, empresaId), inArray(planoContas.id, ids)));
+  for (const id of ids) {
+    const c = cs.find((x) => x.id === id);
+    if (!c || c.tipo !== "analitica" || !c.ativa) throw new Error(`Conta inativa ou inválida: ${c?.codigo ?? id}`);
+  }
+}
+
 export async function criarLancamento(tx: Tx, input: LancamentoInput) {
   validarPartidas(input.partidas);
+  // Estorno e apuração precisam mexer em contas já inativadas (desfazer/zerar saldo existente).
+  if (input.origem !== "estorno" && input.origem !== "apuracao") {
+    await exigirContasValidas(tx, input.empresaId, input.partidas);
+  }
   const competencia = input.competencia ?? primeiroDiaDoMes(input.data);
   const [l] = await tx.insert(lancamentos).values({
     empresaId: input.empresaId, data: input.data, competencia,
@@ -79,6 +96,7 @@ export async function editarLancamento(tx: Tx, id: string, input: EdicaoInput) {
   if (antes.origem === "conciliacao") throw new Error("Lançamento de conciliação não pode ser editado; desfaça a conciliação");
   if (antes.origem === "estorno") throw new Error("Lançamento de estorno não pode ser editado");
   await exigirSemTitulo(tx, id);
+  await exigirContasValidas(tx, input.empresaId, input.partidas);
   const competencia = input.competencia ?? primeiroDiaDoMes(input.data);
   await tx.update(lancamentos).set({
     data: input.data, competencia, dataPagamento: input.dataPagamento ?? null,

@@ -125,13 +125,3 @@ export async function atualizarConta(empresaId: string, contaId: string, _prev: 
   revalidatePath(`/e/${empresaId}/plano-de-contas`);
   return { ok: true };
 }
-
-export async function inativarConta(empresaId: string, contaId: string): Promise<EstadoForm> {
-  await requireUser();
-  await db
-    .update(planoContas)
-    .set({ ativa: false })
-    .where(and(eq(planoContas.id, contaId), eq(planoContas.empresaId, empresaId)));
-  revalidatePath(`/e/${empresaId}/plano-de-contas`);
-  return { ok: true };
-}

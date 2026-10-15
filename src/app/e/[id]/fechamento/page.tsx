@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, Lock, LockOpen } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { fmtData, fmtValor } from "@/lib/format";
+import { fmtData, fmtValor, lerAno } from "@/lib/format";
 import { getEmpresa } from "../empresa";
 import { ApuracaoBotao, MesBotao } from "./fechamento-botoes";
 import { painelFechamento } from "./queries";
@@ -14,7 +14,7 @@ const dataHora = (d: Date) => d.toLocaleDateString("pt-BR");
 async function Fechamento({ params, searchParams }: PageProps<"/e/[id]/fechamento">) {
   const { id } = await params;
   const sp = await searchParams;
-  const ano = typeof sp.ano === "string" && /^\d{4}$/.test(sp.ano) ? Number(sp.ano) : new Date().getFullYear();
+  const ano = lerAno(sp.ano);
   await getEmpresa(id);
   const { meses, apuracao, motivoNaoApurar } = await painelFechamento(id, ano);
   const lucro = apuracao && Number(apuracao.resultado) >= 0;

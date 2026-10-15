@@ -6,13 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fmtData, fmtValor, hoje, primeiroDiaDoMes } from "@/lib/format";
+import { fmtData, fmtValor, hoje, isoData, primeiroDiaDoMes } from "@/lib/format";
 import { getEmpresa } from "../empresa";
 import { ORIGENS, listarLancamentos, type Origem } from "./queries";
 
 const selectCls =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
-const isoData = (s: unknown) => (typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined);
 
 function ultimoDiaDoMes(d: string) {
   const [y, m] = d.split("-").map(Number);

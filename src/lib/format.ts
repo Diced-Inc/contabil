@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 const brl = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const cents = (v: string | number) => Math.round(Number(v) * 100);
 export const fromCents = (c: number) => (c / 100).toFixed(2);
@@ -17,7 +19,20 @@ export function fmtSaldoDC(v: string | number, natureza: "D" | "C") {
 }
 export const fmtData = (d: string | Date) => new Date(typeof d === "string" ? d + "T00:00:00" : d).toLocaleDateString("pt-BR");
 export const fmtCompetencia = (d: string) => `${d.slice(5, 7)}/${d.slice(0, 4)}`;
-export const hoje = () => new Date().toISOString().slice(0, 10);
+const diaSP = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+});
+/** Data de hoje em São Paulo, "YYYY-MM-DD" (UTC vira o dia às 21h). */
+export const hoje = () => diaSP.format(new Date());
+const dataSchema = z.iso.date();
+const anoSchema = z.coerce.number().int().min(1900).max(2200);
+/** searchParam com data real "YYYY-MM-DD", ou undefined. */
+export const isoData = (s: unknown) => (dataSchema.safeParse(s).success ? (s as string) : undefined);
+/** searchParam de ano (1900–2200), ou o ano corrente. */
+export function lerAno(s: unknown) {
+  const r = anoSchema.safeParse(typeof s === "string" ? s : undefined);
+  return r.success ? r.data : Number(hoje().slice(0, 4));
+}
 export const primeiroDiaDoMes = (d: string) => d.slice(0, 7) + "-01";
 export const somenteDigitos = (s: string) => s.replace(/\D/g, "");
 export function fmtCnpj(c: string) { return c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"); }

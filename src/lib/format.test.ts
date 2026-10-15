@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { cents, fmtCnpj, fmtCompetencia, fmtSaldoDC, fmtValor, parseValorBR, valorParaInput } from "./format";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  cents, fmtCnpj, fmtCompetencia, fmtSaldoDC, fmtValor, hoje, isoData, lerAno, parseValorBR, valorParaInput,
+} from "./format";
 
 describe("format", () => {
   it("fmtSaldoDC", () => {
@@ -22,5 +24,21 @@ describe("format", () => {
     expect(parseValorBR("")).toBe("");
     expect(valorParaInput("1234.5")).toBe("1234,50");
     expect(valorParaInput("0.00")).toBe("");
+  });
+});
+
+describe("datas", () => {
+  afterEach(() => vi.useRealTimers());
+  it("hoje() em São Paulo, não em UTC", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-16T01:30:00Z")); // 22h30 do dia 15 em SP
+    expect(hoje()).toBe("2026-10-15");
+    expect(lerAno(undefined)).toBe(2026);
+  });
+  it("isoData e lerAno rejeitam lixo sem lançar", () => {
+    expect(isoData("2026-02-28")).toBe("2026-02-28");
+    for (const x of ["2026-02-30", "2026-13-01", "abc", ["2026-01-01"], undefined]) expect(isoData(x)).toBeUndefined();
+    expect(lerAno("2025")).toBe(2025);
+    for (const x of ["99999", "20x5", "", ["2025"]]) expect(lerAno(x)).toBe(Number(hoje().slice(0, 4)));
   });
 });

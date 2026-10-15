@@ -138,18 +138,19 @@ export function parentCodigo(codigo: string): string | null {
   return i === -1 ? null : codigo.slice(0, i);
 }
 
+/** Um único INSERT; ids gerados aqui para ligar parentId (FK checada no fim do statement). */
 export async function seedPlano(tx: Tx, empresaId: string) {
-  const codigos = new Set(PLANO_ITG1000.map((r) => r[0]));
-  const temFilho = (c: string) => [...codigos].some((o) => parentCodigo(o) === c);
-  const ids = new Map<string, string>();
-  for (const [codigo, nome, natureza, grupoDre, papel] of PLANO_ITG1000) {
-    const parent = parentCodigo(codigo);
-    const [row] = await tx.insert(planoContas).values({
-      empresaId, codigo, nome, natureza,
-      tipo: temFilho(codigo) ? "sintetica" : "analitica",
-      parentId: parent ? ids.get(parent)! : null,
-      grupoDre: grupoDre ?? null, papel: papel ?? null,
-    }).returning({ id: planoContas.id });
-    ids.set(codigo, row.id);
-  }
+  const temFilho = new Set(PLANO_ITG1000.map((r) => parentCodigo(r[0])));
+  const ids = new Map(PLANO_ITG1000.map((r) => [r[0], crypto.randomUUID()]));
+  await tx.insert(planoContas).values(
+    PLANO_ITG1000.map(([codigo, nome, natureza, grupoDre, papel]) => {
+      const parent = parentCodigo(codigo);
+      return {
+        id: ids.get(codigo)!, empresaId, codigo, nome, natureza,
+        tipo: temFilho.has(codigo) ? ("sintetica" as const) : ("analitica" as const),
+        parentId: parent ? ids.get(parent)! : null,
+        grupoDre: grupoDre ?? null, papel: papel ?? null,
+      };
+    }),
+  );
 }

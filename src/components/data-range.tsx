@@ -3,10 +3,9 @@ import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { hoje } from "@/lib/format";
+import { hoje, isoData } from "@/lib/format";
 
 type SP = Record<string, string | string[] | undefined>;
-const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 export function mesAtual() {
   const h = hoje(), y = Number(h.slice(0, 4)), m = Number(h.slice(5, 7));
@@ -20,8 +19,8 @@ export function anoAtual() {
 /** Lê `de`/`ate` dos searchParams; inválidos ou invertidos caem no padrão. */
 export function lerPeriodo(sp: SP, padrao: "mes" | "ano") {
   const p = padrao === "mes" ? mesAtual() : anoAtual();
-  const de = typeof sp.de === "string" && ISO.test(sp.de) ? sp.de : p.de;
-  const ate = typeof sp.ate === "string" && ISO.test(sp.ate) ? sp.ate : p.ate;
+  const de = isoData(sp.de) ?? p.de;
+  const ate = isoData(sp.ate) ?? p.ate;
   return de <= ate ? { de, ate } : p;
 }
 

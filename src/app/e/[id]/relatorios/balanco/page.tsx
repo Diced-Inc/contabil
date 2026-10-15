@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "cn";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fmtSaldoDC, fmtValor, fromCents } from "@/lib/format";
+import { fmtSaldoDC, fmtValor, fromCents, lerAno } from "@/lib/format";
 import { balanco, type TotaisBalanco } from "@/lib/relatorios/balanco";
 import { nivel } from "@/lib/relatorios/hierarquia";
 import { getEmpresa } from "../../empresa";
@@ -16,7 +16,7 @@ const fecha = (t: TotaisBalanco) =>
 async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/balanco">) {
   const { id } = await params;
   const sp = await searchParams;
-  const ano = typeof sp.ano === "string" && /^\d{4}$/.test(sp.ano) ? Number(sp.ano) : new Date().getFullYear();
+  const ano = lerAno(sp.ano);
   const empresa = await getEmpresa(id);
   const b = await balanco(id, ano);
   const base = `/e/${id}/relatorios/balanco`;

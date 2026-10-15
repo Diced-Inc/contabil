@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { isoData } from "@/lib/format";
 import { getEmpresa } from "../empresa";
 import { listarContasAnaliticas } from "../lancamentos/queries";
 import { ConciliacaoLista, Ignoradas } from "./conciliacao-toolbar";
@@ -16,7 +17,6 @@ const selectCls =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 const ORIGENS = { regra: "Regra", transferencia: "Transferência", ia: "IA", sem: "Sem sugestão" } as const;
 const str = (s: unknown) => (typeof s === "string" ? s.trim() : "");
-const isoData = (s: unknown) => (typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "");
 
 async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/conciliacao">) {
   const { id } = await params;
@@ -24,7 +24,7 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
   await getEmpresa(id);
   const ver = sp.ver === "ignoradas" ? "ignoradas" : "pendentes";
   const f = {
-    conta: str(sp.conta), de: isoData(sp.de), ate: isoData(sp.ate), q: str(sp.q).toLowerCase(),
+    conta: str(sp.conta), de: isoData(sp.de) ?? "", ate: isoData(sp.ate) ?? "", q: str(sp.q).toLowerCase(),
     origem: str(sp.origem) in ORIGENS ? (str(sp.origem) as keyof typeof ORIGENS) : "",
   };
   const [pendentes, ignoradas, bancos] = await Promise.all([
