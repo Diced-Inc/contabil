@@ -1,7 +1,14 @@
 import { cents, fromCents } from "./format";
+import type { LinhaSaldo } from "./relatorios/saldos";
 
 export type SaldoConta = { id: string; codigo: string; saldo: string }; // saldo = D − C
 export type PartidaApuracao = { contaId: string; debito?: string; credito?: string };
+
+/** Saldo acumulado (não o movimento do ano) das analíticas de resultado: a apuração zera esse saldo. */
+export const saldosDeResultado = (linhas: LinhaSaldo[]): SaldoConta[] =>
+  linhas
+    .filter((l) => l.tipo === "analitica" && /^3(\.|$)/.test(l.codigo))
+    .map((l) => ({ id: l.id, codigo: l.codigo, saldo: l.saldoAtual }));
 
 /** Zera contas de resultado (classe 3). Lucro (Σ saldo < 0) → crédito em lucros; prejuízo → débito em prejuízos. */
 export function partidasApuracao(

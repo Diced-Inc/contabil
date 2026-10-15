@@ -49,16 +49,16 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
         <TableBody>
           {b.linhas.map((l) => (
             <TableRow
-              key={l.codigo}
+              key={l.chave}
               className={cn(
                 "tabular-nums",
                 l.tipo === "sintetica" && "font-semibold",
-                nivel(l.codigo) === 1 && "bg-muted/50",
+                !l.virtual && nivel(l.codigo) === 1 && "bg-muted/50",
                 l.virtual && "italic",
               )}
             >
-              <TableCell className="py-1" style={{ paddingLeft: `${(nivel(l.codigo) - 1) * 12 + 8}px` }}>
-                {!l.virtual && <span className="mr-2 text-muted-foreground">{l.codigo}</span>}
+              <TableCell className="py-1" style={{ paddingLeft: `${((l.virtual ? 3 : nivel(l.codigo)) - 1) * 12 + 8}px` }}>
+                {l.codigo && <span className="mr-2 text-muted-foreground">{l.codigo}</span>}
                 {l.nome}
               </TableCell>
               <TableCell className="py-1 text-right">{fmtSaldoDC(l.atual, l.natureza)}</TableCell>

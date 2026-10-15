@@ -61,6 +61,10 @@ export function umAnoAntes(d: string) {
 
 /** DRE do período e do mesmo intervalo um ano antes. Última linha = "Resultado líquido". */
 export async function dre(empresaId: string, de: string, ate: string) {
-  const [atual, anterior] = await Promise.all([saldos(empresaId, de, ate), saldos(empresaId, umAnoAntes(de), umAnoAntes(ate))]);
+  const op = { excluirApuracao: true };
+  const [atual, anterior] = await Promise.all([
+    saldos(empresaId, de, ate, undefined, op),
+    saldos(empresaId, umAnoAntes(de), umAnoAntes(ate), undefined, op),
+  ]);
   return montarDre(atual, anterior);
 }

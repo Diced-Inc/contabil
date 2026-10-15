@@ -1,8 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import { apuracoes, fechamentos, lancamentoLog, lancamentos } from "@/db/schema";
-import { partidasApuracao } from "./apuracao";
-import { cents, fmtCompetencia, fromCents, primeiroDiaDoMes } from "./format";
+import { partidasApuracao, saldosDeResultado } from "./apuracao";
+import { fmtCompetencia, primeiroDiaDoMes } from "./format";
 import { criarLancamento, estornarLancamento } from "./lancamentos";
 import { saldos } from "./relatorios/saldos";
 import { contaPorPapel } from "./titulos";
@@ -99,10 +99,7 @@ async function comDezembroAberto<T>(tx: Tx, empresaId: string, ano: number, fn: 
 export async function apurarExercicio(tx: Tx, empresaId: string, ano: number, usuarioId: string | null) {
   exigir(motivoNaoApurar(ano, await carregarEstado(tx, empresaId)));
   const linhas = await saldos(empresaId, `${ano}-01-01`, `${ano}-12-31`, tx);
-  // Resultado do exercício = movimento do ano das analíticas de resultado.
-  const resultado = linhas
-    .filter((l) => l.tipo === "analitica" && l.codigo.startsWith("3"))
-    .map((l) => ({ id: l.id, codigo: l.codigo, saldo: fromCents(cents(l.debitos) - cents(l.creditos)) }));
+  const resultado = saldosDeResultado(linhas);
   const [lucros, prejuizos] = await Promise.all([
     contaPorPapel(tx, empresaId, "lucros_acumulados"),
     contaPorPapel(tx, empresaId, "prejuizos_acumulados"),
@@ -127,7 +124,7 @@ export async function reverterApuracao(tx: Tx, empresaId: string, ano: number, u
   const [ap] = await tx.select().from(apuracoes).where(onde);
   if (!ap) throw new Error(`Exercício ${ano} não está apurado`);
   const estorno = await comDezembroAberto(tx, empresaId, ano, () =>
-    estornarLancamento(tx, ap.lancamentoId, `${ano}-12-31`, usuarioId),
+    estornarLancamento(tx, ap.lancamentoId, `${ano}-12-31`, usuarioId, "apuracao"),
   );
   await tx.delete(apuracoes).where(onde);
   await tx.insert(lancamentoLog).values({

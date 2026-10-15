@@ -93,14 +93,19 @@ export async function editarLancamento(tx: Tx, id: string, input: EdicaoInput) {
   });
 }
 
-/** Cria lançamento inverso na data informada e marca o original como estornado. Retorna o estorno. */
-export async function estornarLancamento(tx: Tx, id: string, data: string = hoje(), usuarioId?: string | null) {
+/**
+ * Cria lançamento inverso na data informada e marca o original como estornado. Retorna o estorno.
+ * `origem: "apuracao"` no estorno da apuração, para a DRE (que ignora apuração) continuar mostrando o ano.
+ */
+export async function estornarLancamento(
+  tx: Tx, id: string, data: string = hoje(), usuarioId?: string | null, origem: "estorno" | "apuracao" = "estorno",
+) {
   const orig = await tx.query.lancamentos.findFirst({ where: eq(lancamentos.id, id), with: { partidas: true } });
   if (!orig) throw new Error("Lançamento não encontrado");
   if (orig.status === "estornado") throw new Error("Lançamento já estornado");
   const estorno = await criarLancamento(tx, {
     empresaId: orig.empresaId, data, historico: `Estorno do lançamento ${orig.numero}: ${orig.historico}`,
-    documento: orig.documento, origem: "estorno", estornoDeId: orig.id, usuarioId,
+    documento: orig.documento, origem, estornoDeId: orig.id, usuarioId,
     partidas: [...orig.partidas].sort((a, b) => a.ordem - b.ordem).map((p) => ({ contaId: p.contaId, debito: p.credito, credito: p.debito })),
   });
   await tx.update(lancamentos).set({ status: "estornado", updatedAt: new Date() }).where(eq(lancamentos.id, id));
