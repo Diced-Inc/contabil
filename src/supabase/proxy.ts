@@ -7,7 +7,14 @@ export async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) {
-    // ponytail: sem chaves o app fica aberto para inspeção; remover quando o .env existir em todo ambiente.
+    // Em produção sem chaves nada passa: falhar fechado em vez de expor os dados sem login.
+    if (process.env.NODE_ENV === "production") {
+      return new NextResponse("Supabase não configurado", {
+        status: 503,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
+    // Fora de produção as rotas ficam abertas para inspeção local sem .env.
     if (!avisou) {
       console.warn("[auth] NEXT_PUBLIC_SUPABASE_URL/ANON_KEY ausentes: rotas sem proteção.");
       avisou = true;
