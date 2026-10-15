@@ -128,8 +128,4 @@
     @apply font-sans;
   }
 }
-@media print {
-  aside {
-    display: none;
-  }
-}
+@media print { aside, nav, .no-print { display: none !important } body { background: #fff } main { padding: 0 } table { font-size: 11px } @page { size: A4 portrait; margin: 12mm } }
