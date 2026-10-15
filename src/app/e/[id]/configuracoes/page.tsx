@@ -20,7 +20,7 @@ export default function ConfiguracoesPage({ params }: PageProps<"/e/[id]/configu
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Dados da empresa</CardTitle>
-          <CardDescription>Razão social, CNPJ e regime tributário.</CardDescription>
+          <CardDescription>Identificação, endereço, responsável legal e contador. Os nomes aparecem nas assinaturas dos relatórios.</CardDescription>
         </CardHeader>
         <CardContent>
           <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>

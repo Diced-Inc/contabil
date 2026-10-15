@@ -36,6 +36,10 @@ export function lerAno(s: unknown) {
 export const primeiroDiaDoMes = (d: string) => d.slice(0, 7) + "-01";
 export const somenteDigitos = (s: string) => s.replace(/\D/g, "");
 export function fmtCnpj(c: string) { return c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"); }
+export function fmtCpf(c: string) { return c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4"); }
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+/** "2025-12-31" → "31 de dezembro de 2025". */
+export const fmtDataExtenso = (d: string) => `${Number(d.slice(8, 10))} de ${MESES[Number(d.slice(5, 7)) - 1]} de ${d.slice(0, 4)}`;
 export const REGIMES = { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" } as const;
 export const NATUREZAS = { D: "Devedora", C: "Credora" } as const;
 export const GRUPOS_DRE = {

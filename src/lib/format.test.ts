@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  cents, fmtCnpj, fmtCompetencia, fmtSaldoDC, fmtValor, hoje, isoData, lerAno, parseValorBR, valorParaInput,
+  cents, fmtCnpj, fmtCpf, fmtDataExtenso, fmtCompetencia, fmtSaldoDC, fmtValor, hoje, isoData, lerAno, parseValorBR, valorParaInput,
 } from "./format";
 
 describe("format", () => {
@@ -16,6 +16,11 @@ describe("format", () => {
     expect(fmtValor("-1234.5")).toBe("-1.234,50");
     expect(fmtCnpj("12345678000195")).toBe("12.345.678/0001-95");
     expect(fmtCompetencia("2026-03-01")).toBe("03/2026");
+  });
+  it("fmtCpf e fmtDataExtenso", () => {
+    expect(fmtCpf("04135465358")).toBe("041.354.653-58");
+    expect(fmtDataExtenso("2025-12-31")).toBe("31 de dezembro de 2025");
+    expect(fmtDataExtenso("2026-03-05")).toBe("5 de março de 2026");
   });
   it("parseValorBR e valorParaInput", () => {
     expect(parseValorBR("1.234,56")).toBe("1234.56");

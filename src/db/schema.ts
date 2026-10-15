@@ -30,6 +30,13 @@ export const empresas = pgTable("empresas", {
   razaoSocial: text("razao_social").notNull(),
   cnpj: text("cnpj").notNull().unique(),
   regimeTributario: regimeEnum("regime_tributario").notNull().default("simples"),
+  cidade: text("cidade"),
+  uf: text("uf"),
+  responsavelNome: text("responsavel_nome"),
+  responsavelCpf: text("responsavel_cpf"),
+  contadorNome: text("contador_nome"),
+  contadorCpf: text("contador_cpf"),
+  contadorCrc: text("contador_crc"),
   createdAt: createdAt(),
 });
 
