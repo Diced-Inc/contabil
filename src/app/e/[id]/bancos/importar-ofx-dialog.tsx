@@ -43,7 +43,7 @@ function Form({ empresaId, contas, setAberta }: { empresaId: string; contas: { i
         </select>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="arquivo">Arquivo OFX (até 5 MB)</Label>
+        <Label htmlFor="arquivo">Arquivo OFX (até 4 MB)</Label>
         <Input id="arquivo" name="arquivo" type="file" accept=".ofx" required />
       </div>
       <Button type="submit" disabled={pendente}>

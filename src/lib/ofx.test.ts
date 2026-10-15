@@ -35,7 +35,19 @@ describe("parseOfx", () => {
     const txt = sgml.toString("latin1").replace("<STMTRS>", "<CCSTMTRS>").replace("BANKACCTFROM", "CCACCTFROM");
     expect(() => parseOfx(Buffer.from(txt, "latin1"))).toThrow(/cart[ãa]o de cr[ée]dito/i);
   });
-  it("sem STMTTRN dá erro", () => expect(() => parseOfx(Buffer.from("<OFX></OFX>"))).toThrow());
+  it("sem STMTRS dá erro", () => expect(() => parseOfx(Buffer.from("<OFX></OFX>"))).toThrow(/STMTRS/));
+  it("sem STMTTRN: lista vazia, mantém o saldo", () => {
+    const txt = sgml.toString("latin1").replace(/<STMTTRN>[\s\S]*?<\/STMTTRN>\s*/g, "");
+    const r = parseOfx(Buffer.from(txt, "latin1"));
+    expect(r.transacoes).toEqual([]);
+    expect(r).toMatchObject({ saldoFinal: "3511.61", dataSaldo: "2026-01-31" });
+  });
+  it("FITID repetido no arquivo ganha sufixo #2, #3", () => {
+    const txt = sgml.toString("latin1").replaceAll("<FITID>2026011001", "<FITID>2026010501");
+    const extra = "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260111<TRNAMT>-1.00<FITID>2026010501<MEMO>X</STMTTRN>\n";
+    const r = parseOfx(Buffer.from(txt.replace("</BANKTRANLIST>", extra + "</BANKTRANLIST>"), "latin1"));
+    expect(r.transacoes.map((t) => t.fitid)).toEqual(["2026010501", "2026010501#2", "2026010501#3"]);
+  });
 });
 
 it("normalizarIdOfx ignora zeros à esquerda e pontuação", () => {

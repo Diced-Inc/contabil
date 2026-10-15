@@ -4,8 +4,8 @@ const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
-  // Upload de OFX vai por server action; o limite real (5 MB) é checado em importarOfx.
-  experimental: { serverActions: { bodySizeLimit: "6mb" } },
+  // Upload de OFX vai por server action; o limite real (4 MB) é checado em importarOfx; a Vercel corta em 4,5 MB.
+  experimental: { serverActions: { bodySizeLimit: "4mb" } },
   turbopack: {
     rules: {
       "*.css": {

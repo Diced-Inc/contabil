@@ -8,6 +8,9 @@ import { ContaBancariaDialog } from "./conta-bancaria-dialog";
 import { ImportarOfxDialog } from "./importar-ofx-dialog";
 import { listarContasAtivoAnaliticas, listarContasComSaldo, listarImportacoes } from "./queries";
 
+// Server actions desta página rodam o pipeline de sugestão (IA).
+export const maxDuration = 300;
+
 const TZ = "America/Sao_Paulo";
 const traco = <span className="text-muted-foreground">-</span>;
 const moeda = (v: string | null) => (v === null ? traco : fmtValor(v));
@@ -40,6 +43,7 @@ async function Bancos({ params }: PageProps<"/e/[id]/bancos">) {
               <TableHead className="text-right">Saldo OFX</TableHead>
               <TableHead className="text-right">Saldo contábil</TableHead>
               <TableHead className="text-right">Pendentes</TableHead>
+              <TableHead className="text-right">Ignoradas</TableHead>
               <TableHead className="text-right">Diferença</TableHead>
               <TableHead className="w-12" />
             </TableRow>
@@ -68,6 +72,7 @@ async function Bancos({ params }: PageProps<"/e/[id]/bancos">) {
                 <TableCell className="text-right tabular-nums">{moeda(c.saldoOfx)}</TableCell>
                 <TableCell className="text-right tabular-nums">{moeda(c.saldoContabil)}</TableCell>
                 <TableCell className="text-right tabular-nums">{moeda(c.pendentes)}</TableCell>
+                <TableCell className="text-right tabular-nums">{moeda(c.ignoradas)}</TableCell>
                 <TableCell className="text-right">
                   {c.diferenca === null ? traco : (
                     <span className={cn("tabular-nums", Number(c.diferenca) !== 0 && "font-semibold text-red-700")}>
@@ -128,7 +133,7 @@ export default function BancosPage(props: PageProps<"/e/[id]/bancos">) {
     <div>
       <h1 className="mb-2 text-2xl font-semibold">Bancos</h1>
       <p className="mb-4 text-sm text-muted-foreground">
-        Conferência na data do saldo do último OFX: diferença = saldo OFX − saldo contábil − pendentes. Zero quando tudo está conciliado.
+        Conferência na data do saldo do último OFX: diferença = saldo OFX − saldo contábil − pendentes − ignoradas. Zero quando tudo está conciliado.
       </p>
       <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
         <Bancos {...props} />

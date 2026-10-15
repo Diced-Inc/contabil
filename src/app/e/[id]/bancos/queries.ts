@@ -41,7 +41,7 @@ export type ContaComSaldo = Awaited<ReturnType<typeof listarContasComSaldo>>[num
 
 /**
  * Conferência de saldo por conta bancária, na data do OFX com saldo mais recente:
- * diferenca = saldoOfx − saldoContabil − pendentes (0 quando tudo conciliado).
+ * diferenca = saldoOfx − saldoContabil − pendentes − ignoradas (0 quando tudo conciliado).
  */
 export async function listarContasComSaldo(empresaId: string) {
   const ult = db
@@ -82,6 +82,12 @@ export async function listarContasComSaldo(empresaId: string) {
         where ${transacoesBancarias.contaBancariaId} = ${contasBancarias.id}
           and ${transacoesBancarias.status} = 'pendente' and ${transacoesBancarias.data} <= ${ult.dataSaldo}
       )`,
+      ignoradas: sql<string | null>`(
+        select coalesce(sum(${transacoesBancarias.valor}), 0)::text
+        from ${transacoesBancarias}
+        where ${transacoesBancarias.contaBancariaId} = ${contasBancarias.id}
+          and ${transacoesBancarias.status} = 'ignorada' and ${transacoesBancarias.data} <= ${ult.dataSaldo}
+      )`,
     })
     .from(contasBancarias)
     .innerJoin(planoContas, eq(planoContas.id, contasBancarias.contaContabilId))
@@ -93,14 +99,16 @@ export async function listarContasComSaldo(empresaId: string) {
     const temData = l.dataSaldo !== null;
     const saldoContabil = temData ? cents(l.saldoContabil ?? 0) : null;
     const pendentes = temData ? cents(l.pendentes ?? 0) : null;
+    const ignoradas = temData ? cents(l.ignoradas ?? 0) : null;
     const saldoOfx = temData && l.saldoOfx !== null ? cents(l.saldoOfx) : null;
-    const diferenca = saldoOfx !== null ? saldoOfx - saldoContabil! - pendentes! : null;
+    const diferenca = saldoOfx !== null ? saldoOfx - saldoContabil! - pendentes! - ignoradas! : null;
     const s = (c: number | null) => (c === null ? null : fromCents(c));
     return {
       ...l,
       saldoOfx: s(saldoOfx),
       saldoContabil: s(saldoContabil),
       pendentes: s(pendentes),
+      ignoradas: s(ignoradas),
       diferenca: s(diferenca),
     };
   });

@@ -14,7 +14,7 @@ import type { EstadoForm } from "./empresas";
 export type Sugestao = Awaited<ReturnType<typeof sugerirPendentes>>;
 export type EstadoImportacao = EstadoForm & { novas?: number; repetidas?: number; sugestao?: Sugestao };
 
-const MAX_OFX = 5 * 1024 * 1024;
+const MAX_OFX = 4 * 1024 * 1024; // corpo de função na Vercel: 4,5 MB
 const LOTE = 1000; // linhas por INSERT (limite de parâmetros do Postgres)
 
 const opcional = z.string().trim().transform((s) => s || null);
@@ -95,9 +95,9 @@ export async function atualizarContaBancaria(
   return { ok: true };
 }
 
-/** Data do saldo: DTASOF do LEDGERBAL; sem ela, DTEND; sem ela, a última transação. */
+/** Data do saldo: DTASOF do LEDGERBAL; sem ela, DTEND; sem ela, a última transação (null se não houver). */
 function dataDoSaldo(ext: OfxExtrato) {
-  return ext.dataSaldo ?? ext.dtEnd ?? ext.transacoes.reduce((m, t) => (t.data > m ? t.data : m), ext.transacoes[0].data);
+  return ext.dataSaldo ?? ext.dtEnd ?? ext.transacoes.reduce<string | null>((m, t) => (!m || t.data > m ? t.data : m), null);
 }
 
 export async function importarOfx(empresaId: string, _prev: EstadoImportacao, form: FormData): Promise<EstadoImportacao> {
@@ -106,7 +106,7 @@ export async function importarOfx(empresaId: string, _prev: EstadoImportacao, fo
   if (!id.success) return { erro: "Selecione a conta bancária." };
   const arquivo = form.get("arquivo");
   if (!(arquivo instanceof File) || arquivo.size === 0) return { erro: "Selecione o arquivo OFX." };
-  if (arquivo.size > MAX_OFX) return { erro: "Arquivo maior que 5 MB." };
+  if (arquivo.size > MAX_OFX) return { erro: "Arquivo maior que 4 MB." };
 
   const conta = await getContaBancaria(empresaId, id.data);
   if (!conta) return { erro: "Conta bancária não encontrada." };

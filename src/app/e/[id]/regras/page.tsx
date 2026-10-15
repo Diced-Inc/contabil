@@ -8,6 +8,9 @@ import { listarContasAnaliticas } from "../lancamentos/queries";
 import { listarRegras } from "./queries";
 import { AplicarRegrasButton, ExcluirRegraDialog, RegraDialog } from "./regra-dialog";
 
+// Server actions desta página rodam o pipeline de sugestão (IA).
+export const maxDuration = 300;
+
 async function Regras({ params }: PageProps<"/e/[id]/regras">) {
   const { id } = await params;
   await getEmpresa(id);

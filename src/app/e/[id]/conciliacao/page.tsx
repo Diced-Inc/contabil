@@ -9,6 +9,9 @@ import { listarContasAnaliticas } from "../lancamentos/queries";
 import { ConciliacaoLista, Ignoradas } from "./conciliacao-toolbar";
 import { listarContasBancarias, listarTitulosAbertos, listarTransacoes } from "./queries";
 
+// Server actions desta página rodam o pipeline de sugestão (IA).
+export const maxDuration = 300;
+
 const selectCls =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 const ORIGENS = { regra: "Regra", transferencia: "Transferência", ia: "IA", sem: "Sem sugestão" } as const;

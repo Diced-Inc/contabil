@@ -33,13 +33,17 @@ export function parseOfx(buf: Buffer): OfxExtrato {
   const bankId = tag(body, "BANKID"), acctId = tag(body, "ACCTID");
   if (!bankId || !acctId) throw new Error("BANKID/ACCTID ausentes");
   const blocks = body.match(/<STMTTRN>[\s\S]*?(?=<STMTTRN>|<\/BANKTRANLIST>|<LEDGERBAL>|$)/gi) ?? [];
-  if (blocks.length === 0) throw new Error("Nenhuma transação encontrada");
+  // Zero transações é válido: mês sem movimento, só saldo.
+  const vistos = new Map<string, number>();
   const transacoes = blocks.map((b): OfxTransacao => {
     const fitid = tag(b, "FITID"), data = parseDate(tag(b, "DTPOSTED"));
     if (!fitid || !data) throw new Error("Transação sem FITID ou data");
+    // FITID repetido no mesmo arquivo (bancos que reaproveitam): #2, #3... na ordem do arquivo.
+    const n = (vistos.get(fitid) ?? 0) + 1;
+    vistos.set(fitid, n);
     const name = tag(b, "NAME"), memo = tag(b, "MEMO");
     return {
-      fitid, data, valor: parseAmount(tag(b, "TRNAMT")), tipo: tag(b, "TRNTYPE"),
+      fitid: n === 1 ? fitid : `${fitid}#${n}`, data, valor: parseAmount(tag(b, "TRNAMT")), tipo: tag(b, "TRNTYPE"),
       memo: [name, memo]
         .filter((x): x is string => !!x)
         .filter((x, _i, a) => !a.some((o) => o !== x && o.includes(x)))

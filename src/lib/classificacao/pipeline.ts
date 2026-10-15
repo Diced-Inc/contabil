@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { contasBancarias, lancamentos, partidas, planoContas, regras, transacoesBancarias } from "@/db/schema";
 import { classificarComIA, type ExemploIA } from "./ia";
@@ -34,7 +34,13 @@ async function exemplosAprovados(empresaId: string): Promise<ExemploIA[]> {
   });
 }
 
-export async function sugerirPendentes(empresaId: string, transacaoIds?: string[]): Promise<ResultadoSugestao> {
+/**
+ * Regras valem para pendentes sem sugestão ou com sugestão da IA (regra nova sobrepõe a IA);
+ * transferências e IA só para as sem sugestão. IA limitada a `limiteIa` por chamada (tempo de função).
+ */
+export async function sugerirPendentes(
+  empresaId: string, transacaoIds?: string[], { ia = true, limiteIa = 40 }: { ia?: boolean; limiteIa?: number } = {},
+): Promise<ResultadoSugestao> {
   const out: ResultadoSugestao = { regras: 0, transferencias: 0, ia: 0, erros: [] };
 
   const [pendentes, regrasAtivas, contas] = await Promise.all([
@@ -42,11 +48,14 @@ export async function sugerirPendentes(empresaId: string, transacaoIds?: string[
       .select({
         id: transacoesBancarias.id, contaBancariaId: transacoesBancarias.contaBancariaId, data: transacoesBancarias.data,
         valor: transacoesBancarias.valor, memo: transacoesBancarias.memo,
-        contaContabilBanco: contasBancarias.contaContabilId,
+        contaContabilBanco: contasBancarias.contaContabilId, sugestaoOrigem: transacoesBancarias.sugestaoOrigem,
       })
       .from(transacoesBancarias)
       .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
-      .where(and(eq(contasBancarias.empresaId, empresaId), eq(transacoesBancarias.status, "pendente"), isNull(transacoesBancarias.sugestaoOrigem))),
+      .where(and(
+        eq(contasBancarias.empresaId, empresaId), eq(transacoesBancarias.status, "pendente"),
+        or(isNull(transacoesBancarias.sugestaoOrigem), eq(transacoesBancarias.sugestaoOrigem, "ia")),
+      )),
     db.select().from(regras).where(and(eq(regras.empresaId, empresaId), eq(regras.ativa, true))),
     db.select({ id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, natureza: planoContas.natureza })
       .from(planoContas)
@@ -73,7 +82,8 @@ export async function sugerirPendentes(empresaId: string, transacaoIds?: string[
     }
 
     // Candidatas: todas as pendentes sem sugestão da empresa, não só as novas.
-    for (const [sId, eId] of parearTransferencias(pendentes.filter((t) => !resolvidas.has(t.id)))) {
+    const semSugestao = pendentes.filter((t) => !t.sugestaoOrigem && !resolvidas.has(t.id));
+    for (const [sId, eId] of parearTransferencias(semSugestao)) {
       for (const [eu, par] of [[sId, eId], [eId, sId]] as const) {
         await tx.update(transacoesBancarias).set({
           sugestaoContaId: porId.get(par)!.contaContabilBanco, sugestaoRegraId: null, sugestaoOrigem: "transferencia",
@@ -85,8 +95,12 @@ export async function sugerirPendentes(empresaId: string, transacaoIds?: string[
     }
   });
 
-  const restantes = alvos.filter((t) => !resolvidas.has(t.id));
-  if (!restantes.length) return out;
+  const semIa = alvos.filter((t) => !t.sugestaoOrigem && !resolvidas.has(t.id));
+  if (!ia || !semIa.length) return out;
+  const restantes = semIa.slice(0, limiteIa);
+  if (semIa.length > limiteIa) {
+    out.erros.push(`IA: ${semIa.length - limiteIa} transações restantes, clique em Sugerir com IA novamente`);
+  }
   if (!process.env.ANTHROPIC_API_KEY) {
     out.erros.push("IA desativada: ANTHROPIC_API_KEY ausente");
     return out;

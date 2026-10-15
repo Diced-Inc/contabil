@@ -84,7 +84,7 @@ export type ResultadoAplicacao = EstadoForm & Partial<Awaited<ReturnType<typeof 
 export async function aplicarRegrasPendentes(empresaId: string): Promise<ResultadoAplicacao> {
   await requireUser();
   try {
-    const r = await sugerirPendentes(empresaId);
+    const r = await sugerirPendentes(empresaId, undefined, { ia: false });
     revalidatePath(`/e/${empresaId}`, "layout");
     return { ok: true, ...r };
   } catch (e) {
