@@ -68,7 +68,7 @@ Sugestão pendente vive na transação; o lançamento só nasce na aprovação. 
 Criar título gera o lançamento de competência: receber = D Clientes (papel) / C conta de receita escolhida; pagar = D conta de despesa / C Fornecedores (papel). Baixa acontece na conciliação (seção 3).
 
 ### fechamentos
-`id, empresa_id, competencia date (mês), fechado_em, fechado_por, unique(empresa_id, competencia)`. Trigger em `lancamentos` (insert/update/delete) bloqueia se `data` cai em mês fechado. Reabrir = apagar a linha (registrado em `lancamento_log` com `lancamento_id` nulo e `acao = reabertura`).
+`id, empresa_id, competencia date (mês), fechado_em, fechado_por, unique(empresa_id, competencia)`. Trigger em `lancamentos` bloqueia insert/delete e update de `data/competencia/historico/documento/data_pagamento` quando `data` cai em mês fechado (mudar `status` para `estornado` é permitido, porque o estorno em si vai em mês aberto). Trigger em `partidas` bloqueia qualquer mudança de partida de lançamento em mês fechado. Reabrir = apagar a linha (registrado em `lancamento_log` com `lancamento_id` nulo e `acao = reabertura`).
 
 ### apuracoes
 `id, empresa_id, exercicio int, lancamento_id, created_at, unique(empresa_id, exercicio)`. Ver seção 4.
@@ -123,7 +123,7 @@ Relatórios de um exercício **não apurado** mostram o resultado do período co
 
 ## 5. Relatórios (`lib/relatorios/`)
 
-Base única: `saldos(empresaId, de, ate)` retorna por conta analítica `saldo_anterior` (Σ partidas com `data < de`), `debitos`, `creditos` no intervalo e `saldo_atual`. Saldo = Σ débito − Σ crédito. Montagem da hierarquia em TypeScript: sintéticas = soma das filhas por prefixo de código. Exibição: `≥ 0` → `1.234,56D`; `< 0` → `1.234,56C`; zero → sufixo pela natureza. Só lançamentos `status = aprovado` entram (estornos entram como lançamentos normais, o original estornado não).
+Base única: `saldos(empresaId, de, ate)` retorna por conta analítica `saldo_anterior` (Σ partidas com `data < de`), `debitos`, `creditos` no intervalo e `saldo_atual`. Saldo = Σ débito − Σ crédito. Montagem da hierarquia em TypeScript: sintéticas = soma das filhas por prefixo de código. Exibição: `≥ 0` → `1.234,56D`; `< 0` → `1.234,56C`; zero → sufixo pela natureza. **Todos** os lançamentos entram, inclusive os estornados e seus estornos: o efeito líquido é zero e Diário/Razão mostram os dois, como na prática contábil. `status = estornado` é só informativo.
 
 - **Balancete**: intervalo (default mês). Colunas: código, descrição, saldo anterior, débito, crédito, saldo atual. Todas as contas com movimento ou saldo. Totais por classe.
 - **Balanço Patrimonial**: exercício. Classes 1 e 2 em 31/12 do ano e do anterior, lado a lado. Linha "Resultado do exercício" no PL quando não apurado. Rodapé: Ativo total, Passivo + PL total, "fecha / não fecha".
