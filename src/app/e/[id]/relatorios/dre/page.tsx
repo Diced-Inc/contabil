@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { cn } from "cn";
 import { DataRange, lerPeriodo } from "@/components/data-range";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,6 +11,7 @@ import { RelatorioShell } from "../relatorio-shell";
 const periodo = (de: string, ate: string) => `${fmtData(de)} a ${fmtData(ate)}`;
 
 async function Dre({ params, searchParams }: PageProps<"/e/[id]/relatorios/dre">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   const empresa = await getEmpresa(id);

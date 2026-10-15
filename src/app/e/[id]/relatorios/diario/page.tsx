@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { DataRange, lerPeriodo } from "@/components/data-range";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtData, fmtValor } from "@/lib/format";
@@ -7,6 +8,7 @@ import { getEmpresa } from "../../empresa";
 import { RelatorioShell } from "../relatorio-shell";
 
 async function Diario({ params, searchParams }: PageProps<"/e/[id]/relatorios/diario">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   const empresa = await getEmpresa(id);

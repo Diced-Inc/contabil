@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { asc } from "drizzle-orm";
 import { Building2 } from "lucide-react";
@@ -10,6 +11,7 @@ import { fmtCnpj, REGIMES } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
 
 async function ListaEmpresas() {
+  await connection();
   await requireUser();
   const lista = await db.select().from(empresas).orderBy(asc(empresas.razaoSocial));
   if (lista.length === 0) {

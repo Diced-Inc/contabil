@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,6 +13,7 @@ import { AplicarRegrasButton, ExcluirRegraDialog, RegraDialog } from "./regra-di
 export const maxDuration = 300;
 
 async function Regras({ params }: PageProps<"/e/[id]/regras">) {
+  await connection();
   const { id } = await params;
   await getEmpresa(id);
   const [lista, contas] = await Promise.all([listarRegras(id), listarContasAnaliticas(id)]);

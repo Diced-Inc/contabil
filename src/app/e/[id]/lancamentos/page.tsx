@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { Plus, Search } from "lucide-react";
 import { cn } from "cn";
@@ -19,6 +20,7 @@ function ultimoDiaDoMes(d: string) {
 }
 
 async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   await getEmpresa(id);

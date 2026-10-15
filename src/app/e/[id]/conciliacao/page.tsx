@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { cn } from "cn";
@@ -19,6 +20,7 @@ const ORIGENS = { regra: "Regra", transferencia: "Transferência", ia: "IA", sem
 const str = (s: unknown) => (typeof s === "string" ? s.trim() : "");
 
 async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/conciliacao">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   await getEmpresa(id);
@@ -112,6 +114,7 @@ async function ListaPendentes({ empresaId, transacoes, todas }: {
   transacoes: Awaited<ReturnType<typeof listarTransacoes>>;
   todas: Awaited<ReturnType<typeof listarTransacoes>>;
 }) {
+  await connection();
   const [contas, titulosAbertos] = await Promise.all([listarContasAnaliticas(empresaId), listarTitulosAbertos(empresaId)]);
   return <ConciliacaoLista empresaId={empresaId} transacoes={transacoes} todas={todas} contas={contas} titulos={titulosAbertos} />;
 }

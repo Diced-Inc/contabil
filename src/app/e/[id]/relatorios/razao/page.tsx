@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { z } from "zod";
 import { ContaSelect } from "@/components/conta-select";
 import { DataRange, lerPeriodo } from "@/components/data-range";
@@ -11,6 +12,7 @@ import { listarContasAnaliticas } from "../../lancamentos/queries";
 import { RelatorioShell } from "../relatorio-shell";
 
 async function Razao({ params, searchParams }: PageProps<"/e/[id]/relatorios/razao">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   const empresa = await getEmpresa(id);

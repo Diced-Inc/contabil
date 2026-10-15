@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { Eye, EyeOff } from "lucide-react";
@@ -27,6 +28,7 @@ function proximoCodigo(pai: ContaLinha, todas: ContaLinha[]) {
 }
 
 async function Arvore({ params, searchParams }: PageProps<"/e/[id]/plano-de-contas">) {
+  await connection();
   const { id } = await params;
   const { inativas } = await searchParams;
   const mostrarInativas = inativas === "1";

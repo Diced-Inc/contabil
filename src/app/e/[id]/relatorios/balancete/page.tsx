@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { cn } from "cn";
 import { DataRange, lerPeriodo } from "@/components/data-range";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,6 +10,7 @@ import { getEmpresa } from "../../empresa";
 import { RelatorioShell } from "../relatorio-shell";
 
 async function Balancete({ params, searchParams }: PageProps<"/e/[id]/relatorios/balancete">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   const empresa = await getEmpresa(id);

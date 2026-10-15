@@ -1,10 +1,12 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { atualizarEmpresa } from "@/actions/empresas";
 import { EmpresaForm } from "@/components/empresa-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getEmpresa } from "../empresa";
 
 async function Form({ params }: Pick<PageProps<"/e/[id]/configuracoes">, "params">) {
+  await connection();
   const { id } = await params;
   const empresa = await getEmpresa(id);
   return <EmpresaForm action={atualizarEmpresa.bind(null, id)} empresa={empresa} rotulo="Salvar" />;

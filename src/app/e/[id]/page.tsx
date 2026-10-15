@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { cn } from "cn";
 import { ArrowRight, CalendarCheck, Inbox, Landmark, TrendingUp, TriangleAlert } from "lucide-react";
@@ -19,6 +20,7 @@ const verLink = (href: string, label: string) => (
 );
 
 async function Resumo({ params }: PageProps<"/e/[id]">) {
+  await connection();
   const { id } = await params;
   await getEmpresa(id);
   const ate = hoje();

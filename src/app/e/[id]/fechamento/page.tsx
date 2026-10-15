@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Lock, LockOpen } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
@@ -12,6 +13,7 @@ const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julh
 const dataHora = (d: Date) => d.toLocaleDateString("pt-BR");
 
 async function Fechamento({ params, searchParams }: PageProps<"/e/[id]/fechamento">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   const ano = lerAno(sp.ano);

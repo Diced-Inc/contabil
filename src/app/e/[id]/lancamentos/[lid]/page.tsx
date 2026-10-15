@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
@@ -42,6 +43,7 @@ function resumo(acao: string, antes: unknown, depois: unknown) {
 }
 
 async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/[lid]">) {
+  await connection();
   const { id, lid } = await params;
   const { editar } = await searchParams;
   await getEmpresa(id);

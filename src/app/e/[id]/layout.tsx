@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { and, count, eq } from "drizzle-orm";
 import { AppSidebar } from "@/components/app-sidebar";
 import { db } from "@/db";
@@ -7,6 +8,7 @@ import { requireUser } from "@/supabase/server";
 import { getEmpresa } from "./empresa";
 
 async function Shell({ params, children }: LayoutProps<"/e/[id]">) {
+  await connection();
   await requireUser();
   const { id } = await params;
   const empresa = await getEmpresa(id);

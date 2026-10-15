@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ const STATUS = {
 } as const;
 
 async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   const tipo: TipoTitulo = sp.tipo === "pagar" ? "pagar" : "receber";

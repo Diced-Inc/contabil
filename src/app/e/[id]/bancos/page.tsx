@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +17,7 @@ const traco = <span className="text-muted-foreground">-</span>;
 const moeda = (v: string | null) => (v === null ? traco : fmtValor(v));
 
 async function Bancos({ params }: PageProps<"/e/[id]/bancos">) {
+  await connection();
   const { id } = await params;
   await getEmpresa(id);
   const [contas, opcoes, imports] = await Promise.all([

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "cn";
@@ -14,6 +15,7 @@ const fecha = (t: TotaisBalanco) =>
   t.fecha ? "Balanço fecha" : `Não fecha (diferença ${fmtValor(fromCents(Math.abs(t.ativo + t.passivoPl)))})`;
 
 async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/balanco">) {
+  await connection();
   const { id } = await params;
   const sp = await searchParams;
   const ano = lerAno(sp.ano);

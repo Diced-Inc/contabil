@@ -1,10 +1,12 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { criarLancamentoManual } from "@/actions/lancamentos";
 import { getEmpresa } from "../../empresa";
 import { FormLancamento } from "../form-lancamento";
 import { listarContasAnaliticas } from "../queries";
 
 async function Novo({ params }: PageProps<"/e/[id]/lancamentos/novo">) {
+  await connection();
   const { id } = await params;
   await getEmpresa(id);
   const contas = await listarContasAnaliticas(id);
