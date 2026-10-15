@@ -1,6 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { desfazerConciliacao } from "@/actions/conciliacao";
 import { CircleAlert, Undo2 } from "lucide-react";
 import type { EstadoForm } from "@/actions/empresas";
 import { estornar } from "@/actions/lancamentos";
@@ -41,6 +44,47 @@ export function EstornarDialog({ empresaId, lancamentoId, numero }: { empresaId:
             {pendente ? "Estornando..." : "Confirmar estorno"}
           </Button>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function DesfazerConciliacaoDialog({ empresaId, transacaoId, numero }: { empresaId: string; transacaoId: string; numero: number }) {
+  const router = useRouter();
+  const [aberta, setAberta] = useState(false);
+  const [erro, setErro] = useState<string>();
+  const [pendente, iniciar] = useTransition();
+  const desfazer = () =>
+    iniciar(async () => {
+      const r = await desfazerConciliacao(empresaId, transacaoId);
+      if (r.erro) return setErro(r.erro);
+      toast.success("Conciliação desfeita.");
+      setAberta(false);
+      router.refresh();
+    });
+  return (
+    <Dialog open={aberta} onOpenChange={(a) => { setAberta(a); setErro(undefined); }}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <Undo2 />
+        Desfazer conciliação
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Desfazer a conciliação do lançamento {numero}?</DialogTitle>
+          <DialogDescription>
+            O lançamento é estornado com a data de hoje, a(s) transação(ões) voltam para pendente e o título baixado, se houver, volta a aberto.
+          </DialogDescription>
+        </DialogHeader>
+        {erro && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription>{erro}</AlertDescription>
+          </Alert>
+        )}
+        <Button variant="destructive" disabled={pendente} onClick={desfazer}>
+          <Undo2 />
+          {pendente ? "Desfazendo..." : "Desfazer conciliação"}
+        </Button>
       </DialogContent>
     </Dialog>
   );

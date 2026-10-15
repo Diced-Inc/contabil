@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { lancamentos, partidas, lancamentoLog } from "@/db/schema";
+import { lancamentos, partidas, lancamentoLog, titulos } from "@/db/schema";
 import { cents, fromCents, primeiroDiaDoMes, hoje } from "./format";
 
 export type PartidaInput = { contaId: string; debito?: string; credito?: string };
@@ -59,6 +59,16 @@ export async function criarLancamento(tx: Tx, input: LancamentoInput) {
   return l;
 }
 
+/** Lançamentos de título (competência ou baixa) só mudam pelo fluxo do título ou da conciliação. */
+export async function exigirSemTitulo(tx: Tx, id: string) {
+  const [t] = await tx
+    .select({ id: titulos.id })
+    .from(titulos)
+    .where(or(eq(titulos.lancamentoId, id), eq(titulos.baixaLancamentoId, id)))
+    .limit(1);
+  if (t) throw new Error("Lançamento vinculado a um título; cancele o título ou desfaça a conciliação");
+}
+
 /** Substitui cabeçalho e partidas. Só lançamentos manuais não estornados (conciliação/apuração/estorno têm fluxo próprio). */
 export async function editarLancamento(tx: Tx, id: string, input: EdicaoInput) {
   validarPartidas(input.partidas);
@@ -68,6 +78,7 @@ export async function editarLancamento(tx: Tx, id: string, input: EdicaoInput) {
   if (antes.origem === "apuracao") throw new Error("Lançamento de apuração não pode ser editado; reverta a apuração");
   if (antes.origem === "conciliacao") throw new Error("Lançamento de conciliação não pode ser editado; desfaça a conciliação");
   if (antes.origem === "estorno") throw new Error("Lançamento de estorno não pode ser editado");
+  await exigirSemTitulo(tx, id);
   const competencia = input.competencia ?? primeiroDiaDoMes(input.data);
   await tx.update(lancamentos).set({
     data: input.data, competencia, dataPagamento: input.dataPagamento ?? null,

@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Pencil, Undo2 } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { z } from "zod";
 import { editarLancamentoManual } from "@/actions/lancamentos";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cents, fmtCompetencia, fmtData, fmtValor, fromCents } from "@/lib/format";
 import type { RetratoLancamento } from "@/lib/lancamentos";
@@ -13,7 +13,8 @@ import { requireUser } from "@/supabase/server";
 import { getEmpresa } from "../../empresa";
 import { FormLancamento } from "../form-lancamento";
 import { ACOES_LOG, ORIGENS, getLancamento, listarContasAnaliticas, listarLog } from "../queries";
-import { EstornarDialog } from "./estornar-dialog";
+import { transacaoDoLancamento } from "../../conciliacao/queries";
+import { DesfazerConciliacaoDialog, EstornarDialog } from "./estornar-dialog";
 
 const TZ = "America/Sao_Paulo";
 const CAMPOS: [keyof RetratoLancamento, string][] = [
@@ -50,6 +51,7 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
   const base = `/e/${id}/lancamentos`;
   const editavel = l.origem === "manual" && l.status === "aprovado";
   const estornavel = l.status === "aprovado" && l.origem === "manual";
+  const desfazerTx = l.origem === "conciliacao" && l.status === "aprovado" ? await transacaoDoLancamento(lid) : undefined;
 
   if (editar === "1" && editavel) {
     const contas = await listarContasAnaliticas(id);
@@ -89,14 +91,7 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
             </Link>
           )}
           {estornavel && <EstornarDialog empresaId={id} lancamentoId={lid} numero={l.numero} />}
-          {l.origem === "conciliacao" && l.status === "aprovado" && (
-            <span title="disponível na conciliação">
-              <Button variant="outline" disabled>
-                <Undo2 />
-                Desfazer conciliação
-              </Button>
-            </span>
-          )}
+          {desfazerTx && <DesfazerConciliacaoDialog empresaId={id} transacaoId={desfazerTx} numero={l.numero} />}
         </div>
       </div>
 
