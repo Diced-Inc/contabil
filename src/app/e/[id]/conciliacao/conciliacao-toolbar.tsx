@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCheck, RotateCcw, Sparkles } from "lucide-react";
+import { CheckCheck, ListChecks, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { aprovarEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
 import type { ContaOpcao } from "@/components/conta-select";
@@ -12,7 +12,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TablePanel } from "@/components/page-header";
 import { Valor } from "@/components/valor";
-import { fmtData } from "@/lib/format";
+import { cents, fmtData } from "@/lib/format";
+import { ClassificarLote } from "./classificar-lote";
 import { PainelTransacao } from "./painel-transacao";
 import type { TituloAberto, TransacaoLinha } from "./queries";
 
@@ -53,7 +54,10 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
   const [pendente, iniciar] = useTransition();
   const visiveis = new Set(transacoes.map((t) => t.id));
   const selecionadas = [...sel].filter((id) => visiveis.has(id));
-  const aprovaveis = transacoes.filter(aprovavel);
+  const linhasSel = transacoes.filter((t) => sel.has(t.id));
+  const todasAprovaveis = linhasSel.every(aprovavel);
+  const sinalMisto = new Set(linhasSel.map((t) => cents(t.valor) > 0)).size > 1;
+  const [lote, setLote] = useState(false);
   const contagem = (o: string | null) => transacoes.filter((t) => t.sugestaoOrigem === o).length;
 
   const alternar = (id: string, marcado: boolean) =>
@@ -85,9 +89,15 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
     <>
       {todas.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <Button onClick={aprovar} disabled={pendente || selecionadas.length === 0}>
+          <Button onClick={aprovar} disabled={pendente || selecionadas.length === 0 || !todasAprovaveis}
+            title={todasAprovaveis ? undefined : "Só transações com sugestão de regra ou transferência podem ser aprovadas"}>
             <CheckCheck />
             Aprovar selecionadas ({selecionadas.length})
+          </Button>
+          <Button variant="outline" onClick={() => setLote(true)} disabled={pendente || selecionadas.length === 0 || sinalMisto}
+            title={sinalMisto ? "Selecione só entradas ou só saídas" : undefined}>
+            <ListChecks />
+            Classificar selecionadas ({selecionadas.length})
           </Button>
           <Button variant="outline" onClick={sugerir} disabled={pendente}>
             <Sparkles />
@@ -111,10 +121,9 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
               <TableRow>
                 <TableHead className="w-8">
                   <Checkbox
-                    aria-label="Selecionar aprováveis"
-                    disabled={aprovaveis.length === 0}
-                    checked={aprovaveis.length > 0 && aprovaveis.every((t) => sel.has(t.id))}
-                    onCheckedChange={(c) => setSel(c ? new Set(aprovaveis.map((t) => t.id)) : new Set())}
+                    aria-label="Selecionar todas"
+                    checked={transacoes.every((t) => sel.has(t.id))}
+                    onCheckedChange={(c) => setSel(c ? new Set(transacoes.map((t) => t.id)) : new Set())}
                   />
                 </TableHead>
                 <TableHead className="w-24">Data</TableHead>
@@ -131,7 +140,6 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
                   <TableCell className="py-2">
                     <Checkbox
                       aria-label="Selecionar"
-                      disabled={!aprovavel(t)}
                       checked={sel.has(t.id)}
                       onCheckedChange={(c) => alternar(t.id, !!c)}
                     />
@@ -158,6 +166,14 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
         todas={todas}
         contas={contas}
         titulos={titulos}
+      />
+      <ClassificarLote
+        empresaId={empresaId}
+        transacoes={linhasSel}
+        contas={contas}
+        open={lote}
+        onClose={() => setLote(false)}
+        onDone={() => setSel(new Set())}
       />
     </>
   );

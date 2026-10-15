@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { partidasClassificacao } from "./conciliacao";
+import { padraoComum } from "./classificacao/regras";
 import { validarPartidas } from "./lancamentos";
 
 describe("partidasClassificacao", () => {
@@ -24,5 +25,15 @@ describe("partidasClassificacao", () => {
     expect(() => partidasClassificacao("10.00", "b", [{ contaId: "x", valor: "0" }])).toThrow(/maior que zero/);
     expect(() => partidasClassificacao("10.00", "b", [{ contaId: "b", valor: "10" }])).toThrow(/própria conta/);
     expect(() => partidasClassificacao("10.00", "b", [])).toThrow();
+  });
+});
+
+describe("padraoComum", () => {
+  it("usa o prefixo comum quando tem ao menos 6 caracteres", () => {
+    expect(padraoComum(["PIX ENVIADO 123.456 JOAO", "PIX ENVIADO 123.456 MARIA"])).toBe("PIX ENVIADO 123.456");
+  });
+  it("cai no primeiro memo quando o prefixo é curto", () => {
+    expect(padraoComum(["PIX JOAO", "PIX MARIA"])).toBe("PIX JOAO");
+    expect(padraoComum([])).toBe("");
   });
 });

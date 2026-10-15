@@ -78,12 +78,13 @@ export async function classificarTransacao(tx: Tx, input: {
     partidas: partidasClassificacao(t.valor, t.contaBanco, input.partidas),
   });
   await marcar(tx, t.id, { status: "classificada", lancamentoId: l.id });
-  if (input.criarRegra) {
-    await tx.insert(regras).values({
-      empresaId: input.empresaId, ...input.criarRegra, contaId: input.partidas[0].contaId, historicoTemplate: input.historico,
-    });
-  }
+  if (input.criarRegra) await inserirRegra(tx, input.empresaId, input.criarRegra, input.partidas[0].contaId, input.historico);
   return l;
+}
+
+export async function inserirRegra(tx: Tx, empresaId: string, regra: NovaRegra, contaId: string, historicoTemplate: string) {
+  await exigirContas(tx, empresaId, [contaId]);
+  await tx.insert(regras).values({ empresaId, ...regra, contaId, historicoTemplate });
 }
 
 export async function baixarTituloPorTransacao(tx: Tx, input: {

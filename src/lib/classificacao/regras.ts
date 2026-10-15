@@ -48,6 +48,14 @@ export function aplicarTemplate(tpl: string, t: TransacaoLike) {
   return tpl.replace(/\{(memo|valor|data)\}/g, (_, k: keyof typeof vals) => vals[k]);
 }
 
+/** Padrão "memo contém" para várias transações: maior prefixo comum (≥ 6 chars), senão o primeiro memo. */
+export function padraoComum(memos: string[]) {
+  let p = memos[0] ?? "";
+  for (const m of memos) while (!m.startsWith(p)) p = p.slice(0, -1);
+  p = p.trim();
+  return p.length >= 6 ? p : (memos[0] ?? "").trim();
+}
+
 /** Primeira regra que casa, na ordem prioridade asc, createdAt asc. */
 export function primeiraRegra<R extends RegraLike>(regras: R[], t: TransacaoLike): R | null {
   const ordenadas = [...regras].sort((a, b) => a.prioridade - b.prioridade || a.createdAt.getTime() - b.createdAt.getTime());

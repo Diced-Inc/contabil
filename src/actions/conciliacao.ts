@@ -5,10 +5,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { contasBancarias, transacoesBancarias } from "@/db/schema";
-import { valorDoPadrao } from "@/lib/classificacao/regras";
+import { aplicarTemplate, valorDoPadrao } from "@/lib/classificacao/regras";
 import { sugerirPendentes, type ResultadoSugestao } from "@/lib/classificacao/pipeline";
 import {
-  alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, transferirEntreContas,
+  alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, inserirRegra, transferirEntreContas,
 } from "@/lib/conciliacao";
 import { cents, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
@@ -33,6 +33,17 @@ async function executar(empresaId: string, fn: (usuarioId: string) => Promise<un
 
 const uuid = z.uuid("Transação inválida.");
 
+const novaRegraSchema = z
+  .object({
+    nome: z.string().trim().min(1, "Informe o nome da regra."),
+    tipoMatch: z.enum(["memo_contem", "documento", "valor_exato"], "Selecione o tipo da regra."),
+    padrao: z.string().trim().min(1, "Informe o padrão da regra."),
+    sinal: z.enum(["entrada", "saida", "qualquer"], "Selecione o sinal da regra."),
+  })
+  .optional()
+  .refine((r) => r?.tipoMatch !== "valor_exato" || valorDoPadrao(r.padrao) > 0, "Para valor exato, o padrão deve ser um valor maior que zero.")
+  .refine((r) => r?.tipoMatch !== "documento" || !!somenteDigitos(r.padrao), "Para documento, o padrão deve conter os dígitos do CPF/CNPJ.");
+
 const classificacaoSchema = z.object({
   transacaoId: uuid,
   partidas: z
@@ -50,16 +61,7 @@ const classificacaoSchema = z.object({
     .regex(/^(\d{4}-\d{2})?$/, "Competência inválida.")
     .optional()
     .transform((s) => (s ? `${s}-01` : undefined)),
-  criarRegra: z
-    .object({
-      nome: z.string().trim().min(1, "Informe o nome da regra."),
-      tipoMatch: z.enum(["memo_contem", "documento", "valor_exato"], "Selecione o tipo da regra."),
-      padrao: z.string().trim().min(1, "Informe o padrão da regra."),
-      sinal: z.enum(["entrada", "saida", "qualquer"], "Selecione o sinal da regra."),
-    })
-    .optional()
-    .refine((r) => r?.tipoMatch !== "valor_exato" || valorDoPadrao(r.padrao) > 0, "Para valor exato, o padrão deve ser um valor maior que zero.")
-    .refine((r) => r?.tipoMatch !== "documento" || !!somenteDigitos(r.padrao), "Para documento, o padrão deve conter os dígitos do CPF/CNPJ."),
+  criarRegra: novaRegraSchema,
 });
 export type ClassificacaoInput = z.input<typeof classificacaoSchema>;
 
@@ -139,6 +141,66 @@ export async function aprovarEmLote(empresaId: string, transacaoIds: string[]): 
         throw new Error("Só sugestões de regra ou transferência podem ser aprovadas em lote");
       }
       feitas.add(t.id);
+      aprovadas++;
+    } catch (e) {
+      erros.push(`${t.memo.slice(0, 40) || t.id.slice(0, 8)}: ${msg(e)}`);
+    }
+  }
+  revalidatePath(`/e/${empresaId}`, "layout");
+  return { aprovadas, erros };
+}
+
+const loteSchema = z.object({
+  transacaoIds: z.array(z.uuid()).min(1, "Nenhuma transação selecionada."),
+  contaId: z.uuid("Selecione a contrapartida."),
+  historicoTemplate: z.string().trim().min(1, "Informe o histórico."),
+  documento: z.string().trim().nullish().transform((s) => s || null),
+  competencia: z.string().regex(/^\d{4}-\d{2}$/, "Competência inválida.").nullish(),
+  criarRegra: novaRegraSchema,
+});
+export type ClassificacaoLoteInput = z.input<typeof loteSchema>;
+
+/** Mesma contrapartida para várias transações do mesmo sinal; cada uma na sua própria transação do banco. */
+export async function classificarEmLote(empresaId: string, input: ClassificacaoLoteInput): Promise<{ aprovadas: number; erros: string[] }> {
+  const user = await requireUser();
+  const r = loteSchema.safeParse(input);
+  if (!r.success) return { aprovadas: 0, erros: [r.error.issues[0].message] };
+  const { transacaoIds, contaId, historicoTemplate, documento, competencia, criarRegra } = r.data;
+  const encontradas = await db
+    .select({
+      id: transacoesBancarias.id, memo: transacoesBancarias.memo, valor: transacoesBancarias.valor,
+      data: transacoesBancarias.data, status: transacoesBancarias.status,
+    })
+    .from(transacoesBancarias)
+    .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
+    .where(and(eq(contasBancarias.empresaId, empresaId), inArray(transacoesBancarias.id, transacaoIds)));
+  const porId = new Map(encontradas.map((t) => [t.id, t]));
+  const txs = [...new Set(transacaoIds)].flatMap((id) => porId.get(id) ?? []);
+  if (!txs.length) return { aprovadas: 0, erros: ["Nenhuma transação encontrada."] };
+
+  if (criarRegra) {
+    try {
+      await db.transaction((tx) => inserirRegra(tx, empresaId, criarRegra, contaId, historicoTemplate));
+    } catch (e) {
+      return { aprovadas: 0, erros: [`Regra: ${msg(e)}`] };
+    }
+  }
+
+  const entrada = cents(txs[0].valor) > 0;
+  let aprovadas = 0;
+  const erros: string[] = [];
+  for (const t of txs) {
+    try {
+      if (t.status !== "pendente") throw new Error("Transação não está mais pendente");
+      if (cents(t.valor) > 0 !== entrada) throw new Error(entrada ? "Não é entrada" : "Não é saída");
+      await db.transaction((tx) =>
+        classificarTransacao(tx, {
+          empresaId, transacaoId: t.id, usuarioId: user.id, documento,
+          partidas: [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }],
+          historico: aplicarTemplate(historicoTemplate, t).trim() || "Conciliação bancária",
+          competencia: competencia ? `${competencia}-01` : undefined,
+        }),
+      );
       aprovadas++;
     } catch (e) {
       erros.push(`${t.memo.slice(0, 40) || t.id.slice(0, 8)}: ${msg(e)}`);
