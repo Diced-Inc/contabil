@@ -30,6 +30,7 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
       titulo="Balanço patrimonial"
       empresa={empresa}
       periodoLabel={`31/12/${ano} e 31/12/${ano - 1}`}
+      dataAssinatura={`${ano}-12-31`}
       filtros={
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-muted-foreground">Exercício</span>

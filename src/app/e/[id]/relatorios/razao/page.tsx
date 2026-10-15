@@ -26,6 +26,7 @@ async function Razao({ params, searchParams }: PageProps<"/e/[id]/relatorios/raz
       titulo={r ? `Razão: ${r.conta.codigo} ${r.conta.nome}` : "Razão"}
       empresa={empresa}
       periodoLabel={`${fmtData(de)} a ${fmtData(ate)}`}
+      dataAssinatura={ate}
       filtros={
         <DataRange path={`/e/${id}/relatorios/razao`} sp={sp} de={de} ate={ate} proprios={["conta"]}>
           <div className="grid w-80 gap-1">

@@ -24,6 +24,7 @@ async function Dre({ params, searchParams }: PageProps<"/e/[id]/relatorios/dre">
       titulo="Demonstração do resultado do exercício"
       empresa={empresa}
       periodoLabel={periodo(de, ate)}
+      dataAssinatura={ate}
       filtros={<DataRange path={`/e/${id}/relatorios/dre`} sp={sp} de={de} ate={ate} />}
     >
       <Table className="text-[13px]">

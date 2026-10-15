@@ -21,6 +21,7 @@ async function Diario({ params, searchParams }: PageProps<"/e/[id]/relatorios/di
       titulo="Livro diário"
       empresa={empresa}
       periodoLabel={`${fmtData(de)} a ${fmtData(ate)}`}
+      dataAssinatura={ate}
       filtros={<DataRange path={`/e/${id}/relatorios/diario`} sp={sp} de={de} ate={ate} />}
     >
       {lancs.length === 0 ? (

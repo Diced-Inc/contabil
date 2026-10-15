@@ -23,6 +23,7 @@ async function Balancete({ params, searchParams }: PageProps<"/e/[id]/relatorios
       titulo="Balancete de verificação"
       empresa={empresa}
       periodoLabel={`${fmtData(de)} a ${fmtData(ate)}`}
+      dataAssinatura={ate}
       filtros={<DataRange path={`/e/${id}/relatorios/balancete`} sp={sp} de={de} ate={ate} />}
     >
       {linhas.length === 0 ? (
