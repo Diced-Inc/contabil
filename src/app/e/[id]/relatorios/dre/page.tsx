@@ -5,6 +5,7 @@ import { DataRange, lerPeriodo } from "@/components/data-range";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtData, fmtValor } from "@/lib/format";
 import { dre, umAnoAntes } from "@/lib/relatorios/dre";
+import { Carregando } from "@/components/page-header";
 import { getEmpresa } from "../../empresa";
 import { RelatorioShell } from "../relatorio-shell";
 
@@ -25,7 +26,7 @@ async function Dre({ params, searchParams }: PageProps<"/e/[id]/relatorios/dre">
       periodoLabel={periodo(de, ate)}
       filtros={<DataRange path={`/e/${id}/relatorios/dre`} sp={sp} de={de} ate={ate} />}
     >
-      <Table className="text-xs">
+      <Table className="text-[13px]">
         <TableHeader>
           <TableRow>
             <TableHead>Descrição</TableHead>
@@ -38,17 +39,17 @@ async function Dre({ params, searchParams }: PageProps<"/e/[id]/relatorios/dre">
             <TableRow
               key={i}
               className={cn(
-                "tabular-nums",
                 l.tipo === "grupo" && "font-medium",
-                l.tipo === "subtotal" && "border-t-2 border-t-foreground/40 font-semibold",
+                l.tipo === "subtotal" && "border-t border-t-foreground/30 bg-muted/40 font-semibold hover:bg-muted/50",
+                i === linhas.length - 1 && "border-t-2 border-b-2 border-t-foreground/70 border-b-foreground/70 bg-accent text-[14px] hover:bg-accent",
               )}
             >
-              <TableCell className={cn("py-1", l.tipo === "conta" && "pl-6 text-muted-foreground")}>
-                {l.tipo === "conta" && <span className="mr-2">{l.codigo}</span>}
+              <TableCell className={cn("py-1.5", l.tipo === "conta" && "pl-8 text-muted-foreground")}>
+                {l.tipo === "conta" && <span className="mr-2 font-mono text-xs">{l.codigo}</span>}
                 {l.tipo === "subtotal" ? `= ${l.label}` : l.label}
               </TableCell>
-              <TableCell className="py-1 text-right">{fmtValor(l.atual)}</TableCell>
-              <TableCell className="py-1 text-right">{fmtValor(l.anterior)}</TableCell>
+              <TableCell className={cn("py-1.5 text-right", Number(l.atual) < 0 && "text-danger")}>{fmtValor(l.atual)}</TableCell>
+              <TableCell className={cn("py-1.5 text-right", Number(l.anterior) < 0 && "text-danger")}>{fmtValor(l.anterior)}</TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -59,7 +60,7 @@ async function Dre({ params, searchParams }: PageProps<"/e/[id]/relatorios/dre">
 
 export default function DrePage(props: PageProps<"/e/[id]/relatorios/dre">) {
   return (
-    <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
+    <Suspense fallback={<Carregando />}>
       <Dre {...props} />
     </Suspense>
   );

@@ -44,17 +44,19 @@ export function DataRange({ path, sp, de, ate, proprios = [], children }: {
         ) : null,
       )}
       {children}
-      <div className="grid gap-1">
-        <Label htmlFor="de">De</Label>
+      <div className="grid gap-1.5">
+        <Label htmlFor="de" className="text-xs text-muted-foreground">De</Label>
         <Input id="de" name="de" type="date" defaultValue={de} required className="w-40" />
       </div>
-      <div className="grid gap-1">
-        <Label htmlFor="ate">Até</Label>
+      <div className="grid gap-1.5">
+        <Label htmlFor="ate" className="text-xs text-muted-foreground">Até</Label>
         <Input id="ate" name="ate" type="date" defaultValue={ate} required className="w-40" />
       </div>
-      <Button type="submit" size="sm">Aplicar</Button>
-      <Link href={hrefCom(path, sp, mesAtual())} className={buttonVariants({ variant: "ghost", size: "sm" })}>Mês atual</Link>
-      <Link href={hrefCom(path, sp, anoAtual())} className={buttonVariants({ variant: "ghost", size: "sm" })}>Ano atual</Link>
+      <Button type="submit">Aplicar</Button>
+      <div className="flex gap-1 border-l pl-3">
+        <Link href={hrefCom(path, sp, mesAtual())} className={buttonVariants({ variant: "ghost" })}>Mês atual</Link>
+        <Link href={hrefCom(path, sp, anoAtual())} className={buttonVariants({ variant: "ghost" })}>Ano atual</Link>
+      </div>
     </form>
   );
 }
