@@ -15,3 +15,21 @@ export const primeiroDiaDoMes = (d: string) => d.slice(0, 7) + "-01";
 export const somenteDigitos = (s: string) => s.replace(/\D/g, "");
 export function fmtCnpj(c: string) { return c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"); }
 export const REGIMES = { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" } as const;
+export const NATUREZAS = { D: "Devedora", C: "Credora" } as const;
+export const GRUPOS_DRE = {
+  receita_bruta: "Receita bruta",
+  deducoes: "Deduções",
+  custos: "Custos",
+  despesas_operacionais: "Despesas operacionais",
+  receitas_financeiras: "Receitas financeiras",
+  despesas_financeiras: "Despesas financeiras",
+  outras_receitas: "Outras receitas",
+  outras_despesas: "Outras despesas",
+  tributos_lucro: "Tributos sobre o lucro",
+} as const;
+export const PAPEIS = {
+  lucros_acumulados: "Lucros acumulados",
+  prejuizos_acumulados: "Prejuízos acumulados",
+  clientes: "Clientes",
+  fornecedores: "Fornecedores",
+} as const;

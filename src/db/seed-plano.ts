@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import type { Tx } from "./index";
 import { planoContas } from "./schema";
 
