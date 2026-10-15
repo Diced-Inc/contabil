@@ -40,7 +40,11 @@ export function parseOfx(buf: Buffer): OfxExtrato {
     const name = tag(b, "NAME"), memo = tag(b, "MEMO");
     return {
       fitid, data, valor: parseAmount(tag(b, "TRNAMT")), tipo: tag(b, "TRNTYPE"),
-      memo: [name, memo].filter((x): x is string => !!x && x !== "").filter((x, i, a) => a.indexOf(x) === i).join(" ").trim(),
+      memo: [name, memo]
+        .filter((x): x is string => !!x)
+        .filter((x, _i, a) => !a.some((o) => o !== x && o.includes(x)))
+        .join(" ")
+        .trim(),
     };
   });
   const ledger = body.match(/<LEDGERBAL>([\s\S]*?)(<\/LEDGERBAL>|$)/i)?.[1] ?? "";
