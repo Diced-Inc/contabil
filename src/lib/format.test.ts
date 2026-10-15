@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cents, fmtCnpj, fmtCompetencia, fmtSaldoDC, fmtValor } from "./format";
+import { cents, fmtCnpj, fmtCompetencia, fmtSaldoDC, fmtValor, parseValorBR, valorParaInput } from "./format";
 
 describe("format", () => {
   it("fmtSaldoDC", () => {
@@ -14,5 +14,13 @@ describe("format", () => {
     expect(fmtValor("-1234.5")).toBe("-1.234,50");
     expect(fmtCnpj("12345678000195")).toBe("12.345.678/0001-95");
     expect(fmtCompetencia("2026-03-01")).toBe("03/2026");
+  });
+  it("parseValorBR e valorParaInput", () => {
+    expect(parseValorBR("1.234,56")).toBe("1234.56");
+    expect(parseValorBR(" 10,5 ")).toBe("10.5");
+    expect(parseValorBR("1234.56")).toBe("1234.56");
+    expect(parseValorBR("")).toBe("");
+    expect(valorParaInput("1234.5")).toBe("1234,50");
+    expect(valorParaInput("0.00")).toBe("");
   });
 });

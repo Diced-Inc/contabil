@@ -1,6 +1,13 @@
 const brl = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const cents = (v: string | number) => Math.round(Number(v) * 100);
 export const fromCents = (c: number) => (c / 100).toFixed(2);
+/** "1.234,56" → "1234.56"; sem vírgula, o ponto é decimal ("1234.56"). */
+export function parseValorBR(s: string) {
+  const t = s.replace(/\s/g, "");
+  return t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+}
+/** "1234.5" → "1234,50" para inputs editáveis; zero vira "". */
+export const valorParaInput = (v: string | number) => (Number(v) ? Number(v).toFixed(2).replace(".", ",") : "");
 export const fmtValor = (v: string | number) => brl.format(Number(v));
 /** saldo = débito − crédito. Positivo → D, negativo → C, zero → natureza */
 export function fmtSaldoDC(v: string | number, natureza: "D" | "C") {
