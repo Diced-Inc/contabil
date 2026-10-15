@@ -56,3 +56,6 @@ export function parseOfx(buf: Buffer): OfxExtrato {
     transacoes,
   };
 }
+
+/** Normaliza BANKID/ACCTID para comparação: só alfanuméricos, sem zeros à esquerda, maiúsculo. */
+export const normalizarIdOfx = (s: string) => s.replace(/[^0-9a-z]/gi, "").replace(/^0+/, "").toUpperCase();

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseOfx } from "./ofx";
+import { normalizarIdOfx, parseOfx } from "./ofx";
 const sgml = readFileSync("test/fixtures/extrato-sgml.ofx");
 const xml = readFileSync("test/fixtures/extrato-xml.ofx");
 
@@ -36,4 +36,10 @@ describe("parseOfx", () => {
     expect(() => parseOfx(Buffer.from(txt, "latin1"))).toThrow(/cart[ãa]o de cr[ée]dito/i);
   });
   it("sem STMTTRN dá erro", () => expect(() => parseOfx(Buffer.from("<OFX></OFX>"))).toThrow());
+});
+
+it("normalizarIdOfx ignora zeros à esquerda e pontuação", () => {
+  expect(normalizarIdOfx("0341")).toBe(normalizarIdOfx("341"));
+  expect(normalizarIdOfx("012345-6")).toBe(normalizarIdOfx("12345.6"));
+  expect(normalizarIdOfx("12345-6")).not.toBe(normalizarIdOfx("12345-7"));
 });
