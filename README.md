@@ -17,8 +17,9 @@ Sistema contábil web para um contador que atende várias empresas. Ele importa 
 2. Copie `.env.example` para `.env` e preencha:
    - `DATABASE_URL` (pooler, porta 6543) e `DIRECT_URL` (porta 5432, usada pelas migrations)
    - `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `ALLOWED_EMAILS`: e-mails autorizados, separados por vírgula. Defina sempre em produção; qualquer outro usuário é deslogado.
    - `ANTHROPIC_API_KEY` (opcional; sem ela só as regras sugerem) e `IA_MODEL`
-3. Crie um projeto no Supabase e crie o usuário do contador em **Authentication → Users** (não há tela de cadastro).
+3. Crie um projeto no Supabase e crie o usuário do contador em **Authentication → Users** (não há tela de cadastro). Em **Authentication → Sign In / Providers**, desligue "Allow new users to sign up".
 4. `pnpm db:migrate`
 5. `pnpm dev` e entre em http://localhost:3000 com o usuário criado.
 

@@ -3,6 +3,18 @@ import { NextResponse, type NextRequest } from "next/server";
 
 let avisou = false;
 
+export const ERRO_NAO_AUTORIZADO = "/login?erro=Acesso%20n%C3%A3o%20autorizado";
+
+/** ALLOWED_EMAILS vazio/ausente = qualquer usuário do Supabase Auth. */
+export function emailPermitido(email: string | undefined | null) {
+  const lista = (process.env.ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (lista.length === 0) return true;
+  return !!email && lista.includes(email.toLowerCase());
+}
+
 export async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -48,6 +60,14 @@ export async function updateSession(request: NextRequest) {
     loginUrl.pathname = "/login";
     loginUrl.search = "";
     return NextResponse.redirect(loginUrl);
+  }
+
+  if (data?.claims && !emailPermitido(data.claims.email as string | undefined)) {
+    await supabase.auth.signOut();
+    if (request.nextUrl.pathname.startsWith("/login")) return supabaseResponse;
+    const redirecionar = NextResponse.redirect(new URL(ERRO_NAO_AUTORIZADO, request.url));
+    supabaseResponse.cookies.getAll().forEach((c) => redirecionar.cookies.set(c));
+    return redirecionar;
   }
 
   return supabaseResponse;

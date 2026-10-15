@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { emailPermitido, ERRO_NAO_AUTORIZADO } from "./proxy";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -33,5 +34,9 @@ export async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  if (!emailPermitido(user.email)) {
+    await supabase.auth.signOut();
+    redirect(ERRO_NAO_AUTORIZADO);
+  }
   return user;
 }
