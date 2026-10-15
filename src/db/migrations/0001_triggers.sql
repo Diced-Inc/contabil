@@ -10,7 +10,7 @@ BEGIN
     RAISE EXCEPTION 'Partida precisa ter débito OU crédito positivo';
   END IF;
   RETURN NEW;
-END $$ LANGUAGE plpgsql;--> statement-breakpoint
+END $$ LANGUAGE plpgsql SET search_path = public;--> statement-breakpoint
 CREATE TRIGGER partida_conta BEFORE INSERT OR UPDATE ON partidas
   FOR EACH ROW EXECUTE FUNCTION check_partida_conta();--> statement-breakpoint
 
@@ -25,14 +25,14 @@ BEGIN
     RAISE EXCEPTION 'Lançamento % desbalanceado: D=% C=% (% partidas)', lid, d, c, n;
   END IF;
   RETURN NULL;
-END $$ LANGUAGE plpgsql;--> statement-breakpoint
+END $$ LANGUAGE plpgsql SET search_path = public;--> statement-breakpoint
 CREATE CONSTRAINT TRIGGER lancamento_balanceado AFTER INSERT OR UPDATE OR DELETE ON partidas
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_lancamento_balanceado();--> statement-breakpoint
 
 -- período fechado
 CREATE OR REPLACE FUNCTION periodo_fechado(e uuid, d date) RETURNS boolean AS $$
   SELECT EXISTS (SELECT 1 FROM fechamentos WHERE empresa_id = e AND competencia = date_trunc('month', d)::date);
-$$ LANGUAGE sql STABLE;--> statement-breakpoint
+$$ LANGUAGE sql STABLE SET search_path = public;--> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION check_lancamento_periodo() RETURNS trigger AS $$
 BEGIN
@@ -52,7 +52,7 @@ BEGIN
     END IF;
   END IF;
   RETURN NEW;
-END $$ LANGUAGE plpgsql;--> statement-breakpoint
+END $$ LANGUAGE plpgsql SET search_path = public;--> statement-breakpoint
 CREATE TRIGGER lancamento_periodo BEFORE INSERT OR UPDATE OR DELETE ON lancamentos
   FOR EACH ROW EXECUTE FUNCTION check_lancamento_periodo();--> statement-breakpoint
 
@@ -62,7 +62,7 @@ BEGIN
   SELECT * INTO l FROM lancamentos WHERE id = COALESCE(NEW.lancamento_id, OLD.lancamento_id);
   IF l.id IS NOT NULL AND periodo_fechado(l.empresa_id, l.data) THEN RAISE EXCEPTION 'Período fechado'; END IF;
   RETURN COALESCE(NEW, OLD);
-END $$ LANGUAGE plpgsql;--> statement-breakpoint
+END $$ LANGUAGE plpgsql SET search_path = public;--> statement-breakpoint
 CREATE TRIGGER partida_periodo BEFORE INSERT OR UPDATE OR DELETE ON partidas
   FOR EACH ROW EXECUTE FUNCTION check_partida_periodo();--> statement-breakpoint
 
