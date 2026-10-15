@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const selectCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 function Form({ empresaId, contas, setAberta }: { empresaId: string; contas: { id: string; nome: string }[]; setAberta: (aberta: boolean) => void }) {
   const [estado, enviar, pendente] = useActionState<EstadoImportacao, FormData>(importarOfx.bind(null, empresaId), {});

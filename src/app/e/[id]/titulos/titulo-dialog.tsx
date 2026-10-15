@@ -90,7 +90,7 @@ export function TituloDialog({ empresaId, tipo, contas }: { empresaId: string; t
   const [aberta, setAberta] = useState(false);
   return (
     <Dialog open={aberta} onOpenChange={setAberta}>
-      <DialogTrigger render={<Button variant="outline" />}>
+      <DialogTrigger render={<Button />}>
         <Plus />
         Novo título
       </DialogTrigger>

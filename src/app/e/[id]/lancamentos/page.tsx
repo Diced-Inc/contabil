@@ -1,23 +1,32 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { Plus, Search } from "lucide-react";
+import { BookOpen, Plus, Search } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Carregando, EmptyState, FilterField, PageHeader, TablePanel, Toolbar } from "@/components/page-header";
 import { fmtData, fmtValor, hoje, isoData, primeiroDiaDoMes } from "@/lib/format";
 import { getEmpresa } from "../empresa";
 import { ORIGENS, listarLancamentos, type Origem } from "./queries";
 
 const selectCls =
-  "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-9 cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+const ORIGEM_BADGE = { manual: "muted", conciliacao: "info", apuracao: "violet", estorno: "warning" } as const;
 
 function ultimoDiaDoMes(d: string) {
   const [y, m] = d.split("-").map(Number);
   return `${d.slice(0, 7)}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
 }
+
+const novoBtn = (id: string) => (
+  <Link href={`/e/${id}/lancamentos/novo`} className={buttonVariants()}>
+    <Plus />
+    Novo lançamento
+  </Link>
+);
 
 async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">) {
   await connection();
@@ -32,83 +41,95 @@ async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">)
 
   return (
     <>
-      <form className="mb-4 flex flex-wrap items-end gap-2 text-sm">
-        <label className="grid gap-1">
-          <span className="text-xs text-muted-foreground">De</span>
-          <Input type="date" name="de" defaultValue={de} className="w-36" />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-xs text-muted-foreground">Até</span>
-          <Input type="date" name="ate" defaultValue={ate} className="w-36" />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-xs text-muted-foreground">Histórico</span>
-          <Input name="texto" defaultValue={texto} placeholder="Buscar no histórico" className="w-56" />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-xs text-muted-foreground">Origem</span>
-          <select name="origem" defaultValue={origem ?? ""} className={selectCls}>
-            <option value="">Todas</option>
-            {Object.entries(ORIGENS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-        </label>
-        <Button type="submit" variant="outline">
-          <Search />
-          Filtrar
-        </Button>
-        <Link href={`/e/${id}/lancamentos/novo`} className={cn(buttonVariants(), "ml-auto")}>
-          <Plus />
-          Novo lançamento
-        </Link>
-      </form>
+      <PageHeader
+        title="Lançamentos"
+        description="Partidas dobradas aprovadas. Lançamentos não são excluídos: corrija com estorno."
+        actions={novoBtn(id)}
+      />
+      <Toolbar>
+        <form className="contents">
+          <FilterField label="De">
+            <Input type="date" name="de" defaultValue={de} className="w-40" />
+          </FilterField>
+          <FilterField label="Até">
+            <Input type="date" name="ate" defaultValue={ate} className="w-40" />
+          </FilterField>
+          <FilterField label="Histórico" className="min-w-48 flex-1">
+            <Input name="texto" defaultValue={texto} placeholder="Buscar no histórico" />
+          </FilterField>
+          <FilterField label="Origem">
+            <select name="origem" defaultValue={origem ?? ""} className={selectCls}>
+              <option value="">Todas</option>
+              {Object.entries(ORIGENS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </FilterField>
+          <Button type="submit" variant="outline">
+            <Search />
+            Filtrar
+          </Button>
+        </form>
+      </Toolbar>
 
       {lista.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum lançamento no período.</p>
+        <EmptyState
+          icon={BookOpen}
+          title="Nenhum lançamento no período"
+          hint={`Entre ${fmtData(de)} e ${fmtData(ate)} não há lançamentos com esses filtros.`}
+          action={novoBtn(id)}
+        />
       ) : (
-        <Table className="text-sm">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-16 text-right">Nº</TableHead>
-              <TableHead className="w-24">Data</TableHead>
-              <TableHead>Histórico</TableHead>
-              <TableHead>Débitos</TableHead>
-              <TableHead>Créditos</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead>Origem</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {lista.map((l) => (
-              <TableRow key={l.id} className={cn(l.status === "estornado" && "text-muted-foreground")}>
-                <TableCell className="py-1.5 text-right tabular-nums">
-                  <Link href={`/e/${id}/lancamentos/${l.id}`} className="underline-offset-4 hover:underline">
-                    {l.numero}
-                  </Link>
-                </TableCell>
-                <TableCell className="py-1.5">{fmtData(l.data)}</TableCell>
-                <TableCell className="max-w-80 truncate py-1.5">
-                  <Link href={`/e/${id}/lancamentos/${l.id}`} className="hover:underline">
-                    {l.historico}
-                  </Link>
-                </TableCell>
-                <TableCell className="py-1.5 tabular-nums">{l.debitos}</TableCell>
-                <TableCell className="py-1.5 tabular-nums">{l.creditos}</TableCell>
-                <TableCell className="py-1.5 text-right tabular-nums">{fmtValor(l.valor)}</TableCell>
-                <TableCell className="py-1.5">
-                  <Badge variant="secondary">{ORIGENS[l.origem]}</Badge>
-                </TableCell>
-                <TableCell className="py-1.5">
-                  <Badge variant={l.status === "estornado" ? "destructive" : "outline"}>
-                    {l.status === "estornado" ? "Estornado" : "Aprovado"}
-                  </Badge>
-                </TableCell>
+        <TablePanel>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-16 text-right">Nº</TableHead>
+                <TableHead className="w-28">Data</TableHead>
+                <TableHead>Histórico</TableHead>
+                <TableHead>Débitos</TableHead>
+                <TableHead>Créditos</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
+                <TableHead>Origem</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {lista.map((l) => {
+                const estornado = l.status === "estornado";
+                return (
+                  <TableRow key={l.id} className={cn(estornado && "text-muted-foreground")}>
+                    <TableCell className="text-right text-muted-foreground">
+                      <Link href={`/e/${id}/lancamentos/${l.id}`} className="hover:text-primary hover:underline">
+                        {l.numero}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{fmtData(l.data)}</TableCell>
+                    <TableCell className="max-w-56 truncate xl:max-w-80">
+                      <Link
+                        href={`/e/${id}/lancamentos/${l.id}`}
+                        className={cn("font-medium hover:text-primary hover:underline", estornado && "line-through decoration-muted-foreground/50")}
+                      >
+                        {l.historico}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="max-w-36 font-mono text-xs whitespace-normal text-muted-foreground">{l.debitos}</TableCell>
+                    <TableCell className="max-w-36 font-mono text-xs whitespace-normal text-muted-foreground">{l.creditos}</TableCell>
+                    <TableCell className={cn("text-right font-medium", estornado && "line-through decoration-muted-foreground/50")}>
+                      {fmtValor(l.valor)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={ORIGEM_BADGE[l.origem]}>{ORIGENS[l.origem]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {estornado ? <Badge variant="muted" className="line-through">Estornado</Badge> : <Badge variant="success">Aprovado</Badge>}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TablePanel>
       )}
     </>
   );
@@ -116,11 +137,8 @@ async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">)
 
 export default function LancamentosPage(props: PageProps<"/e/[id]/lancamentos">) {
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-semibold">Lançamentos</h1>
-      <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
-        <Lista {...props} />
-      </Suspense>
-    </div>
+    <Suspense fallback={<><PageHeader title="Lançamentos" /><Carregando /></>}>
+      <Lista {...props} />
+    </Suspense>
   );
 }

@@ -52,107 +52,116 @@ export function FormLancamento({ action, contas, inicial, voltar }: {
   const podeSalvar = linhas.length >= 2 && diferenca === 0 && totalD > 0 && !pendente;
 
   return (
-    <form action={enviar} className="grid gap-4">
+    <form action={enviar} className="grid max-w-5xl gap-5">
       {estado.erro && (
         <Alert variant="destructive">
           <CircleAlert />
           <AlertDescription>{estado.erro}</AlertDescription>
         </Alert>
       )}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="grid gap-2">
-          <Label htmlFor="data">Data</Label>
-          <Input id="data" name="data" type="date" required defaultValue={inicial?.data ?? hoje()} />
+      <section className="grid gap-4 rounded-xl border bg-card p-5 shadow-card">
+        <h2 className="text-sm font-semibold">Dados do lançamento</h2>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid gap-2">
+            <Label htmlFor="data">Data</Label>
+            <Input id="data" name="data" type="date" required defaultValue={inicial?.data ?? hoje()} />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="competencia">Competência</Label>
+            <Input id="competencia" name="competencia" type="month" defaultValue={inicial?.competencia.slice(0, 7)} />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="dataPagamento">Data de pagamento</Label>
+            <Input id="dataPagamento" name="dataPagamento" type="date" defaultValue={inicial?.dataPagamento ?? ""} />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="documento">Documento</Label>
+            <Input id="documento" name="documento" defaultValue={inicial?.documento ?? ""} />
+          </div>
         </div>
+        <p className="-mt-2 text-xs text-muted-foreground">Competência em branco: mês da data.</p>
         <div className="grid gap-2">
-          <Label htmlFor="competencia">Competência</Label>
-          <Input id="competencia" name="competencia" type="month" defaultValue={inicial?.competencia.slice(0, 7)} />
+          <Label htmlFor="historico">Histórico</Label>
+          <Input id="historico" name="historico" required minLength={3} defaultValue={inicial?.historico} />
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="dataPagamento">Data de pagamento</Label>
-          <Input id="dataPagamento" name="dataPagamento" type="date" defaultValue={inicial?.dataPagamento ?? ""} />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="documento">Documento</Label>
-          <Input id="documento" name="documento" defaultValue={inicial?.documento ?? ""} />
-        </div>
-      </div>
-      <p className="-mt-2 text-xs text-muted-foreground">Competência em branco: mês da data.</p>
-      <div className="grid gap-2">
-        <Label htmlFor="historico">Histórico</Label>
-        <Input id="historico" name="historico" required minLength={3} defaultValue={inicial?.historico} />
-      </div>
+      </section>
 
-      <Table className="text-sm">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Conta</TableHead>
-            <TableHead className="w-40 text-right">Débito</TableHead>
-            <TableHead className="w-40 text-right">Crédito</TableHead>
-            <TableHead className="w-10" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {linhas.map((l, i) => (
-            <TableRow key={l.key}>
-              <TableCell className="py-1">
-                <ContaSelect
-                  contas={contas}
-                  name={`partidas[${i}].contaId`}
-                  value={l.contaId}
-                  onChange={(v) => mudar(l.key, "contaId", v)}
-                />
-              </TableCell>
-              {(["debito", "credito"] as const).map((campo) => (
-                <TableCell key={campo} className="py-1">
-                  <Input
-                    name={`partidas[${i}].${campo}`}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder="0,00"
-                    className="text-right tabular-nums"
-                    aria-label={campo === "debito" ? "Débito" : "Crédito"}
-                    value={l[campo]}
-                    onChange={(e) => mudar(l.key, campo, e.target.value)}
+      <section className="overflow-hidden rounded-xl border bg-card shadow-card">
+        <div className="border-b px-5 py-3.5">
+          <h2 className="text-sm font-semibold">Partidas</h2>
+          <p className="text-xs text-muted-foreground">Débitos e créditos precisam fechar. Mínimo de duas partidas.</p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Conta</TableHead>
+              <TableHead className="w-40 text-right">Débito</TableHead>
+              <TableHead className="w-40 text-right">Crédito</TableHead>
+              <TableHead className="w-10" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {linhas.map((l, i) => (
+              <TableRow key={l.key}>
+                <TableCell className="py-2">
+                  <ContaSelect
+                    contas={contas}
+                    name={`partidas[${i}].contaId`}
+                    value={l.contaId}
+                    onChange={(v) => mudar(l.key, "contaId", v)}
                   />
                 </TableCell>
-              ))}
-              <TableCell className="py-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  title="Remover partida"
-                  aria-label="Remover partida"
-                  onClick={() => setLinhas((ls) => ls.filter((x) => x.key !== l.key))}
-                >
-                  <Trash2 />
+                {(["debito", "credito"] as const).map((campo) => (
+                  <TableCell key={campo} className="py-1">
+                    <Input
+                      name={`partidas[${i}].${campo}`}
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="0,00"
+                      className="text-right tabular-nums"
+                      aria-label={campo === "debito" ? "Débito" : "Crédito"}
+                      value={l[campo]}
+                      onChange={(e) => mudar(l.key, campo, e.target.value)}
+                    />
+                  </TableCell>
+                ))}
+                <TableCell className="py-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Remover partida"
+                    aria-label="Remover partida"
+                    onClick={() => setLinhas((ls) => ls.filter((x) => x.key !== l.key))}
+                  >
+                    <Trash2 />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell>
+                <Button type="button" variant="outline" size="sm" onClick={() => setLinhas((ls) => [...ls, novaLinha()])}>
+                  <Plus />
+                  Adicionar partida
                 </Button>
               </TableCell>
+              <TableCell className="text-right tabular-nums">{fmtValor(fromCents(totalD))}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmtValor(fromCents(totalC))}</TableCell>
+              <TableCell />
             </TableRow>
-          ))}
-        </TableBody>
-        <TableFooter>
-          <TableRow>
-            <TableCell>
-              <Button type="button" variant="outline" size="sm" onClick={() => setLinhas((ls) => [...ls, novaLinha()])}>
-                <Plus />
-                Adicionar partida
-              </Button>
-            </TableCell>
-            <TableCell className="text-right tabular-nums">{fmtValor(fromCents(totalD))}</TableCell>
-            <TableCell className="text-right tabular-nums">{fmtValor(fromCents(totalC))}</TableCell>
-            <TableCell />
-          </TableRow>
-          <TableRow>
-            <TableCell className="text-right text-muted-foreground">Diferença (D − C)</TableCell>
-            <TableCell colSpan={2} className={cn("text-right tabular-nums font-semibold", diferenca !== 0 && "text-red-700")}>
-              {fmtValor(fromCents(diferenca))}
-            </TableCell>
-            <TableCell />
-          </TableRow>
-        </TableFooter>
-      </Table>
+            <TableRow>
+              <TableCell className="text-right text-muted-foreground">Diferença (D − C)</TableCell>
+              <TableCell colSpan={2} className={cn("text-right tabular-nums font-semibold", diferenca !== 0 ? "text-danger" : "text-success")}>
+                {fmtValor(fromCents(diferenca))}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
+        </Table>
+      </section>
 
       <div className="flex justify-end gap-2">
         <Link href={voltar} className={buttonVariants({ variant: "outline" })}>

@@ -8,6 +8,7 @@ import { editarLancamentoManual } from "@/actions/lancamentos";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Carregando, PageHeader, TablePanel } from "@/components/page-header";
 import { cents, fmtCompetencia, fmtData, fmtValor, fromCents } from "@/lib/format";
 import type { RetratoLancamento } from "@/lib/lancamentos";
 import { requireUser } from "@/supabase/server";
@@ -18,6 +19,7 @@ import { transacaoDoLancamento } from "../../conciliacao/queries";
 import { DesfazerConciliacaoDialog, EstornarDialog } from "./estornar-dialog";
 
 const TZ = "America/Sao_Paulo";
+const ORIGEM_BADGE = { manual: "muted", conciliacao: "info", apuracao: "violet", estorno: "warning" } as const;
 const CAMPOS: [keyof RetratoLancamento, string][] = [
   ["data", "data"], ["competencia", "competência"], ["dataPagamento", "pagamento"],
   ["historico", "histórico"], ["documento", "documento"],
@@ -59,7 +61,7 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
     const contas = await listarContasAnaliticas(id);
     return (
       <>
-        <h1 className="mb-4 text-2xl font-semibold">Editar lançamento {l.numero}</h1>
+        <PageHeader title={`Editar lançamento nº ${l.numero}`} description={l.historico} />
         <FormLancamento
           action={editarLancamentoManual.bind(null, id, lid)}
           contas={contas}
@@ -72,105 +74,116 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
 
   const totalD = l.partidas.reduce((s, p) => s + cents(p.debito), 0);
   const totalC = l.partidas.reduce((s, p) => s + cents(p.credito), 0);
+  const estornado = l.status === "estornado";
 
   return (
     <>
-      <Link href={base} className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-3" />
+      <Link href={base} className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="size-3.5" />
         Lançamentos
       </Link>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-semibold">Lançamento {l.numero}</h1>
-        <Badge variant="secondary">{ORIGENS[l.origem]}</Badge>
-        <Badge variant={l.status === "estornado" ? "destructive" : "outline"}>
-          {l.status === "estornado" ? "Estornado" : "Aprovado"}
-        </Badge>
-        <div className="ml-auto flex gap-2">
-          {editavel && (
-            <Link href={`${base}/${lid}?editar=1`} className={buttonVariants({ variant: "outline" })}>
-              <Pencil />
-              Editar
-            </Link>
-          )}
-          {estornavel && <EstornarDialog empresaId={id} lancamentoId={lid} numero={l.numero} />}
-          {desfazerTx && <DesfazerConciliacaoDialog empresaId={id} transacaoId={desfazerTx} numero={l.numero} />}
-        </div>
-      </div>
+      <PageHeader
+        title={
+          <span className="flex flex-wrap items-center gap-2.5">
+            Lançamento nº {l.numero}
+            <Badge variant={ORIGEM_BADGE[l.origem]}>{ORIGENS[l.origem]}</Badge>
+            {estornado ? <Badge variant="muted" className="line-through">Estornado</Badge> : <Badge variant="success">Aprovado</Badge>}
+          </span>
+        }
+        actions={
+          <>
+            {editavel && (
+              <Link href={`${base}/${lid}?editar=1`} className={buttonVariants({ variant: "outline" })}>
+                <Pencil />
+                Editar
+              </Link>
+            )}
+            {estornavel && <EstornarDialog empresaId={id} lancamentoId={lid} numero={l.numero} />}
+            {desfazerTx && <DesfazerConciliacaoDialog empresaId={id} transacaoId={desfazerTx} numero={l.numero} />}
+          </>
+        }
+      />
 
-      <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
-        <div><dt className="text-xs text-muted-foreground">Data</dt><dd>{fmtData(l.data)}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Competência</dt><dd>{fmtCompetencia(l.competencia)}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Data de pagamento</dt><dd>{l.dataPagamento ? fmtData(l.dataPagamento) : "-"}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Documento</dt><dd>{l.documento ?? "-"}</dd></div>
-        <div className="col-span-full"><dt className="text-xs text-muted-foreground">Histórico</dt><dd>{l.historico}</dd></div>
+      <dl className="mb-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border bg-card p-5 text-sm shadow-card md:grid-cols-4 [&_dd]:mt-1 [&_dd]:font-medium [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-wider [&_dt]:text-muted-foreground [&_dt]:uppercase">
+        <div><dt>Data</dt><dd>{fmtData(l.data)}</dd></div>
+        <div><dt>Competência</dt><dd>{fmtCompetencia(l.competencia)}</dd></div>
+        <div><dt>Data de pagamento</dt><dd>{l.dataPagamento ? fmtData(l.dataPagamento) : "-"}</dd></div>
+        <div><dt>Documento</dt><dd>{l.documento ?? "-"}</dd></div>
+        <div className="col-span-full"><dt>Histórico</dt><dd>{l.historico}</dd></div>
         {l.original && (
           <div className="col-span-full">
-            <dt className="text-xs text-muted-foreground">Estorno de</dt>
-            <dd><Link href={`${base}/${l.original.id}`} className="underline underline-offset-4">Lançamento {l.original.numero}</Link></dd>
+            <dt>Estorno de</dt>
+            <dd><Link href={`${base}/${l.original.id}`} className="text-primary underline-offset-4 hover:underline">Lançamento {l.original.numero}</Link></dd>
           </div>
         )}
         {l.estorno && (
           <div className="col-span-full">
-            <dt className="text-xs text-muted-foreground">Estornado por</dt>
-            <dd><Link href={`${base}/${l.estorno.id}`} className="underline underline-offset-4">Lançamento {l.estorno.numero}</Link></dd>
+            <dt>Estornado por</dt>
+            <dd><Link href={`${base}/${l.estorno.id}`} className="text-primary underline-offset-4 hover:underline">Lançamento {l.estorno.numero}</Link></dd>
           </div>
         )}
       </dl>
 
-      <Table className="mb-8 text-sm">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Conta</TableHead>
-            <TableHead className="w-40 text-right">Débito</TableHead>
-            <TableHead className="w-40 text-right">Crédito</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {l.partidas.map((p, i) => (
-            <TableRow key={i}>
-              <TableCell className="py-1.5">
-                <span className="tabular-nums text-muted-foreground">{p.codigo}</span> {p.nome}
-              </TableCell>
-              <TableCell className="py-1.5 text-right tabular-nums">{Number(p.debito) ? fmtValor(p.debito) : ""}</TableCell>
-              <TableCell className="py-1.5 text-right tabular-nums">{Number(p.credito) ? fmtValor(p.credito) : ""}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-        <TableFooter>
-          <TableRow>
-            <TableCell>Total</TableCell>
-            <TableCell className="text-right tabular-nums">{fmtValor(fromCents(totalD))}</TableCell>
-            <TableCell className="text-right tabular-nums">{fmtValor(fromCents(totalC))}</TableCell>
-          </TableRow>
-        </TableFooter>
-      </Table>
-
-      <h2 className="mb-2 text-lg font-semibold">Histórico de alterações</h2>
-      {log.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Sem registros.</p>
-      ) : (
-        <Table className="text-sm">
+      <h2 className="mb-3 text-sm font-semibold">Partidas</h2>
+      <TablePanel className="mb-8">
+        <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-28">Ação</TableHead>
-              <TableHead className="w-48">Usuário</TableHead>
-              <TableHead className="w-40">Data</TableHead>
-              <TableHead>Resumo</TableHead>
+              <TableHead>Conta</TableHead>
+              <TableHead className="w-40 text-right">Débito</TableHead>
+              <TableHead className="w-40 text-right">Crédito</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {log.map((g) => (
-              <TableRow key={g.id}>
-                <TableCell className="py-1.5">{ACOES_LOG[g.acao]}</TableCell>
-                <TableCell className="py-1.5">
-                  {!g.usuarioId ? "-" : g.usuarioId === user.id ? (user.email ?? "você") : g.usuarioId.slice(0, 8)}
+            {l.partidas.map((p, i) => (
+              <TableRow key={i}>
+                <TableCell>
+                  <span className="mr-2 font-mono text-xs text-muted-foreground">{p.codigo}</span>
+                  {p.nome}
                 </TableCell>
-                <TableCell className="py-1.5">{g.createdAt.toLocaleString("pt-BR", { timeZone: TZ })}</TableCell>
-                <TableCell className="py-1.5 whitespace-normal">{resumo(g.acao, g.antes, g.depois)}</TableCell>
+                <TableCell className="text-right">{Number(p.debito) ? fmtValor(p.debito) : ""}</TableCell>
+                <TableCell className="text-right">{Number(p.credito) ? fmtValor(p.credito) : ""}</TableCell>
               </TableRow>
             ))}
           </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell>Total</TableCell>
+              <TableCell className="text-right">{fmtValor(fromCents(totalD))}</TableCell>
+              <TableCell className="text-right">{fmtValor(fromCents(totalC))}</TableCell>
+            </TableRow>
+          </TableFooter>
         </Table>
+      </TablePanel>
+
+      <h2 className="mb-3 text-sm font-semibold">Histórico de alterações</h2>
+      {log.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Sem registros.</p>
+      ) : (
+        <TablePanel>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-32">Ação</TableHead>
+                <TableHead className="w-56">Usuário</TableHead>
+                <TableHead className="w-44">Data</TableHead>
+                <TableHead>Resumo</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {log.map((g) => (
+                <TableRow key={g.id}>
+                  <TableCell><Badge variant="muted">{ACOES_LOG[g.acao]}</Badge></TableCell>
+                  <TableCell>
+                    {!g.usuarioId ? "-" : g.usuarioId === user.id ? (user.email ?? "você") : g.usuarioId.slice(0, 8)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{g.createdAt.toLocaleString("pt-BR", { timeZone: TZ })}</TableCell>
+                  <TableCell className="whitespace-normal">{resumo(g.acao, g.antes, g.depois)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TablePanel>
       )}
     </>
   );
@@ -178,10 +191,8 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
 
 export default function LancamentoPage(props: PageProps<"/e/[id]/lancamentos/[lid]">) {
   return (
-    <div>
-      <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
-        <Detalhe {...props} />
-      </Suspense>
-    </div>
+    <Suspense fallback={<Carregando />}>
+      <Detalhe {...props} />
+    </Suspense>
   );
 }

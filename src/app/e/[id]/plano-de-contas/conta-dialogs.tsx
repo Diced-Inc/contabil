@@ -25,7 +25,7 @@ export type ContaLinha = {
 type Acao = (prev: EstadoForm, form: FormData) => Promise<EstadoForm>;
 
 const selectCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 function Opcoes({ mapa, vazio }: { mapa: Record<string, string>; vazio?: string }) {
   return (
@@ -111,7 +111,7 @@ export function ContaAcoes({ empresaId, conta, codigoSugerido }: { empresaId: st
   return (
     <div className="flex justify-end gap-1">
       <Dialog open={novaAberta} onOpenChange={setNovaAberta}>
-        <DialogTrigger render={<Button variant="ghost" size="icon-sm" title="Nova subconta" aria-label="Nova subconta" />}>
+        <DialogTrigger render={<Button variant="ghost" size="icon-xs" title="Nova subconta" aria-label="Nova subconta" />}>
           <Plus />
         </DialogTrigger>
         <DialogContent>
@@ -127,7 +127,7 @@ export function ContaAcoes({ empresaId, conta, codigoSugerido }: { empresaId: st
         </DialogContent>
       </Dialog>
       <Dialog open={editAberta} onOpenChange={setEditAberta}>
-        <DialogTrigger render={<Button variant="ghost" size="icon-sm" title="Editar" aria-label="Editar" />}>
+        <DialogTrigger render={<Button variant="ghost" size="icon-xs" title="Editar" aria-label="Editar" />}>
           <Pencil />
         </DialogTrigger>
         <DialogContent>

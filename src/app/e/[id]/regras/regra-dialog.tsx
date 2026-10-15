@@ -17,7 +17,7 @@ import { SINAIS, TIPOS_MATCH } from "@/lib/classificacao/regras";
 import type { RegraLinha } from "./queries";
 
 const selectCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 function Erro({ msg }: { msg?: string }) {
   if (!msg) return null;
@@ -109,7 +109,7 @@ export function RegraDialog({ empresaId, contas, regra }: { empresaId: string; c
           <Pencil />
         </DialogTrigger>
       ) : (
-        <DialogTrigger render={<Button variant="outline" />}>
+        <DialogTrigger render={<Button />}>
           <Plus />
           Nova regra
         </DialogTrigger>

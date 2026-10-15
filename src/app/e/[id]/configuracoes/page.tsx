@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { atualizarEmpresa } from "@/actions/empresas";
 import { EmpresaForm } from "@/components/empresa-form";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 import { getEmpresa } from "../empresa";
 
 async function Form({ params }: Pick<PageProps<"/e/[id]/configuracoes">, "params">) {
@@ -14,11 +15,12 @@ async function Form({ params }: Pick<PageProps<"/e/[id]/configuracoes">, "params
 
 export default function ConfiguracoesPage({ params }: PageProps<"/e/[id]/configuracoes">) {
   return (
-    <div className="max-w-lg">
-      <h1 className="mb-6 text-2xl font-semibold">Configurações</h1>
+    <div className="max-w-2xl">
+      <PageHeader title="Configurações" description="Dados cadastrais usados nos cabeçalhos dos relatórios." />
       <Card>
-        <CardHeader>
+        <CardHeader className="border-b">
           <CardTitle>Dados da empresa</CardTitle>
+          <CardDescription>Razão social, CNPJ e regime tributário.</CardDescription>
         </CardHeader>
         <CardContent>
           <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>

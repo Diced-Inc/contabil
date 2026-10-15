@@ -7,6 +7,7 @@ import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Carregando, PageHeader, TablePanel } from "@/components/page-header";
 import { db } from "@/db";
 import { planoContas } from "@/db/schema";
 import { GRUPOS_DRE, NATUREZAS, PAPEIS } from "@/lib/format";
@@ -38,66 +39,71 @@ async function Arvore({ params, searchParams }: PageProps<"/e/[id]/plano-de-cont
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
-        <Link
-          href={mostrarInativas ? `/e/${id}/plano-de-contas` : `/e/${id}/plano-de-contas?inativas=1`}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          {mostrarInativas ? <EyeOff /> : <Eye />}
-          {mostrarInativas ? "Ocultar inativas" : "Mostrar inativas"}
-        </Link>
-      </div>
-      <Table className="text-sm">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-40">Código</TableHead>
-            <TableHead>Nome</TableHead>
-            <TableHead>Classificação</TableHead>
-            <TableHead className="w-24 text-right">Ações</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {visiveis.map((c) => {
-            const nivel = c.codigo.split(".").length;
-            const sintetica = c.tipo === "sintetica";
-            return (
-              <TableRow key={c.id} className={cn(!c.ativa && "text-muted-foreground")}>
-                <TableCell className={cn("py-1 tabular-nums", sintetica && "font-semibold")}>{c.codigo}</TableCell>
-                <TableCell className={cn("py-1", sintetica && "font-semibold")} style={{ paddingLeft: `${(nivel - 1) * 1.25 + 0.5}rem` }}>
-                  {c.nome}
-                  {!c.ativa && <span className="ml-2 text-xs">(inativa)</span>}
-                </TableCell>
-                <TableCell className="py-1">
-                  {!sintetica && (
-                    <div className="flex flex-wrap gap-1">
-                      <Badge variant="outline">{NATUREZAS[c.natureza]}</Badge>
-                      {c.grupoDre && <Badge variant="secondary">{GRUPOS_DRE[c.grupoDre]}</Badge>}
-                      {c.papel && <Badge>{PAPEIS[c.papel]}</Badge>}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell className="py-1">
-                  <ContaAcoes empresaId={id} conta={c} codigoSugerido={proximoCodigo(c, todas)} />
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+      <PageHeader
+        title="Plano de contas"
+        description={DESCRICAO}
+        actions={
+          <Link
+            href={mostrarInativas ? `/e/${id}/plano-de-contas` : `/e/${id}/plano-de-contas?inativas=1`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            {mostrarInativas ? <EyeOff /> : <Eye />}
+            {mostrarInativas ? "Ocultar inativas" : "Mostrar inativas"}
+          </Link>
+        }
+      />
+      <TablePanel>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-36">Código</TableHead>
+              <TableHead>Nome</TableHead>
+              <TableHead>Classificação</TableHead>
+              <TableHead className="w-24 text-right">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visiveis.map((c) => {
+              const nivel = c.codigo.split(".").length;
+              const sintetica = c.tipo === "sintetica";
+              return (
+                <TableRow key={c.id} className={cn(!c.ativa && "text-muted-foreground", nivel === 1 && "bg-muted/30")}>
+                  <TableCell className={cn("py-1.5 font-mono text-xs text-muted-foreground", nivel === 1 && "text-foreground")}>{c.codigo}</TableCell>
+                  <TableCell
+                    className={cn("py-1.5", sintetica && "font-semibold", nivel === 1 && "text-[15px]")}
+                    style={{ paddingLeft: `${(nivel - 1) * 1.25 + 0.75}rem` }}
+                  >
+                    {c.nome}
+                    {!c.ativa && <Badge variant="muted" className="ml-2 font-normal">inativa</Badge>}
+                  </TableCell>
+                  <TableCell className="py-1.5">
+                    {!sintetica && (
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant={c.natureza === "D" ? "info" : "violet"}>{NATUREZAS[c.natureza]}</Badge>
+                        {c.grupoDre && <Badge variant="muted">{GRUPOS_DRE[c.grupoDre]}</Badge>}
+                        {c.papel && <Badge variant="brand">{PAPEIS[c.papel]}</Badge>}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-1.5">
+                    <ContaAcoes empresaId={id} conta={c} codigoSugerido={proximoCodigo(c, todas)} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TablePanel>
     </>
   );
 }
 
+const DESCRICAO = "Só contas analíticas recebem lançamentos. Contas não são excluídas, apenas inativadas.";
+
 export default function PlanoDeContasPage(props: PageProps<"/e/[id]/plano-de-contas">) {
   return (
-    <div>
-      <h1 className="mb-2 text-2xl font-semibold">Plano de contas</h1>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Só contas analíticas recebem lançamentos. Contas não são excluídas, apenas inativadas.
-      </p>
-      <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
-        <Arvore {...props} />
-      </Suspense>
-    </div>
+    <Suspense fallback={<><PageHeader title="Plano de contas" description={DESCRICAO} /><Carregando /></>}>
+      <Arvore {...props} />
+    </Suspense>
   );
 }

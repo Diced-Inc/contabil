@@ -8,6 +8,7 @@ import { cn } from "cn";
 import type { EstadoForm } from "@/actions/empresas";
 import { aprovarClassificacao, baixarTituloPelaTransacao, ignorarTransacao, marcarTransferencia } from "@/actions/conciliacao";
 import { ContaSelect, type ContaOpcao } from "@/components/conta-select";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ import { SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classific
 import type { TituloAberto, TransacaoLinha } from "./queries";
 
 const selectCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 const centavos = (s: string) => cents(parseValorBR(s) || 0);
 
 type Props = {
@@ -35,7 +36,7 @@ type Props = {
 export function PainelTransacao({ transacao: t, onClose, ...rest }: Props) {
   return (
     <Sheet open={!!t} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full overflow-y-auto data-[side=right]:sm:max-w-2xl">
+      <SheetContent className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-[520px]">
         {t && <Conteudo t={t} onClose={onClose} {...rest} />}
       </SheetContent>
     </Sheet>
@@ -58,17 +59,19 @@ function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props,
 
   return (
     <>
-      <SheetHeader className="border-b">
-        <SheetTitle className="flex items-center gap-3">
-          <span>{fmtData(t.data)}</span>
-          <Valor v={t.valor} className="text-lg font-semibold" />
+      <SheetHeader className="gap-2 bg-muted/40 pr-12">
+        <div className="flex items-center gap-2">
+          <Badge variant={entrada ? "success" : "danger"}>{entrada ? "Entrada" : "Saída"}</Badge>
+          <span className="text-xs text-muted-foreground">{fmtData(t.data)} · {t.contaBancariaNome}</span>
+        </div>
+        <SheetTitle className="text-2xl">
+          <span className="mr-1 text-base font-medium text-muted-foreground">R$</span>
+          <Valor v={t.valor} className="font-semibold" />
         </SheetTitle>
-        <SheetDescription className="break-words">
-          {t.contaBancariaNome} · {t.memo || "(sem memo)"}
-        </SheetDescription>
+        <SheetDescription className="break-words">{t.memo || "(sem memo)"}</SheetDescription>
       </SheetHeader>
-      <Tabs defaultValue={t.sugestaoOrigem === "transferencia" ? "transferencia" : "classificar"} className="px-4 pb-4">
-        <TabsList>
+      <Tabs defaultValue={t.sugestaoOrigem === "transferencia" ? "transferencia" : "classificar"} className="gap-3 px-6 py-5">
+        <TabsList className="w-full">
           <TabsTrigger value="classificar">Classificar</TabsTrigger>
           <TabsTrigger value="titulo">Baixar título</TabsTrigger>
           <TabsTrigger value="transferencia">Transferência</TabsTrigger>
@@ -150,7 +153,7 @@ function Classificar({ t, total, entrada, contas, pendente, enviar }: {
           </Button>
           <span className="tabular-nums text-muted-foreground">
             Soma {fmtValor(fromCents(soma))} · Diferença{" "}
-            <span className={cn(dif !== 0 && "font-medium text-red-700")}>{fmtValor(fromCents(dif))}</span>
+            <span className={cn(dif !== 0 && "font-medium text-danger")}>{fmtValor(fromCents(dif))}</span>
           </span>
         </div>
       </div>
@@ -225,14 +228,14 @@ function BaixarTitulo({ total, titulos, contas, pendente, enviar }: {
     <div className="grid gap-3">
       <div className="grid max-h-80 gap-1 overflow-y-auto">
         {titulos.map((x) => (
-          <label key={x.id} className={cn("flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5", x.id === tituloId && "border-primary bg-muted")}>
+          <label key={x.id} className={cn("flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted/50", x.id === tituloId && "border-primary bg-accent")}>
             <input type="radio" name="titulo" checked={x.id === tituloId} onChange={() => setTituloId(x.id)} />
             <span className="min-w-0 flex-1 truncate">
               <span className="font-medium">{x.contraparte}</span> · {x.descricao}
               {x.documento && <span className="text-muted-foreground"> · {x.documento}</span>}
             </span>
             {x.vencimento && <span className="text-xs tabular-nums text-muted-foreground">{fmtData(x.vencimento)}</span>}
-            <span className={cn("tabular-nums", cents(x.valor) === total && "font-medium text-emerald-700")}>{fmtValor(x.valor)}</span>
+            <span className={cn("tabular-nums", cents(x.valor) === total && "font-medium text-success")}>{fmtValor(x.valor)}</span>
           </label>
         ))}
       </div>

@@ -50,7 +50,7 @@ export function EmpresaForm({ action, empresa, rotulo }: { action: Acao; empresa
           id="regimeTributario"
           name="regimeTributario"
           defaultValue={empresa?.regimeTributario ?? "simples"}
-          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {Object.entries(REGIMES).map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
