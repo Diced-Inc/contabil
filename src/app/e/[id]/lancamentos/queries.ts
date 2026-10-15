@@ -18,10 +18,12 @@ export function listarContasAnaliticas(empresaId: string) {
     .orderBy(asc(planoContas.codigo));
 }
 
+// SQL cru com aliases: em select de tabela única o drizzle não qualifica as colunas, e `${lancamentos.id}`
+// virava "id" (ambíguo / casava a tabela do subselect).
 const codigos = (lado: "debito" | "credito") => sql<string>`(
-  select coalesce(string_agg(distinct ${planoContas.codigo}, ', '), '')
-  from ${partidas} inner join ${planoContas} on ${planoContas.id} = ${partidas.contaId}
-  where ${partidas.lancamentoId} = ${lancamentos.id} and ${partidas[lado]} > 0
+  select coalesce(string_agg(distinct pc.codigo, ', '), '')
+  from partidas p inner join plano_contas pc on pc.id = p.conta_id
+  where p.lancamento_id = "lancamentos"."id" and p.${sql.raw(lado)} > 0
 )`;
 
 export function listarLancamentos(empresaId: string, f: { de: string; ate: string; texto?: string; origem?: Origem }) {
@@ -35,7 +37,7 @@ export function listarLancamentos(empresaId: string, f: { de: string; ate: strin
       status: lancamentos.status,
       debitos: codigos("debito"),
       creditos: codigos("credito"),
-      valor: sql<string>`(select coalesce(sum(${partidas.debito}), 0)::text from ${partidas} where ${partidas.lancamentoId} = ${lancamentos.id})`,
+      valor: sql<string>`(select coalesce(sum(p.debito), 0)::text from partidas p where p.lancamento_id = "lancamentos"."id")`,
     })
     .from(lancamentos)
     .where(

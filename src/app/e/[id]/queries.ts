@@ -19,10 +19,13 @@ export function ultimosLancamentos(empresaId: string) {
       numero: lancamentos.numero,
       data: lancamentos.data,
       historico: lancamentos.historico,
-      valor: sql<string>`(select coalesce(sum(${partidas.debito}), 0)::text from ${partidas} where ${partidas.lancamentoId} = ${lancamentos.id})`,
+      // Join + group by: no subselect correlacionado o drizzle não qualifica `lancamentos.id` e casava partidas.id.
+      valor: sql<string>`coalesce(sum(${partidas.debito}), 0)::text`,
     })
     .from(lancamentos)
+    .leftJoin(partidas, eq(partidas.lancamentoId, lancamentos.id))
     .where(eq(lancamentos.empresaId, empresaId))
+    .groupBy(lancamentos.id)
     .orderBy(desc(lancamentos.data), desc(lancamentos.numero))
     .limit(10);
 }
