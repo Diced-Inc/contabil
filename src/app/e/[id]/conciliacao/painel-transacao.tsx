@@ -6,7 +6,9 @@ import { ArrowLeftRight, Ban, Check, HandCoins, Plus, Trash2 } from "lucide-reac
 import { toast } from "sonner";
 import { cn } from "cn";
 import type { EstadoForm } from "@/actions/empresas";
-import { aprovarClassificacao, baixarTituloPelaTransacao, ignorarTransacao, marcarTransferencia } from "@/actions/conciliacao";
+import {
+  aprovarClassificacao, baixarTituloPelaTransacao, ignorarTransacao, marcarTransferencia, reclassificar, type ClassificacaoInput,
+} from "@/actions/conciliacao";
 import { ContaSelect, type ContaOpcao } from "@/components/conta-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Valor } from "@/components/valor";
 import { cents, fmtData, fmtValor, fromCents, parseValorBR, valorParaInput } from "@/lib/format";
 import { SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classificacao/regras";
-import type { TituloAberto, TransacaoLinha } from "./queries";
+import type { ConciliadaLinha, TituloAberto, TransacaoLinha } from "./queries";
 
 const selectCls =
   "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -43,7 +45,20 @@ export function PainelTransacao({ transacao: t, onClose, ...rest }: Props) {
   );
 }
 
-function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props, "transacao"> & { t: TransacaoLinha }) {
+/** Só a aba Classificar, preenchida com o lançamento atual; ao enviar estorna e reclassifica. */
+export function PainelReclassificar({ empresaId, transacao: c, contas, onClose }: {
+  empresaId: string; transacao: ConciliadaLinha | null; contas: ContaOpcao[]; onClose: () => void;
+}) {
+  return (
+    <Sheet open={!!c} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-[520px]">
+        {c && <Reclassificar c={c} empresaId={empresaId} contas={contas} onClose={onClose} />}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function useExecutar(onClose: () => void) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
   const executar = (acao: () => Promise<EstadoForm>, sucesso: string) =>
@@ -54,22 +69,59 @@ function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props,
       onClose();
       router.refresh();
     });
+  return [pendente, executar] as const;
+}
+
+function Reclassificar({ c, empresaId, contas, onClose }: { c: ConciliadaLinha; empresaId: string; contas: ContaOpcao[]; onClose: () => void }) {
+  const [pendente, executar] = useExecutar(onClose);
+  const t = { ...c, id: c.transacaoId };
+  const total = Math.abs(cents(t.valor));
+  return (
+    <>
+      <Cabecalho t={t} />
+      <div className="px-6 py-5">
+        <p className="mb-3 text-xs text-muted-foreground">
+          O lançamento {c.numero} é estornado com a data de hoje e um novo é criado com a classificação abaixo.
+        </p>
+        <Classificar t={t} total={total} entrada={cents(t.valor) > 0} contas={contas} pendente={pendente}
+          inicial={{
+            linhas: c.contras.map((x) => ({ contaId: x.contaId, valor: valorParaInput(x.valor) })),
+            historico: c.historico, documento: c.documento ?? "", competencia: c.competencia.slice(0, 7),
+          }}
+          enviar={(input) => executar(() => reclassificar(empresaId, input), "Transação reclassificada.")} />
+      </div>
+    </>
+  );
+}
+
+type TransacaoBase = Pick<TransacaoLinha, "id" | "data" | "valor" | "memo" | "contaBancariaNome">
+  & Partial<Pick<TransacaoLinha, "sugestaoOrigem" | "sugestaoContaId" | "sugestaoHistorico" | "sugestaoJustificativa">>;
+
+function Cabecalho({ t }: { t: TransacaoBase }) {
+  const entrada = cents(t.valor) > 0;
+  return (
+    <SheetHeader className="gap-2 bg-muted/40 pr-12">
+      <div className="flex items-center gap-2">
+        <Badge variant={entrada ? "success" : "danger"}>{entrada ? "Entrada" : "Saída"}</Badge>
+        <span className="text-xs text-muted-foreground">{fmtData(t.data)} · {t.contaBancariaNome}</span>
+      </div>
+      <SheetTitle className="text-2xl">
+        <span className="mr-1 text-base font-medium text-muted-foreground">R$</span>
+        <Valor v={t.valor} className="font-semibold" />
+      </SheetTitle>
+      <SheetDescription className="break-words">{t.memo || "(sem memo)"}</SheetDescription>
+    </SheetHeader>
+  );
+}
+
+function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props, "transacao"> & { t: TransacaoLinha }) {
+  const [pendente, executar] = useExecutar(onClose);
   const total = Math.abs(cents(t.valor));
   const entrada = cents(t.valor) > 0;
 
   return (
     <>
-      <SheetHeader className="gap-2 bg-muted/40 pr-12">
-        <div className="flex items-center gap-2">
-          <Badge variant={entrada ? "success" : "danger"}>{entrada ? "Entrada" : "Saída"}</Badge>
-          <span className="text-xs text-muted-foreground">{fmtData(t.data)} · {t.contaBancariaNome}</span>
-        </div>
-        <SheetTitle className="text-2xl">
-          <span className="mr-1 text-base font-medium text-muted-foreground">R$</span>
-          <Valor v={t.valor} className="font-semibold" />
-        </SheetTitle>
-        <SheetDescription className="break-words">{t.memo || "(sem memo)"}</SheetDescription>
-      </SheetHeader>
+      <Cabecalho t={t} />
       <Tabs defaultValue={t.sugestaoOrigem === "transferencia" ? "transferencia" : "classificar"} className="gap-3 px-6 py-5">
         <TabsList className="w-full">
           <TabsTrigger value="classificar">Classificar</TabsTrigger>
@@ -103,15 +155,17 @@ function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props,
 
 type Linha = { contaId: string | null; valor: string };
 
-function Classificar({ t, total, entrada, contas, pendente, enviar }: {
-  t: TransacaoLinha; total: number; entrada: boolean; contas: ContaOpcao[]; pendente: boolean;
-  enviar: (input: Parameters<typeof aprovarClassificacao>[1]) => void;
+function Classificar({ t, total, entrada, contas, pendente, enviar, inicial }: {
+  t: TransacaoBase; total: number; entrada: boolean; contas: ContaOpcao[]; pendente: boolean;
+  enviar: (input: ClassificacaoInput) => void;
+  /** Reclassificação: valores do lançamento atual; sem "criar regra". */
+  inicial?: { linhas: Linha[]; historico: string; documento: string; competencia: string };
 }) {
-  const sugerida = t.sugestaoOrigem && t.sugestaoOrigem !== "transferencia" ? t.sugestaoContaId : null;
-  const [linhas, setLinhas] = useState<Linha[]>([{ contaId: sugerida, valor: valorParaInput(fromCents(total)) }]);
-  const [historico, setHistorico] = useState(t.sugestaoHistorico || t.memo);
-  const [documento, setDocumento] = useState("");
-  const [competencia, setCompetencia] = useState(t.data.slice(0, 7));
+  const sugerida = t.sugestaoOrigem && t.sugestaoOrigem !== "transferencia" ? (t.sugestaoContaId ?? null) : null;
+  const [linhas, setLinhas] = useState<Linha[]>(inicial?.linhas ?? [{ contaId: sugerida, valor: valorParaInput(fromCents(total)) }]);
+  const [historico, setHistorico] = useState(inicial?.historico ?? (t.sugestaoHistorico || t.memo));
+  const [documento, setDocumento] = useState(inicial?.documento ?? "");
+  const [competencia, setCompetencia] = useState(inicial?.competencia ?? t.data.slice(0, 7));
   const [criaRegra, setCriaRegra] = useState(false);
   const [regra, setRegra] = useState<{ nome: string; tipoMatch: TipoMatch; padrao: string; sinal: Sinal }>({
     nome: t.memo.slice(0, 60), tipoMatch: "memo_contem", padrao: t.memo, sinal: entrada ? "entrada" : "saida",
@@ -174,10 +228,12 @@ function Classificar({ t, total, entrada, contas, pendente, enviar }: {
           <Input id="competencia" type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} />
         </div>
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={criaRegra} onCheckedChange={(c) => setCriaRegra(!!c)} />
-        Criar regra com esta classificação
-      </label>
+      {!inicial && (
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={criaRegra} onCheckedChange={(c) => setCriaRegra(!!c)} />
+          Criar regra com esta classificação
+        </label>
+      )}
       {criaRegra && (
         <div className="grid gap-3 rounded-lg border p-3">
           <div className="grid gap-2">
@@ -209,7 +265,7 @@ function Classificar({ t, total, entrada, contas, pendente, enviar }: {
       )}
       <Button type="submit" disabled={pendente || dif !== 0}>
         <Check />
-        {pendente ? "Aprovando..." : "Aprovar classificação"}
+        {inicial ? (pendente ? "Reclassificando..." : "Reclassificar") : pendente ? "Aprovando..." : "Aprovar classificação"}
       </Button>
     </form>
   );

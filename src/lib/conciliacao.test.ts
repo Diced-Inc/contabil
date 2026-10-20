@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { partidasClassificacao } from "./conciliacao";
+import { agruparContrapartidas, partidasClassificacao } from "./conciliacao";
 import { padraoComum } from "./classificacao/regras";
 import { validarPartidas } from "./lancamentos";
 
@@ -35,5 +35,41 @@ describe("padraoComum", () => {
   it("cai no primeiro memo quando o prefixo é curto", () => {
     expect(padraoComum(["PIX JOAO", "PIX MARIA"])).toBe("PIX JOAO");
     expect(padraoComum([])).toBe("");
+  });
+});
+
+describe("agruparContrapartidas", () => {
+  it("agrupa por transação, mantém ordem e ignora linha sem contrapartida", () => {
+    const base = { codigo: "4.1", nome: "Tarifas", debito: "0", credito: "0" };
+    const r = agruparContrapartidas([
+      { transacaoId: "a", memo: "x", ...base, contaId: "c1", debito: "10.50" },
+      { transacaoId: "b", memo: "y", ...base, contaId: null, codigo: null, nome: null },
+      { transacaoId: "a", memo: "x", ...base, contaId: "c2", credito: "2.00" },
+    ]);
+    expect(r).toEqual([
+      { transacaoId: "a", memo: "x", contras: [
+        { contaId: "c1", codigo: "4.1", nome: "Tarifas", valor: "10.50" },
+        { contaId: "c2", codigo: "4.1", nome: "Tarifas", valor: "2.00" },
+      ] },
+      { transacaoId: "b", memo: "y", contras: [] },
+    ]);
+  });
+});
+
+describe("agruparContrapartidas", () => {
+  it("agrupa por transação, mantém ordem e ignora linha sem contrapartida", () => {
+    const base = { codigo: "4.1", nome: "Tarifas", debito: "0", credito: "0" };
+    const r = agruparContrapartidas([
+      { transacaoId: "a", memo: "x", ...base, contaId: "c1", debito: "10.50" },
+      { transacaoId: "b", memo: "y", ...base, contaId: null, codigo: null, nome: null },
+      { transacaoId: "a", memo: "x", ...base, contaId: "c2", credito: "2.00" },
+    ]);
+    expect(r).toEqual([
+      { transacaoId: "a", memo: "x", contras: [
+        { contaId: "c1", codigo: "4.1", nome: "Tarifas", valor: "10.50" },
+        { contaId: "c2", codigo: "4.1", nome: "Tarifas", valor: "2.00" },
+      ] },
+      { transacaoId: "b", memo: "y", contras: [] },
+    ]);
   });
 });

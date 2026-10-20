@@ -1,21 +1,24 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCheck, ListChecks, RotateCcw, Sparkles } from "lucide-react";
+import { CheckCheck, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
-import { aprovarEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
+import { aprovarEmLote, desfazerConciliacao, desfazerEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
 import type { ContaOpcao } from "@/components/conta-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TablePanel } from "@/components/page-header";
 import { Valor } from "@/components/valor";
 import { cents, fmtData } from "@/lib/format";
 import { ClassificarLote } from "./classificar-lote";
-import { PainelTransacao } from "./painel-transacao";
-import type { TituloAberto, TransacaoLinha } from "./queries";
+import { PainelReclassificar, PainelTransacao } from "./painel-transacao";
+import type { ConciliadaLinha, TituloAberto, TransacaoLinha } from "./queries";
 
 const aprovavel = (t: TransacaoLinha) =>
   (t.sugestaoOrigem === "regra" && !!t.sugestaoContaId) || (t.sugestaoOrigem === "transferencia" && !!t.transferenciaParId);
@@ -222,5 +225,163 @@ export function Ignoradas({ empresaId, transacoes, vazio }: { empresaId: string;
         </TableBody>
       </Table>
     </TablePanel>
+  );
+}
+
+function Classificacao({ c }: { c: ConciliadaLinha }) {
+  const [primeira, ...resto] = c.contras;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      {c.status === "transferencia" ? (
+        <>
+          <Badge variant="violet">Transf.</Badge>
+          <span className="truncate">{c.parContaNome}</span>
+        </>
+      ) : (
+        primeira && (
+          <span className="truncate" title={c.contras.map((x) => `${x.codigo} ${x.nome}`).join("\n")}>
+            <span className="font-mono text-xs text-muted-foreground">{primeira.codigo}</span> {primeira.nome}
+          </span>
+        )
+      )}
+      {resto.length > 0 && <Badge variant="muted">+{resto.length}</Badge>}
+      {c.baixaTitulo && <Badge variant="info">Baixa de título</Badge>}
+    </span>
+  );
+}
+
+export function Conciliadas({ empresaId, transacoes, contas, vazio }: {
+  empresaId: string; transacoes: ConciliadaLinha[]; contas: ContaOpcao[]; vazio: ReactNode;
+}) {
+  const router = useRouter();
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [aberta, setAberta] = useState<ConciliadaLinha | null>(null);
+  const [confirmar, setConfirmar] = useState<string[] | null>(null);
+  const [pendente, iniciar] = useTransition();
+  const selecionadas = transacoes.filter((t) => sel.has(t.transacaoId)).map((t) => t.transacaoId);
+
+  const alternar = (id: string, marcado: boolean) =>
+    setSel((s) => {
+      const n = new Set(s);
+      if (marcado) n.add(id);
+      else n.delete(id);
+      return n;
+    });
+
+  const desfazer = (ids: string[]) =>
+    iniciar(async () => {
+      if (ids.length === 1) {
+        const r = await desfazerConciliacao(empresaId, ids[0]);
+        if (r.erro) return void toast.error(r.erro);
+        toast.success("Conciliação desfeita.");
+      } else {
+        const r = await desfazerEmLote(empresaId, ids);
+        if (r.desfeitas) toast.success(`${r.desfeitas} conciliação(ões) desfeita(s).`);
+        if (r.erros.length) toast.error(`${r.erros.length} com erro`, { description: r.erros.slice(0, 5).join("\n") });
+      }
+      setConfirmar(null);
+      setSel(new Set());
+      router.refresh();
+    });
+
+  return (
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <Button variant="outline" onClick={() => setConfirmar(selecionadas)} disabled={pendente || selecionadas.length === 0}>
+          <Undo2 />
+          Desfazer selecionadas ({selecionadas.length})
+        </Button>
+        <span className="ml-auto text-xs font-medium">{transacoes.length} conciliadas no período</span>
+      </div>
+      {transacoes.length === 0 ? (
+        vazio
+      ) : (
+        <TablePanel>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">
+                  <Checkbox
+                    aria-label="Selecionar todas"
+                    checked={transacoes.every((t) => sel.has(t.transacaoId))}
+                    onCheckedChange={(c) => setSel(c ? new Set(transacoes.map((t) => t.transacaoId)) : new Set())}
+                  />
+                </TableHead>
+                <TableHead className="w-24">Data</TableHead>
+                <TableHead className="w-40">Conta</TableHead>
+                <TableHead>Memo</TableHead>
+                <TableHead className="w-32 text-right">Valor</TableHead>
+                <TableHead className="w-80">Classificação</TableHead>
+                <TableHead className="w-16 text-right">Lanç.</TableHead>
+                <TableHead className="w-12" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {transacoes.map((t) => {
+                const podeReclassificar = t.status === "classificada" && !t.baixaTitulo;
+                return (
+                  <TableRow key={t.transacaoId}>
+                    <TableCell className="py-2">
+                      <Checkbox aria-label="Selecionar" checked={sel.has(t.transacaoId)} onCheckedChange={(c) => alternar(t.transacaoId, !!c)} />
+                    </TableCell>
+                    <TableCell className="py-2 text-muted-foreground">{fmtData(t.data)}</TableCell>
+                    <TableCell className="max-w-40 truncate py-1.5">{t.contaBancariaNome}</TableCell>
+                    <TableCell className="max-w-96 truncate py-1.5" title={t.memo}>{t.memo}</TableCell>
+                    <TableCell className="py-2 text-right"><Valor v={t.valor} /></TableCell>
+                    <TableCell className="max-w-80 py-1.5"><Classificacao c={t} /></TableCell>
+                    <TableCell className="py-2 text-right tabular-nums">
+                      <Link href={`/e/${empresaId}/lancamentos/${t.lancamentoId}`} className="text-primary hover:underline">
+                        {t.numero}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="py-1.5 text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Ações" disabled={pendente} />}>
+                          <MoreHorizontal />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem disabled={!podeReclassificar} onClick={() => setAberta(t)}>
+                            <PencilLine />
+                            Reclassificar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem variant="destructive" onClick={() => setConfirmar([t.transacaoId])}>
+                            <Undo2 />
+                            Desfazer
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TablePanel>
+      )}
+      <PainelReclassificar
+        key={aberta?.transacaoId ?? "nenhuma"}
+        empresaId={empresaId}
+        transacao={aberta}
+        contas={contas}
+        onClose={() => setAberta(null)}
+      />
+      <Dialog open={!!confirmar} onOpenChange={(o) => !o && setConfirmar(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {confirmar && confirmar.length > 1 ? `Desfazer ${confirmar.length} conciliações?` : "Desfazer a conciliação?"}
+            </DialogTitle>
+            <DialogDescription>A transação volta para pendentes e o lançamento é estornado.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmar(null)} disabled={pendente}>Cancelar</Button>
+            <Button variant="destructive" disabled={pendente} onClick={() => confirmar && desfazer(confirmar)}>
+              <Undo2 />
+              {pendente ? "Desfazendo..." : "Desfazer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

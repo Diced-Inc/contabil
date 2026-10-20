@@ -154,3 +154,30 @@ export async function alterarIgnorada(tx: Tx, empresaId: string, transacaoId: st
     throw new Error(ignorar ? "Só transações pendentes podem ser ignoradas" : "Transação não está ignorada");
   await marcar(tx, t.id, { status: ignorar ? "ignorada" : "pendente", sugestaoJustificativa: ignorar ? motivo || null : null });
 }
+
+/** Desfaz a classificação e classifica de novo, na mesma transação do Postgres (estorno datado de hoje). */
+export async function reclassificarTransacao(tx: Tx, input: {
+  empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
+  competencia?: string; usuarioId?: string | null;
+}) {
+  const t = await travar(tx, input.empresaId, input.transacaoId);
+  if (t.status !== "classificada" || !t.lancamentoId) throw new Error("Só transações classificadas podem ser reclassificadas");
+  const [baixa] = await tx.select({ id: titulos.id }).from(titulos).where(eq(titulos.baixaLancamentoId, t.lancamentoId)).limit(1);
+  if (baixa) throw new Error("Transação baixou um título: desfaça a conciliação em vez de reclassificar");
+  await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId);
+  return classificarTransacao(tx, input);
+}
+
+type PartidaConciliada = { transacaoId: string; contaId: string | null; codigo: string | null; nome: string | null; debito: string | null; credito: string | null };
+export type ContraConciliada = { contaId: string; codigo: string; nome: string; valor: string };
+
+/** Linhas (uma por contrapartida, na ordem da consulta) → uma por transação, com o valor de cada contrapartida. */
+export function agruparContrapartidas<T extends PartidaConciliada>(linhas: T[]) {
+  const porTx = new Map<string, Omit<T, "contaId" | "codigo" | "nome" | "debito" | "credito"> & { contras: ContraConciliada[] }>();
+  for (const { contaId, codigo, nome, debito, credito, ...resto } of linhas) {
+    let item = porTx.get(resto.transacaoId);
+    if (!item) porTx.set(resto.transacaoId, (item = { ...resto, contras: [] }));
+    if (contaId) item.contras.push({ contaId, codigo: codigo ?? "", nome: nome ?? "", valor: fromCents(Math.abs(cents(debito ?? 0) - cents(credito ?? 0))) });
+  }
+  return [...porTx.values()];
+}

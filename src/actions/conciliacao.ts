@@ -8,7 +8,8 @@ import { contasBancarias, transacoesBancarias } from "@/db/schema";
 import { aplicarTemplate, valorDoPadrao } from "@/lib/classificacao/regras";
 import { sugerirPendentes, type ResultadoSugestao } from "@/lib/classificacao/pipeline";
 import {
-  alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, inserirRegra, transferirEntreContas,
+  alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, inserirRegra, reclassificarTransacao,
+  transferirEntreContas,
 } from "@/lib/conciliacao";
 import { cents, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
@@ -71,6 +72,16 @@ export async function aprovarClassificacao(empresaId: string, input: Classificac
   return executar(empresaId, (usuarioId) => db.transaction((tx) => classificarTransacao(tx, { ...r.data, empresaId, usuarioId })));
 }
 
+const reclassificacaoSchema = classificacaoSchema.omit({ criarRegra: true });
+export type ReclassificacaoInput = z.input<typeof reclassificacaoSchema>;
+
+/** Estorna o lançamento da conciliação (hoje) e cria o novo, numa só transação do banco. */
+export async function reclassificar(empresaId: string, input: ReclassificacaoInput): Promise<EstadoForm> {
+  const r = reclassificacaoSchema.safeParse(input);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  return executar(empresaId, (usuarioId) => db.transaction((tx) => reclassificarTransacao(tx, { ...r.data, empresaId, usuarioId })));
+}
+
 export async function baixarTituloPelaTransacao(
   empresaId: string,
   input: { transacaoId: string; tituloId: string; contaDiferencaId?: string | null },
@@ -101,6 +112,33 @@ export async function reativarTransacao(empresaId: string, transacaoId: string):
 export async function desfazerConciliacao(empresaId: string, transacaoId: string): Promise<EstadoForm> {
   if (!uuid.safeParse(transacaoId).success) return { erro: "Transação inválida." };
   return executar(empresaId, (usuarioId) => db.transaction((tx) => desfazer(tx, empresaId, transacaoId, usuarioId)));
+}
+
+/** Cada transação na sua própria transação do banco; o par de uma transferência é desfeito junto. */
+export async function desfazerEmLote(empresaId: string, transacaoIds: string[]): Promise<{ desfeitas: number; erros: string[] }> {
+  const user = await requireUser();
+  const ids = z.array(z.uuid()).safeParse(transacaoIds);
+  if (!ids.success || !ids.data.length) return { desfeitas: 0, erros: ["Nenhuma transação selecionada."] };
+  const txs = await db
+    .select({ id: transacoesBancarias.id, memo: transacoesBancarias.memo, lancamentoId: transacoesBancarias.lancamentoId })
+    .from(transacoesBancarias)
+    .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
+    .where(and(eq(contasBancarias.empresaId, empresaId), inArray(transacoesBancarias.id, ids.data)));
+  let desfeitas = 0;
+  const erros: string[] = [];
+  const feitos = new Set<string>();
+  for (const t of txs) {
+    if (t.lancamentoId && feitos.has(t.lancamentoId)) continue;
+    try {
+      await db.transaction((tx) => desfazer(tx, empresaId, t.id, user.id));
+      if (t.lancamentoId) feitos.add(t.lancamentoId);
+      desfeitas++;
+    } catch (e) {
+      erros.push(`${t.memo.slice(0, 40) || t.id.slice(0, 8)}: ${msg(e)}`);
+    }
+  }
+  revalidatePath(`/e/${empresaId}`, "layout");
+  return { desfeitas, erros };
 }
 
 /** Só sugestões de regra ou transferência; cada transação na sua própria transação do banco. */

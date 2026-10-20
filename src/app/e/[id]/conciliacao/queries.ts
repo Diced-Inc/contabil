@@ -1,9 +1,12 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { contasBancarias, planoContas, titulos, transacoesBancarias } from "@/db/schema";
+import { contasBancarias, lancamentos, partidas, planoContas, titulos, transacoesBancarias } from "@/db/schema";
+import { agruparContrapartidas } from "@/lib/conciliacao";
 
 export type TransacaoLinha = Awaited<ReturnType<typeof listarTransacoes>>[number];
 export type TituloAberto = Awaited<ReturnType<typeof listarTitulosAbertos>>[number];
+export type ConciliadaLinha = Awaited<ReturnType<typeof listarConciliadas>>[number];
 
 /** Transações da empresa no status pedido, com conta bancária e conta sugerida. */
 export function listarTransacoes(empresaId: string, status: "pendente" | "ignorada") {
@@ -58,4 +61,61 @@ export async function transacaoDoLancamento(lancamentoId: string) {
     .where(and(eq(transacoesBancarias.lancamentoId, lancamentoId), inArray(transacoesBancarias.status, ["classificada", "transferencia"])))
     .limit(1);
   return t?.id;
+}
+
+const conciliada = inArray(transacoesBancarias.status, ["classificada", "transferencia"]);
+
+export async function contarConciliadas(empresaId: string) {
+  const [r] = await db
+    .select({ n: count() })
+    .from(transacoesBancarias)
+    .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
+    .where(and(eq(contasBancarias.empresaId, empresaId), conciliada));
+  return r.n;
+}
+
+const par = alias(transacoesBancarias, "par");
+const parConta = alias(contasBancarias, "par_conta");
+
+/** Conciliadas com o lançamento, as contrapartidas (classificada), a conta do par (transferência) e se baixou título. */
+export async function listarConciliadas(empresaId: string, f: { conta: string; de: string; ate: string; q: string }) {
+  const linhas = await db
+    .select({
+      transacaoId: transacoesBancarias.id,
+      contaBancariaNome: contasBancarias.nome,
+      data: transacoesBancarias.data,
+      valor: transacoesBancarias.valor,
+      memo: transacoesBancarias.memo,
+      status: transacoesBancarias.status,
+      lancamentoId: lancamentos.id,
+      numero: lancamentos.numero,
+      historico: lancamentos.historico,
+      documento: lancamentos.documento,
+      competencia: lancamentos.competencia,
+      parContaNome: parConta.nome,
+      baixaTitulo: sql<boolean>`exists (select 1 from titulos tb where tb.baixa_lancamento_id = ${lancamentos.id})`,
+      contaId: partidas.contaId,
+      codigo: planoContas.codigo,
+      nome: planoContas.nome,
+      debito: partidas.debito,
+      credito: partidas.credito,
+    })
+    .from(transacoesBancarias)
+    .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
+    .innerJoin(lancamentos, eq(lancamentos.id, transacoesBancarias.lancamentoId))
+    .leftJoin(partidas, and(
+      eq(partidas.lancamentoId, lancamentos.id), ne(partidas.contaId, contasBancarias.contaContabilId), eq(transacoesBancarias.status, "classificada"),
+    ))
+    .leftJoin(planoContas, eq(planoContas.id, partidas.contaId))
+    .leftJoin(par, eq(par.id, transacoesBancarias.transferenciaParId))
+    .leftJoin(parConta, eq(parConta.id, par.contaBancariaId))
+    .where(and(
+      eq(contasBancarias.empresaId, empresaId), conciliada,
+      f.conta ? eq(transacoesBancarias.contaBancariaId, f.conta) : undefined,
+      f.de ? gte(transacoesBancarias.data, f.de) : undefined,
+      f.ate ? lte(transacoesBancarias.data, f.ate) : undefined,
+      f.q ? ilike(transacoesBancarias.memo, `%${f.q}%`) : undefined,
+    ))
+    .orderBy(desc(transacoesBancarias.data), asc(transacoesBancarias.valor), asc(transacoesBancarias.id), asc(partidas.ordem));
+  return agruparContrapartidas(linhas);
 }
