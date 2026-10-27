@@ -11,7 +11,7 @@ import {
   alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, inserirRegra, reclassificarTransacao,
   transferirEntreContas,
 } from "@/lib/conciliacao";
-import { cents, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
+import { cents, fmtData, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
 
@@ -75,11 +75,15 @@ export async function aprovarClassificacao(empresaId: string, input: Classificac
 const reclassificacaoSchema = classificacaoSchema.omit({ criarRegra: true });
 export type ReclassificacaoInput = z.input<typeof reclassificacaoSchema>;
 
-/** Estorna o lançamento da conciliação (hoje) e cria o novo, numa só transação do banco. */
-export async function reclassificar(empresaId: string, input: ReclassificacaoInput): Promise<EstadoForm> {
+/** Estorna o lançamento da conciliação (hoje) e cria o novo na data do extrato (hoje se o mês estiver fechado). */
+export async function reclassificar(empresaId: string, input: ReclassificacaoInput): Promise<EstadoForm & { aviso?: string }> {
   const r = reclassificacaoSchema.safeParse(input);
   if (!r.success) return { erro: r.error.issues[0].message };
-  return executar(empresaId, (usuarioId) => db.transaction((tx) => reclassificarTransacao(tx, { ...r.data, empresaId, usuarioId })));
+  const fora: { data?: string | null } = {};
+  const res = await executar(empresaId, async (usuarioId) => {
+    fora.data = await db.transaction((tx) => reclassificarTransacao(tx, { ...r.data, empresaId, usuarioId }));
+  });
+  return fora.data ? { ...res, aviso: `Mês fechado: lançado por estorno em ${fmtData(fora.data)}.` } : res;
 }
 
 export async function baixarTituloPelaTransacao(

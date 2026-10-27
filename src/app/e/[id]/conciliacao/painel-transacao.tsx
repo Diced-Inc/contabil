@@ -61,11 +61,12 @@ export function PainelReclassificar({ empresaId, transacao: c, contas, onClose }
 function useExecutar(onClose: () => void) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
-  const executar = (acao: () => Promise<EstadoForm>, sucesso: string) =>
+  const executar = (acao: () => Promise<EstadoForm & { aviso?: string }>, sucesso: string) =>
     iniciar(async () => {
       const r = await acao();
       if (r.erro) return void toast.error(r.erro);
-      toast.success(sucesso);
+      if (r.aviso) toast.warning(r.aviso);
+      else toast.success(sucesso);
       onClose();
       router.refresh();
     });

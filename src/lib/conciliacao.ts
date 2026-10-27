@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { contasBancarias, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
-import { cents, fromCents, hoje } from "./format";
+import { contasBancarias, fechamentos, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
+import { cents, fromCents, hoje, primeiroDiaDoMes } from "./format";
 import { criarLancamento, estornarLancamento, type PartidaInput } from "./lancamentos";
 import { baixarTitulo } from "./titulos";
 
@@ -69,11 +69,14 @@ const marcar = (tx: Tx, id: string, set: Partial<typeof transacoesBancarias.$inf
 export async function classificarTransacao(tx: Tx, input: {
   empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
   competencia?: string; criarRegra?: NovaRegra; usuarioId?: string | null;
+  /** Só a reclassificação em mês fechado: lança em outra data (hoje), com a competência do extrato. */
+  data?: string;
 }) {
   const t = await travarPendente(tx, input.empresaId, input.transacaoId);
   await exigirContas(tx, input.empresaId, input.partidas.map((p) => p.contaId));
   const l = await criarLancamento(tx, {
-    empresaId: input.empresaId, data: t.data, dataPagamento: t.data, competencia: input.competencia,
+    empresaId: input.empresaId, data: input.data ?? t.data, dataPagamento: t.data,
+    competencia: input.competencia ?? primeiroDiaDoMes(t.data),
     historico: input.historico, documento: input.documento ?? null, origem: "conciliacao", usuarioId: input.usuarioId,
     partidas: partidasClassificacao(t.valor, t.contaBanco, input.partidas),
   });
@@ -155,7 +158,17 @@ export async function alterarIgnorada(tx: Tx, empresaId: string, transacaoId: st
   await marcar(tx, t.id, { status: ignorar ? "ignorada" : "pendente", sugestaoJustificativa: ignorar ? motivo || null : null });
 }
 
-/** Desfaz a classificação e classifica de novo, na mesma transação do Postgres (estorno datado de hoje). */
+/** O mês da data está fechado (mesma regra do trigger `periodo_fechado`)? */
+async function mesFechado(tx: Tx, empresaId: string, data: string) {
+  const [f] = await tx.select({ id: fechamentos.id }).from(fechamentos)
+    .where(and(eq(fechamentos.empresaId, empresaId), eq(fechamentos.competencia, primeiroDiaDoMes(data))));
+  return !!f;
+}
+
+/**
+ * Estorna (hoje) e classifica de novo, na mesma transação do Postgres. O novo lançamento fica na data do extrato;
+ * se o mês do extrato está fechado, vai para hoje (o trigger barra a data). Retorna a data usada nesse caso, senão null.
+ */
 export async function reclassificarTransacao(tx: Tx, input: {
   empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
   competencia?: string; usuarioId?: string | null;
@@ -164,8 +177,10 @@ export async function reclassificarTransacao(tx: Tx, input: {
   if (t.status !== "classificada" || !t.lancamentoId) throw new Error("Só transações classificadas podem ser reclassificadas");
   const [baixa] = await tx.select({ id: titulos.id }).from(titulos).where(eq(titulos.baixaLancamentoId, t.lancamentoId)).limit(1);
   if (baixa) throw new Error("Transação baixou um título: desfaça a conciliação em vez de reclassificar");
+  const data = (await mesFechado(tx, input.empresaId, t.data)) ? hoje() : null;
   await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId);
-  return classificarTransacao(tx, input);
+  await classificarTransacao(tx, { ...input, data: data ?? undefined });
+  return data;
 }
 
 type PartidaConciliada = { transacaoId: string; contaId: string | null; codigo: string | null; nome: string | null; debito: string | null; credito: string | null };
