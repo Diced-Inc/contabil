@@ -3,7 +3,7 @@ import { compararCodigo } from "./hierarquia";
 import { saldos, type LinhaSaldo } from "./saldos";
 
 export type GrupoDre = keyof typeof GRUPOS_DRE;
-export type LinhaDre = { tipo: "grupo" | "conta" | "subtotal"; label: string; codigo?: string; atual: string; anterior: string };
+export type LinhaDre = { tipo: "grupo" | "conta" | "subtotal"; label: string; codigo?: string; contaId?: string; atual: string; anterior: string };
 
 /** Anexo 3 da ITG 1000. `acumula: false` = subtotal só dos grupos da etapa (resultado financeiro). */
 const ETAPAS: { grupos: GrupoDre[]; subtotal: string; acumula: boolean }[] = [
@@ -17,10 +17,10 @@ const ETAPAS: { grupos: GrupoDre[]; subtotal: string; acumula: boolean }[] = [
 
 /** Valor de cada analítica de resultado no período: créditos − débitos (receita +, despesa −), em centavos. */
 function valores(linhas: LinhaSaldo[]) {
-  const m = new Map<string, { codigo: string; nome: string; grupo: GrupoDre; v: number }>();
+  const m = new Map<string, { id: string; codigo: string; nome: string; grupo: GrupoDre; v: number }>();
   for (const l of linhas) {
     if (l.tipo !== "analitica" || !l.grupoDre || !l.codigo.startsWith("3")) continue;
-    m.set(l.codigo, { codigo: l.codigo, nome: l.nome, grupo: l.grupoDre as GrupoDre, v: cents(l.creditos) - cents(l.debitos) });
+    m.set(l.codigo, { id: l.id, codigo: l.codigo, nome: l.nome, grupo: l.grupoDre as GrupoDre, v: cents(l.creditos) - cents(l.debitos) });
   }
   return m;
 }
@@ -41,7 +41,7 @@ export function montarDre(linhasAtual: LinhaSaldo[], linhasAnterior: LinhaSaldo[
       out.push({ tipo: "grupo", label: GRUPOS_DRE[g], atual: fromCents(gA), anterior: fromCents(gP) });
       for (const k of contas) {
         out.push({
-          tipo: "conta", label: (k.x ?? k.y)!.nome, codigo: k.c,
+          tipo: "conta", label: (k.x ?? k.y)!.nome, codigo: k.c, contaId: (k.x ?? k.y)!.id,
           atual: fromCents(k.x?.v ?? 0), anterior: fromCents(k.y?.v ?? 0),
         });
       }

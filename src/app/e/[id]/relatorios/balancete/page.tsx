@@ -8,6 +8,7 @@ import { balancete } from "@/lib/relatorios/balancete";
 import { nivel } from "@/lib/relatorios/hierarquia";
 import { Carregando } from "@/components/page-header";
 import { getEmpresa } from "../../empresa";
+import { ContaRow } from "../conta-detalhe";
 import { RelatorioShell } from "../relatorio-shell";
 
 async function Balancete({ params, searchParams }: PageProps<"/e/[id]/relatorios/balancete">) {
@@ -38,12 +39,17 @@ async function Balancete({ params, searchParams }: PageProps<"/e/[id]/relatorios
               <TableHead className="text-right">Débito</TableHead>
               <TableHead className="text-right">Crédito</TableHead>
               <TableHead className="text-right">Saldo atual</TableHead>
+              <TableHead className="w-6 print:hidden" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {linhas.map((l) => (
-              <TableRow
+              <ContaRow
                 key={l.id}
+                contaId={l.tipo === "analitica" ? l.id : undefined}
+                titulo={`${l.codigo} ${l.nome}`}
+                de={de}
+                ate={ate}
                 className={cn(
                   l.tipo === "sintetica" && "font-semibold",
                   nivel(l.codigo) === 1 && "border-t-2 border-t-border bg-muted/40",
@@ -57,7 +63,7 @@ async function Balancete({ params, searchParams }: PageProps<"/e/[id]/relatorios
                 <TableCell className="py-1.5 text-right">{fmtValor(l.debitos)}</TableCell>
                 <TableCell className="py-1.5 text-right">{fmtValor(l.creditos)}</TableCell>
                 <TableCell className="py-1.5 text-right">{fmtSaldoDC(l.saldoAtual, l.natureza)}</TableCell>
-              </TableRow>
+              </ContaRow>
             ))}
           </TableBody>
         </Table>

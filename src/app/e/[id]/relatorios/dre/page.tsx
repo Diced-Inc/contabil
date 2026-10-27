@@ -7,6 +7,7 @@ import { fmtData, fmtValor } from "@/lib/format";
 import { dre, umAnoAntes } from "@/lib/relatorios/dre";
 import { Carregando } from "@/components/page-header";
 import { getEmpresa } from "../../empresa";
+import { ContaRow } from "../conta-detalhe";
 import { RelatorioShell } from "../relatorio-shell";
 
 const periodo = (de: string, ate: string) => `${fmtData(de)} a ${fmtData(ate)}`;
@@ -33,12 +34,17 @@ async function Dre({ params, searchParams }: PageProps<"/e/[id]/relatorios/dre">
             <TableHead>Descrição</TableHead>
             <TableHead className="text-right">{periodo(de, ate)}</TableHead>
             <TableHead className="text-right">{periodo(umAnoAntes(de), umAnoAntes(ate))}</TableHead>
+            <TableHead className="w-6 print:hidden" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {linhas.map((l, i) => (
-            <TableRow
+            <ContaRow
               key={i}
+              contaId={l.contaId}
+              titulo={`${l.codigo} ${l.label}`}
+              de={de}
+              ate={ate}
               className={cn(
                 l.tipo === "grupo" && "font-medium",
                 l.tipo === "subtotal" && "border-t border-t-foreground/30 bg-muted/40 font-semibold hover:bg-muted/50",
@@ -50,8 +56,14 @@ async function Dre({ params, searchParams }: PageProps<"/e/[id]/relatorios/dre">
                 {l.tipo === "subtotal" ? `= ${l.label}` : l.label}
               </TableCell>
               <TableCell className={cn("py-1.5 text-right", Number(l.atual) < 0 && "text-danger")}>{fmtValor(l.atual)}</TableCell>
-              <TableCell className={cn("py-1.5 text-right", Number(l.anterior) < 0 && "text-danger")}>{fmtValor(l.anterior)}</TableCell>
-            </TableRow>
+              <TableCell
+                className={cn("py-1.5 text-right", Number(l.anterior) < 0 && "text-danger")}
+                data-de={umAnoAntes(de)}
+                data-ate={umAnoAntes(ate)}
+              >
+                {fmtValor(l.anterior)}
+              </TableCell>
+            </ContaRow>
           ))}
         </TableBody>
       </Table>

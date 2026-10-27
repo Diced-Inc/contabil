@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/page-header";
 import { fmtCnpj, fmtCpf, fmtDataExtenso } from "@/lib/format";
+import { ContaDetalheProvider } from "./conta-detalhe";
 import { Imprimir } from "./imprimir";
 
 type Empresa = {
+  id: string;
   razaoSocial: string;
   cnpj: string;
   cidade: string | null;
@@ -88,7 +90,9 @@ export function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, 
             <dd className="mt-0.5">Emitido em {emitidoEm()}</dd>
           </dl>
         </header>
-        <div className="px-4 pt-2 pb-6 print:px-0">{children}</div>
+        <div className="px-4 pt-2 pb-6 print:px-0">
+          <ContaDetalheProvider empresaId={empresa.id}>{children}</ContaDetalheProvider>
+        </div>
         <Assinaturas empresa={empresa} data={dataAssinatura} />
       </article>
     </div>

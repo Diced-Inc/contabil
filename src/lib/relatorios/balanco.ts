@@ -5,6 +5,8 @@ import { saldos, type LinhaSaldo } from "./saldos";
 export type LinhaBalanco = Pick<LinhaSaldo, "codigo" | "nome" | "natureza" | "tipo"> & {
   /** Chave única da linha (código, ou VIRTUAL para o resultado do exercício). */
   chave: string; atual: string; anterior: string; virtual?: boolean;
+  /** Id da conta no plano (ausente na linha virtual). */
+  id?: string;
 };
 /** Em centavos, saldo D − C: ativo positivo, passivoPl negativo. */
 export type TotaisBalanco = { ativo: number; passivoPl: number; fecha: boolean };
@@ -36,7 +38,7 @@ export function montarBalanco(atual: LinhaSaldo[], anterior: LinhaSaldo[]) {
   for (const [lado, agg] of [["atual", a.agg], ["anterior", p.agg]] as const) {
     for (const l of agg) {
       const x = linhas.get(l.codigo) ?? {
-        chave: l.codigo, codigo: l.codigo, nome: l.nome, natureza: l.natureza, tipo: l.tipo, atual: "0.00", anterior: "0.00",
+        chave: l.codigo, id: l.id, codigo: l.codigo, nome: l.nome, natureza: l.natureza, tipo: l.tipo, atual: "0.00", anterior: "0.00",
       };
       x[lado] = l.saldoAtual;
       linhas.set(l.codigo, x);

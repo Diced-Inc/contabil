@@ -11,6 +11,7 @@ import { balanco, type TotaisBalanco } from "@/lib/relatorios/balanco";
 import { nivel } from "@/lib/relatorios/hierarquia";
 import { Carregando } from "@/components/page-header";
 import { getEmpresa } from "../../empresa";
+import { ContaRow } from "../conta-detalhe";
 import { RelatorioShell } from "../relatorio-shell";
 
 const fecha = (t: TotaisBalanco) =>
@@ -52,12 +53,17 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
             <TableHead>Descrição</TableHead>
             <TableHead className="text-right">{ano}</TableHead>
             <TableHead className="text-right">{ano - 1}</TableHead>
+            <TableHead className="w-6 print:hidden" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {b.linhas.map((l) => (
-            <TableRow
+            <ContaRow
               key={l.chave}
+              contaId={l.tipo === "analitica" ? l.id : undefined}
+              titulo={`${l.codigo} ${l.nome}`}
+              de={`${ano}-01-01`}
+              ate={`${ano}-12-31`}
               className={cn(
                 l.tipo === "sintetica" && "font-semibold",
                 !l.virtual && nivel(l.codigo) === 1 && "border-t-2 border-t-border bg-muted/40",
@@ -69,8 +75,10 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
                 {l.nome}
               </TableCell>
               <TableCell className="py-1.5 text-right">{fmtSaldoDC(l.atual, l.natureza)}</TableCell>
-              <TableCell className="py-1.5 text-right">{fmtSaldoDC(l.anterior, l.natureza)}</TableCell>
-            </TableRow>
+              <TableCell className="py-1.5 text-right" data-de={`${ano - 1}-01-01`} data-ate={`${ano - 1}-12-31`}>
+                {fmtSaldoDC(l.anterior, l.natureza)}
+              </TableCell>
+            </ContaRow>
           ))}
         </TableBody>
         <TableFooter className="border-t-2 border-t-foreground/70 bg-transparent">
@@ -78,11 +86,13 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
             <TableCell className="py-1.5">Ativo total</TableCell>
             <TableCell className="py-1.5 text-right">{fmtSaldoDC(fromCents(b.atual.ativo), "D")}</TableCell>
             <TableCell className="py-1.5 text-right">{fmtSaldoDC(fromCents(b.anterior.ativo), "D")}</TableCell>
+            <TableCell className="print:hidden" />
           </TableRow>
           <TableRow>
             <TableCell className="py-1.5">Passivo + Patrimônio líquido</TableCell>
             <TableCell className="py-1.5 text-right">{fmtSaldoDC(fromCents(b.atual.passivoPl), "C")}</TableCell>
             <TableCell className="py-1.5 text-right">{fmtSaldoDC(fromCents(b.anterior.passivoPl), "C")}</TableCell>
+            <TableCell className="print:hidden" />
           </TableRow>
           <TableRow>
             <TableCell className="py-1" />
@@ -92,6 +102,7 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
             <TableCell className="py-2 text-right">
               <Badge variant={b.anterior.fecha ? "success" : "danger"}>{fecha(b.anterior)}</Badge>
             </TableCell>
+            <TableCell className="print:hidden" />
           </TableRow>
         </TableFooter>
       </Table>
