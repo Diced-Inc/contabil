@@ -8,13 +8,12 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Carregando, EmptyState, FilterField, PageHeader, TablePanel, Toolbar } from "@/components/page-header";
-import { fmtData, fmtValor, hoje, isoData, primeiroDiaDoMes } from "@/lib/format";
+import { ORIGEM_BADGE, fmtData, fmtValor, hoje, isoData, primeiroDiaDoMes } from "@/lib/format";
 import { getEmpresa } from "../empresa";
 import { ORIGENS, listarLancamentos, type Origem } from "./queries";
 
 const selectCls =
   "h-9 cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
-const ORIGEM_BADGE = { manual: "muted", conciliacao: "info", apuracao: "violet", estorno: "warning" } as const;
 
 function ultimoDiaDoMes(d: string) {
   const [y, m] = d.split("-").map(Number);

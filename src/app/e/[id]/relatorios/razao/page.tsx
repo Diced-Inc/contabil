@@ -30,7 +30,7 @@ function lerFiltros(sp: SP) {
   if (de > ate) [de, ate] = ["01", "12"];
   const ids = [typeof sp.contas === "string" ? sp.contas.split(",") : [], typeof sp.conta === "string" ? [sp.conta] : []].flat();
   const contas = [...new Set(ids.filter((s) => uuid.safeParse(s).success))];
-  return { ano, de, ate, contas, todas: sp.todas === "1", estornos: sp.estornos === "1" };
+  return { ano, de, ate, contas, todas: sp.todas === "1", ocultar: sp.ocultar === "1" };
 }
 
 const fimDoMes = (ano: number, mm: string) => new Date(Date.UTC(ano, Number(mm), 0)).toISOString().slice(0, 10);
@@ -50,7 +50,7 @@ function Tile({ rotulo, children }: { rotulo: string; children: React.ReactNode 
 }
 
 /** Movimentos visíveis (sem os pares de estorno, se ocultos) com saldo corrente e totais recalculados. */
-const visivel = (r: Razao360, estornos: boolean) => (estornos ? r : { ...r, ...correr(semEstornos(r.movimentos), r.saldoAnterior) });
+const visivel = (r: Razao360, ocultar: boolean) => (!ocultar ? r : { ...r, ...correr(semEstornos(r.movimentos), r.saldoAnterior) });
 
 function Secao({ r, v, empresaId, ano, de, quebra }: {
   r: Razao360; v: ReturnType<typeof visivel>; empresaId: string; ano: number; de: string; quebra: boolean;
@@ -129,7 +129,7 @@ async function Razao({ params, searchParams }: PageProps<"/e/[id]/relatorios/raz
   const alvo = f.todas ? "todas" : f.contas;
   const [contas, todos] = await Promise.all([listarContasAnaliticas(id), razao360(id, alvo, de, ate)]);
   // em "todas", some a conta que só tinha pares de estorno e não tem saldo
-  const rs = todos.map((r) => ({ r, v: visivel(r, f.estornos) })).filter(({ r, v }) =>
+  const rs = todos.map((r) => ({ r, v: visivel(r, f.ocultar) })).filter(({ r, v }) =>
     !f.todas || v.movimentos.length > 0 || Number(r.saldoAnterior) !== 0 || Number(r.saldoAnoAnterior) !== 0);
   const periodo = f.de === "01" && f.ate === "12" ? `Ano ${f.ano}` : `${fmtData(de)} a ${fmtData(ate)}`;
 

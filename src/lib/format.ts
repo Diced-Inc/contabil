@@ -44,6 +44,9 @@ const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julh
 export const fmtDataExtenso = (d: string) => `${Number(d.slice(8, 10))} de ${MESES[Number(d.slice(5, 7)) - 1]} de ${d.slice(0, 4)}`;
 export const REGIMES = { simples: "Simples Nacional", mei: "MEI (SIMEI)", presumido: "Lucro Presumido", real: "Lucro Real" } as const;
 export const PORTES = { mei: "MEI", me: "Microempresa (ME)", epp: "Empresa de pequeno porte (EPP)", demais: "Demais" } as const;
+/** Origem do lançamento: rótulo e cor do Badge. */
+export const ORIGENS = { manual: "Manual", conciliacao: "Conciliação", apuracao: "Apuração", estorno: "Estorno" } as const;
+export const ORIGEM_BADGE = { manual: "muted", conciliacao: "info", apuracao: "violet", estorno: "warning" } as const;
 export const NATUREZAS = { D: "Devedora", C: "Credora" } as const;
 export const GRUPOS_DRE = {
   receita_bruta: "Receita bruta",

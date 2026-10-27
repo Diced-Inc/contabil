@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Carregando, PageHeader, TablePanel } from "@/components/page-header";
-import { cents, fmtCompetencia, fmtData, fmtValor, fromCents } from "@/lib/format";
+import { ORIGEM_BADGE, cents, fmtCompetencia, fmtData, fmtValor, fromCents } from "@/lib/format";
 import type { RetratoLancamento } from "@/lib/lancamentos";
 import { requireUser } from "@/supabase/server";
 import { getEmpresa } from "../../empresa";
@@ -19,7 +19,6 @@ import { transacaoDoLancamento } from "../../conciliacao/queries";
 import { DesfazerConciliacaoDialog, EstornarDialog } from "./estornar-dialog";
 
 const TZ = "America/Sao_Paulo";
-const ORIGEM_BADGE = { manual: "muted", conciliacao: "info", apuracao: "violet", estorno: "warning" } as const;
 const CAMPOS: [keyof RetratoLancamento, string][] = [
   ["data", "data"], ["competencia", "competência"], ["dataPagamento", "pagamento"],
   ["historico", "histórico"], ["documento", "documento"],

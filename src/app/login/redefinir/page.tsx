@@ -1,15 +1,17 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { createClient } from "@/supabase/server";
 import { Casca } from "../casca";
+import { COOKIE_RECUPERACAO } from "../recuperacao";
 import { Erro, RedefinirForm } from "../senha-forms";
 
 async function Conteudo() {
   await connection();
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  if (!data.user) {
+  if (!data.user || !(await cookies()).has(COOKIE_RECUPERACAO)) {
     return (
       <div className="grid gap-4">
         <Erro>Link inválido ou expirado.</Erro>

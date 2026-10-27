@@ -14,9 +14,9 @@ const MESES = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"
 const selectCls =
   "h-9 w-20 cursor-pointer rounded-md border border-input bg-card px-2 text-sm tabular-nums shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
-export type FiltrosRazao = { ano: number; de: string; ate: string; contas: string[]; todas: boolean; estornos: boolean };
+export type FiltrosRazao = { ano: number; de: string; ate: string; contas: string[]; todas: boolean; ocultar: boolean };
 
-/** Barra do Razão 360: ano, mês inicial/final, contas (várias) ou todas com movimento, e ocultar estornos. Só tela. */
+/** Barra do Razão 360: ano, mês inicial/final, contas (várias) ou todas com movimento, e ocultar estornos (padrão: mostra, como o Diário). Só tela. */
 export function Filtros({ path, contas, mesAtual, inicial }: { path: string; contas: ContaOpcao[]; mesAtual: string; inicial: FiltrosRazao }) {
   const router = useRouter();
   const [f, setF] = useState(inicial);
@@ -29,7 +29,7 @@ export function Filtros({ path, contas, mesAtual, inicial }: { path: string; con
     const q = new URLSearchParams({ ano: String(v.ano), de: v.de, ate: v.ate });
     if (v.todas) q.set("todas", "1");
     else if (v.contas.length) q.set("contas", v.contas.join(","));
-    if (v.estornos) q.set("estornos", "1");
+    if (v.ocultar) q.set("ocultar", "1");
     router.push(`${path}?${q}`);
   }
   const alternar = (id: string) =>
@@ -97,8 +97,9 @@ export function Filtros({ path, contas, mesAtual, inicial }: { path: string; con
           <Checkbox checked={f.todas} onCheckedChange={(todas) => setF((v) => ({ ...v, todas }))} />
           Todas as contas com movimento no período
         </label>
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <Checkbox checked={!f.estornos} onCheckedChange={(ocultar) => ir({ estornos: !ocultar })} />
+        <label className="flex cursor-pointer items-center gap-2 text-sm"
+          title="Esconde os lançamentos estornados e seus estornos. Marcado, a impressão também sai sem eles.">
+          <Checkbox checked={f.ocultar} onCheckedChange={(ocultar) => ir({ ocultar })} />
           Ocultar estornos
         </label>
         <Button className="ml-auto" onClick={() => ir({})}>Aplicar</Button>

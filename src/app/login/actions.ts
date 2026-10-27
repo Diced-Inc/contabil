@@ -1,9 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { emailPermitido } from "@/supabase/proxy";
 import { createClient, requireUser } from "@/supabase/server";
+import { COOKIE_RECUPERACAO } from "./recuperacao";
 
 export type Resultado = { erro?: string; ok?: boolean };
 
@@ -54,7 +55,7 @@ export async function enviarRecuperacao(_: Resultado, formData: FormData): Promi
   const email = String(formData.get("email") ?? "").trim();
   // Mesma resposta exista ou não o e-mail, para não revelar quem tem conta.
   if (email && emailPermitido(email)) {
-    const origin = (await headers()).get("origin");
+    const origin = process.env.NEXT_PUBLIC_SITE_URL || (await headers()).get("origin");
     const supabase = await createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${origin}/login/confirmar`,
@@ -66,11 +67,14 @@ export async function enviarRecuperacao(_: Resultado, formData: FormData): Promi
 
 export async function redefinirSenha(_: Resultado, formData: FormData): Promise<Resultado> {
   await requireUser();
+  const jar = await cookies();
+  if (!jar.has(COOKIE_RECUPERACAO)) return { erro: "Abra o link de recuperação enviado por e-mail." };
   const v = validarNovaSenha(formData);
   if (v.erro) return v;
 
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ password: v.password });
   if (error) return { erro: msgErro(error) };
+  jar.delete({ name: COOKIE_RECUPERACAO, path: "/login" });
   redirect("/");
 }

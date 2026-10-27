@@ -7,11 +7,9 @@ import { detalheLancamento } from "@/actions/relatorios";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cents, fmtCompetencia, fmtData, fmtValor, fromCents } from "@/lib/format";
+import { ORIGEM_BADGE, ORIGENS, cents, fmtCompetencia, fmtData, fmtValor, fromCents } from "@/lib/format";
 
 type Dados = Awaited<ReturnType<typeof detalheLancamento>>;
-const ORIGENS = { manual: "Manual", conciliacao: "Conciliação", apuracao: "Apuração", estorno: "Estorno" } as const;
-const ORIGEM_BADGE = { manual: "muted", conciliacao: "info", apuracao: "violet", estorno: "warning" } as const;
 
 const Ctx = createContext<(id: string) => void>(() => {});
 

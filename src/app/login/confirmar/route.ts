@@ -1,6 +1,7 @@
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/supabase/server";
+import { COOKIE_RECUPERACAO } from "../recuperacao";
 
 /** Destino do link de recuperação de senha: troca o code (PKCE) ou token_hash por sessão. */
 export async function GET(request: NextRequest) {
@@ -21,8 +22,13 @@ export async function GET(request: NextRequest) {
   if (error) {
     destino.pathname = "/login/recuperar";
     destino.searchParams.set("erro", "Link inválido ou expirado. Peça um novo.");
-  } else {
-    destino.pathname = "/login/redefinir";
+    return NextResponse.redirect(destino);
   }
-  return NextResponse.redirect(destino);
+  destino.pathname = "/login/redefinir";
+  const res = NextResponse.redirect(destino);
+  // só quem passou por este link pode redefinir sem a senha atual (sessão comum usa "Trocar senha")
+  res.cookies.set(COOKIE_RECUPERACAO, "1", {
+    httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 15 * 60, path: "/login",
+  });
+  return res;
 }

@@ -1,9 +1,9 @@
 import { and, asc, desc, eq, gte, ilike, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { lancamentoLog, lancamentos, partidas, planoContas } from "@/db/schema";
-import { escapeLike } from "@/lib/format";
+import { ORIGENS, escapeLike } from "@/lib/format";
 
-export const ORIGENS = { manual: "Manual", conciliacao: "Conciliação", apuracao: "Apuração", estorno: "Estorno" } as const;
+export { ORIGENS };
 export type Origem = keyof typeof ORIGENS;
 export const ACOES_LOG = {
   criado: "Criado", alterado: "Alterado", estornado: "Estornado",
