@@ -145,28 +145,43 @@ export async function desfazerEmLote(empresaId: string, transacaoIds: string[]):
   return { desfeitas, erros };
 }
 
-/** Só sugestões de regra ou transferência; cada transação na sua própria transação do banco. */
-export async function aprovarEmLote(empresaId: string, transacaoIds: string[]): Promise<{ aprovadas: number; erros: string[] }> {
+/**
+ * Aprova sugestões de regra, transferência e IA; cada transação na sua própria transação do banco.
+ * `minConfiancaIa`: sugestões de IA abaixo do limite ficam pendentes e entram em `puladas`.
+ */
+export async function aprovarEmLote(
+  empresaId: string,
+  transacaoIds: string[],
+  opcoes: { minConfiancaIa?: number } = {},
+): Promise<{ aprovadas: number; puladas: number; erros: string[] }> {
   const user = await requireUser();
   const ids = z.array(z.uuid()).safeParse(transacaoIds);
-  if (!ids.success || !ids.data.length) return { aprovadas: 0, erros: ["Nenhuma transação selecionada."] };
+  if (!ids.success || !ids.data.length) return { aprovadas: 0, puladas: 0, erros: ["Nenhuma transação selecionada."] };
+  const min = z.number().min(0).max(1).optional().safeParse(opcoes.minConfiancaIa);
+  if (!min.success) return { aprovadas: 0, puladas: 0, erros: ["Confiança mínima inválida."] };
   const txs = await db
     .select({
       id: transacoesBancarias.id, memo: transacoesBancarias.memo, valor: transacoesBancarias.valor,
       sugestaoOrigem: transacoesBancarias.sugestaoOrigem, sugestaoContaId: transacoesBancarias.sugestaoContaId,
       sugestaoHistorico: transacoesBancarias.sugestaoHistorico, transferenciaParId: transacoesBancarias.transferenciaParId,
+      sugestaoConfianca: transacoesBancarias.sugestaoConfianca,
     })
     .from(transacoesBancarias)
     .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
     .where(and(eq(contasBancarias.empresaId, empresaId), inArray(transacoesBancarias.id, ids.data)));
 
   let aprovadas = 0;
+  let puladas = 0;
   const erros: string[] = [];
   const feitas = new Set<string>();
   for (const t of txs) {
     if (feitas.has(t.id)) continue;
+    if (t.sugestaoOrigem === "ia" && min.data !== undefined && Number(t.sugestaoConfianca ?? 0) < min.data) {
+      puladas++;
+      continue;
+    }
     try {
-      if (t.sugestaoOrigem === "regra" && t.sugestaoContaId) {
+      if ((t.sugestaoOrigem === "regra" || t.sugestaoOrigem === "ia") && t.sugestaoContaId) {
         const contaId = t.sugestaoContaId;
         await db.transaction((tx) =>
           classificarTransacao(tx, {
@@ -180,7 +195,7 @@ export async function aprovarEmLote(empresaId: string, transacaoIds: string[]): 
         await db.transaction((tx) => transferirEntreContas(tx, { empresaId, transacaoId: t.id, parId, usuarioId: user.id }));
         feitas.add(parId);
       } else {
-        throw new Error("Só sugestões de regra ou transferência podem ser aprovadas em lote");
+        throw new Error("Sem sugestão para aprovar");
       }
       feitas.add(t.id);
       aprovadas++;
@@ -189,7 +204,7 @@ export async function aprovarEmLote(empresaId: string, transacaoIds: string[]): 
     }
   }
   revalidatePath(`/e/${empresaId}`, "layout");
-  return { aprovadas, erros };
+  return { aprovadas, puladas, erros };
 }
 
 const loteSchema = z.object({

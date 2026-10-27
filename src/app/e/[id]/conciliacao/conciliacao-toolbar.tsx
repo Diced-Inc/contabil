@@ -21,7 +21,11 @@ import { PainelReclassificar, PainelTransacao } from "./painel-transacao";
 import type { ConciliadaLinha, TituloAberto, TransacaoLinha } from "./queries";
 
 const aprovavel = (t: TransacaoLinha) =>
-  (t.sugestaoOrigem === "regra" && !!t.sugestaoContaId) || (t.sugestaoOrigem === "transferencia" && !!t.transferenciaParId);
+  ((t.sugestaoOrigem === "regra" || t.sugestaoOrigem === "ia") && !!t.sugestaoContaId) ||
+  (t.sugestaoOrigem === "transferencia" && !!t.transferenciaParId);
+
+const MIN_CONFIANCA_IA = 0.7;
+const confiancaBaixa = (t: TransacaoLinha) => t.sugestaoOrigem === "ia" && Number(t.sugestaoConfianca ?? 0) < MIN_CONFIANCA_IA;
 
 function Sugestao({ t }: { t: TransacaoLinha }) {
   if (!t.sugestaoOrigem) return <Badge variant="warning">Sem sugestão</Badge>;
@@ -61,6 +65,8 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
   const todasAprovaveis = linhasSel.every(aprovavel);
   const sinalMisto = new Set(linhasSel.map((t) => cents(t.valor) > 0)).size > 1;
   const [lote, setLote] = useState(false);
+  const [confirmarIa, setConfirmarIa] = useState(false);
+  const porOrigem = (o: string) => linhasSel.filter((t) => t.sugestaoOrigem === o).length;
   const contagem = (o: string | null) => transacoes.filter((t) => t.sugestaoOrigem === o).length;
 
   const alternar = (id: string, marcado: boolean) =>
@@ -71,12 +77,14 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
       return n;
     });
 
-  const aprovar = () =>
+  const aprovar = (minConfiancaIa?: number) =>
     iniciar(async () => {
-      const r = await aprovarEmLote(empresaId, selecionadas);
-      if (r.aprovadas) toast.success(`${r.aprovadas} transação(ões) aprovada(s).`);
+      const r = await aprovarEmLote(empresaId, selecionadas, { minConfiancaIa });
+      if (r.aprovadas || r.puladas)
+        toast.success(r.puladas ? `${r.aprovadas} aprovadas · ${r.puladas} puladas (confiança baixa)` : `${r.aprovadas} aprovadas`);
       if (r.erros.length) toast.error(`${r.erros.length} com erro`, { description: r.erros.slice(0, 5).join("\n") });
       setSel(new Set());
+      setConfirmarIa(false);
       router.refresh();
     });
 
@@ -92,8 +100,9 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
     <>
       {todas.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <Button onClick={aprovar} disabled={pendente || selecionadas.length === 0 || !todasAprovaveis}
-            title={todasAprovaveis ? undefined : "Só transações com sugestão de regra ou transferência podem ser aprovadas"}>
+          <Button onClick={() => (porOrigem("ia") ? setConfirmarIa(true) : aprovar())}
+            disabled={pendente || selecionadas.length === 0 || !todasAprovaveis}
+            title={todasAprovaveis ? undefined : "Há transações selecionadas sem sugestão"}>
             <CheckCheck />
             Aprovar selecionadas ({selecionadas.length})
           </Button>
@@ -178,6 +187,27 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
         onClose={() => setLote(false)}
         onDone={() => setSel(new Set())}
       />
+      <Dialog open={confirmarIa} onOpenChange={(o) => !o && setConfirmarIa(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Aprovar sugestões da IA?</DialogTitle>
+            <DialogDescription>
+              {linhasSel.length} selecionadas: {porOrigem("regra")} por regra, {porOrigem("transferencia")} transferências,{" "}
+              {porOrigem("ia")} por IA ({linhasSel.filter(confiancaBaixa).length} com confiança abaixo de 0,70)
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmarIa(false)} disabled={pendente}>Cancelar</Button>
+            <Button variant="outline" disabled={pendente} onClick={() => aprovar(MIN_CONFIANCA_IA)}>
+              Aprovar só confiança ≥ 0,70
+            </Button>
+            <Button disabled={pendente} onClick={() => aprovar()}>
+              <CheckCheck />
+              {pendente ? "Aprovando..." : "Aprovar todas"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
