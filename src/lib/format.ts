@@ -33,6 +33,8 @@ export function lerAno(s: unknown) {
   const r = anoSchema.safeParse(typeof s === "string" ? s : undefined);
   return r.success ? r.data : Number(hoje().slice(0, 4));
 }
+/** Escapa `\`, `%` e `_` para usar o texto literal num `ilike`. */
+export const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => "\\" + c);
 export const primeiroDiaDoMes = (d: string) => d.slice(0, 7) + "-01";
 export const somenteDigitos = (s: string) => s.replace(/\D/g, "");
 export function fmtCnpj(c: string) { return c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"); }

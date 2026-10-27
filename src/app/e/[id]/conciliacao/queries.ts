@@ -3,6 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { contasBancarias, lancamentos, partidas, planoContas, titulos, transacoesBancarias } from "@/db/schema";
 import { agruparContrapartidas } from "@/lib/conciliacao";
+import { escapeLike } from "@/lib/format";
 
 export type TransacaoLinha = Awaited<ReturnType<typeof listarTransacoes>>[number];
 export type TituloAberto = Awaited<ReturnType<typeof listarTitulosAbertos>>[number];
@@ -65,12 +66,22 @@ export async function transacaoDoLancamento(lancamentoId: string) {
 
 const conciliada = inArray(transacoesBancarias.status, ["classificada", "transferencia"]);
 
-export async function contarConciliadas(empresaId: string) {
+type FiltroConciliadas = { conta: string; de: string; ate: string; q: string };
+const filtroConciliadas = (empresaId: string, f: FiltroConciliadas) => and(
+  eq(contasBancarias.empresaId, empresaId), conciliada,
+  f.conta ? eq(transacoesBancarias.contaBancariaId, f.conta) : undefined,
+  f.de ? gte(transacoesBancarias.data, f.de) : undefined,
+  f.ate ? lte(transacoesBancarias.data, f.ate) : undefined,
+  f.q ? ilike(transacoesBancarias.memo, `%${escapeLike(f.q)}%`) : undefined,
+);
+
+/** Mesmo filtro da lista (`listarConciliadas`). */
+export async function contarConciliadas(empresaId: string, f: FiltroConciliadas) {
   const [r] = await db
     .select({ n: count() })
     .from(transacoesBancarias)
     .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
-    .where(and(eq(contasBancarias.empresaId, empresaId), conciliada));
+    .where(filtroConciliadas(empresaId, f));
   return r.n;
 }
 
@@ -78,7 +89,7 @@ const par = alias(transacoesBancarias, "par");
 const parConta = alias(contasBancarias, "par_conta");
 
 /** Conciliadas com o lançamento, as contrapartidas (classificada), a conta do par (transferência) e se baixou título. */
-export async function listarConciliadas(empresaId: string, f: { conta: string; de: string; ate: string; q: string }) {
+export async function listarConciliadas(empresaId: string, f: FiltroConciliadas) {
   const linhas = await db
     .select({
       transacaoId: transacoesBancarias.id,
@@ -109,13 +120,7 @@ export async function listarConciliadas(empresaId: string, f: { conta: string; d
     .leftJoin(planoContas, eq(planoContas.id, partidas.contaId))
     .leftJoin(par, eq(par.id, transacoesBancarias.transferenciaParId))
     .leftJoin(parConta, eq(parConta.id, par.contaBancariaId))
-    .where(and(
-      eq(contasBancarias.empresaId, empresaId), conciliada,
-      f.conta ? eq(transacoesBancarias.contaBancariaId, f.conta) : undefined,
-      f.de ? gte(transacoesBancarias.data, f.de) : undefined,
-      f.ate ? lte(transacoesBancarias.data, f.ate) : undefined,
-      f.q ? ilike(transacoesBancarias.memo, `%${f.q}%`) : undefined,
-    ))
+    .where(filtroConciliadas(empresaId, f))
     .orderBy(desc(transacoesBancarias.data), asc(transacoesBancarias.valor), asc(transacoesBancarias.id), asc(partidas.ordem));
   return agruparContrapartidas(linhas);
 }

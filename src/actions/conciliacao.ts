@@ -11,7 +11,7 @@ import {
   alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, inserirRegra, reclassificarTransacao,
   transferirEntreContas,
 } from "@/lib/conciliacao";
-import { cents, fmtData, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
+import { cents, fmtCompetencia, fmtData, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
 
@@ -75,15 +75,18 @@ export async function aprovarClassificacao(empresaId: string, input: Classificac
 const reclassificacaoSchema = classificacaoSchema.omit({ criarRegra: true });
 export type ReclassificacaoInput = z.input<typeof reclassificacaoSchema>;
 
-/** Estorna o lançamento da conciliação (hoje) e cria o novo na data do extrato (hoje se o mês estiver fechado). */
+/** Estorna o lançamento da conciliação e cria o novo na data do extrato (hoje se o mês estiver fechado). */
 export async function reclassificar(empresaId: string, input: ReclassificacaoInput): Promise<EstadoForm & { aviso?: string }> {
   const r = reclassificacaoSchema.safeParse(input);
   if (!r.success) return { erro: r.error.issues[0].message };
-  const fora: { data?: string | null } = {};
+  const fora: { d?: Awaited<ReturnType<typeof reclassificarTransacao>> } = {};
   const res = await executar(empresaId, async (usuarioId) => {
-    fora.data = await db.transaction((tx) => reclassificarTransacao(tx, { ...r.data, empresaId, usuarioId }));
+    fora.d = await db.transaction((tx) => reclassificarTransacao(tx, { ...r.data, empresaId, usuarioId }));
   });
-  return fora.data ? { ...res, aviso: `Mês fechado: lançado por estorno em ${fmtData(fora.data)}.` } : res;
+  if (!fora.d) return res;
+  const { extrato, novo, estorno } = fora.d;
+  const quando = estorno === novo ? `estorno e novo lançamento em ${fmtData(novo)}` : `novo lançamento em ${fmtData(novo)}`;
+  return { ...res, aviso: `Mês ${fmtCompetencia(extrato)} fechado: ${quando}, competência ${fmtCompetencia(r.data.competencia ?? extrato)}.` };
 }
 
 export async function baixarTituloPelaTransacao(
@@ -235,14 +238,6 @@ export async function classificarEmLote(empresaId: string, input: ClassificacaoL
   const txs = [...new Set(transacaoIds)].flatMap((id) => porId.get(id) ?? []);
   if (!txs.length) return { aprovadas: 0, erros: ["Nenhuma transação encontrada."] };
 
-  if (criarRegra) {
-    try {
-      await db.transaction((tx) => inserirRegra(tx, empresaId, criarRegra, contaId, historicoTemplate));
-    } catch (e) {
-      return { aprovadas: 0, erros: [`Regra: ${msg(e)}`] };
-    }
-  }
-
   const entrada = cents(txs[0].valor) > 0;
   let aprovadas = 0;
   const erros: string[] = [];
@@ -261,6 +256,14 @@ export async function classificarEmLote(empresaId: string, input: ClassificacaoL
       aprovadas++;
     } catch (e) {
       erros.push(`${t.memo.slice(0, 40) || t.id.slice(0, 8)}: ${msg(e)}`);
+    }
+  }
+  // regra só depois que ao menos uma classificou: lote todo com erro não deixa regra órfã
+  if (criarRegra && aprovadas) {
+    try {
+      await db.transaction((tx) => inserirRegra(tx, empresaId, criarRegra, contaId, historicoTemplate));
+    } catch (e) {
+      erros.push(`Regra: ${msg(e)}`);
     }
   }
   revalidatePath(`/e/${empresaId}`, "layout");

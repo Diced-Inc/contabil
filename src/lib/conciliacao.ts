@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { contasBancarias, fechamentos, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
-import { cents, fromCents, hoje, primeiroDiaDoMes } from "./format";
+import { contasBancarias, fechamentos, lancamentos, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
+import { cents, fmtCompetencia, fromCents, hoje, primeiroDiaDoMes } from "./format";
 import { criarLancamento, estornarLancamento, type PartidaInput } from "./lancamentos";
 import { baixarTitulo } from "./titulos";
 
@@ -69,7 +69,7 @@ const marcar = (tx: Tx, id: string, set: Partial<typeof transacoesBancarias.$inf
 export async function classificarTransacao(tx: Tx, input: {
   empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
   competencia?: string; criarRegra?: NovaRegra; usuarioId?: string | null;
-  /** Só a reclassificação em mês fechado: lança em outra data (hoje), com a competência do extrato. */
+  /** Só a reclassificação: data do novo lançamento (hoje, se o mês do extrato fechou), competência do extrato. */
   data?: string;
 }) {
   const t = await travarPendente(tx, input.empresaId, input.transacaoId);
@@ -134,20 +134,28 @@ export async function transferirEntreContas(tx: Tx, input: {
   return l;
 }
 
-/** Estorna o lançamento (hoje), devolve a(s) transação(ões) a pendente e reabre título baixado por ele. */
-export async function desfazerConciliacao(tx: Tx, empresaId: string, transacaoId: string, usuarioId?: string | null) {
+/**
+ * Estorna o lançamento no dia dele (hoje, se o mês fechou), devolve a(s) transação(ões) a pendente e reabre título
+ * baixado por ele. Retorna a data do estorno.
+ */
+export async function desfazerConciliacao(
+  tx: Tx, empresaId: string, transacaoId: string, usuarioId?: string | null, acao = "desfazer",
+) {
   const t = await travar(tx, empresaId, transacaoId);
   if (!t.lancamentoId || (t.status !== "classificada" && t.status !== "transferencia"))
     throw new Error("Transação não está conciliada");
   const lancId = t.lancamentoId;
+  const [orig] = await tx.select({ data: lancamentos.data }).from(lancamentos).where(eq(lancamentos.id, lancId));
+  const data = dataNoMesAberto(orig.data, hoje(), await mesesFechados(tx, empresaId), acao);
   await tx.select({ id: transacoesBancarias.id }).from(transacoesBancarias)
     .where(eq(transacoesBancarias.lancamentoId, lancId)).for("update");
-  await estornarLancamento(tx, lancId, hoje(), usuarioId);
+  await estornarLancamento(tx, lancId, data, usuarioId);
   await tx.update(transacoesBancarias).set({
     status: "pendente", lancamentoId: null, transferenciaParId: null, sugestaoContaId: null, sugestaoConfianca: null,
     sugestaoOrigem: null, sugestaoRegraId: null, sugestaoHistorico: null, sugestaoJustificativa: null,
   }).where(eq(transacoesBancarias.lancamentoId, lancId));
   await tx.update(titulos).set({ status: "aberto", baixaLancamentoId: null }).where(eq(titulos.baixaLancamentoId, lancId));
+  return data;
 }
 
 /** pendente ↔ ignorada. */
@@ -158,16 +166,25 @@ export async function alterarIgnorada(tx: Tx, empresaId: string, transacaoId: st
   await marcar(tx, t.id, { status: ignorar ? "ignorada" : "pendente", sugestaoJustificativa: ignorar ? motivo || null : null });
 }
 
-/** O mês da data está fechado (mesma regra do trigger `periodo_fechado`)? */
-async function mesFechado(tx: Tx, empresaId: string, data: string) {
-  const [f] = await tx.select({ id: fechamentos.id }).from(fechamentos)
-    .where(and(eq(fechamentos.empresaId, empresaId), eq(fechamentos.competencia, primeiroDiaDoMes(data))));
-  return !!f;
+/** Competências fechadas da empresa (mesma regra do trigger `periodo_fechado`). */
+async function mesesFechados(tx: Tx, empresaId: string) {
+  const fs = await tx.select({ c: fechamentos.competencia }).from(fechamentos).where(eq(fechamentos.empresaId, empresaId));
+  return new Set(fs.map((f) => f.c));
 }
 
 /**
- * Estorna (hoje) e classifica de novo, na mesma transação do Postgres. O novo lançamento fica na data do extrato;
- * se o mês do extrato está fechado, vai para hoje (o trigger barra a data). Retorna a data usada nesse caso, senão null.
+ * A própria data se o mês está aberto (estorno e novo lançamento no mês do original, sem contar em dobro);
+ * senão hoje; hoje também fechado → erro claro em vez da mensagem do trigger.
+ */
+export function dataNoMesAberto(data: string, hoje: string, fechados: ReadonlySet<string>, acao: string) {
+  if (!fechados.has(primeiroDiaDoMes(data))) return data;
+  if (fechados.has(primeiroDiaDoMes(hoje))) throw new Error(`Reabra o mês ${fmtCompetencia(hoje)} em Fechamento para ${acao}`);
+  return hoje;
+}
+
+/**
+ * Estorna e classifica de novo, na mesma transação do Postgres: estorno na data do original e novo lançamento na
+ * do extrato; mês fechado vai para hoje, com a competência do extrato. Retorna as datas se alguma saiu do lugar.
  */
 export async function reclassificarTransacao(tx: Tx, input: {
   empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
@@ -177,10 +194,10 @@ export async function reclassificarTransacao(tx: Tx, input: {
   if (t.status !== "classificada" || !t.lancamentoId) throw new Error("Só transações classificadas podem ser reclassificadas");
   const [baixa] = await tx.select({ id: titulos.id }).from(titulos).where(eq(titulos.baixaLancamentoId, t.lancamentoId)).limit(1);
   if (baixa) throw new Error("Transação baixou um título: desfaça a conciliação em vez de reclassificar");
-  const data = (await mesFechado(tx, input.empresaId, t.data)) ? hoje() : null;
-  await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId);
-  await classificarTransacao(tx, { ...input, data: data ?? undefined });
-  return data;
+  const data = dataNoMesAberto(t.data, hoje(), await mesesFechados(tx, input.empresaId), "reclassificar");
+  const estorno = await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId, "reclassificar");
+  await classificarTransacao(tx, { ...input, data });
+  return data === t.data ? null : { extrato: t.data, novo: data, estorno };
 }
 
 type PartidaConciliada = { transacaoId: string; contaId: string | null; codigo: string | null; nome: string | null; debito: string | null; credito: string | null };

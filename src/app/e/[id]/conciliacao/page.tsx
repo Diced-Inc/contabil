@@ -42,7 +42,7 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
   const [pendentes, ignoradas, nConciliadas, bancos] = await Promise.all([
     listarTransacoes(id, "pendente"),
     listarTransacoes(id, "ignorada"),
-    contarConciliadas(id),
+    contarConciliadas(id, f),
     listarContasBancarias(id),
   ]);
   // ponytail: filtro em memória; levar para o SQL se a fila passar de alguns milhares

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agruparContrapartidas, partidasClassificacao } from "./conciliacao";
+import { agruparContrapartidas, dataNoMesAberto, partidasClassificacao } from "./conciliacao";
 import { padraoComum } from "./classificacao/regras";
 import { validarPartidas } from "./lancamentos";
 
@@ -56,20 +56,16 @@ describe("agruparContrapartidas", () => {
   });
 });
 
-describe("agruparContrapartidas", () => {
-  it("agrupa por transação, mantém ordem e ignora linha sem contrapartida", () => {
-    const base = { codigo: "4.1", nome: "Tarifas", debito: "0", credito: "0" };
-    const r = agruparContrapartidas([
-      { transacaoId: "a", memo: "x", ...base, contaId: "c1", debito: "10.50" },
-      { transacaoId: "b", memo: "y", ...base, contaId: null, codigo: null, nome: null },
-      { transacaoId: "a", memo: "x", ...base, contaId: "c2", credito: "2.00" },
-    ]);
-    expect(r).toEqual([
-      { transacaoId: "a", memo: "x", contras: [
-        { contaId: "c1", codigo: "4.1", nome: "Tarifas", valor: "10.50" },
-        { contaId: "c2", codigo: "4.1", nome: "Tarifas", valor: "2.00" },
-      ] },
-      { transacaoId: "b", memo: "y", contras: [] },
-    ]);
+describe("dataNoMesAberto", () => {
+  const fechados = new Set(["2026-09-01"]);
+  it("mês aberto: a própria data (estorno no mês do original)", () => {
+    expect(dataNoMesAberto("2026-08-15", "2026-10-27", fechados, "desfazer")).toBe("2026-08-15");
+  });
+  it("mês fechado: hoje", () => {
+    expect(dataNoMesAberto("2026-09-15", "2026-10-27", fechados, "desfazer")).toBe("2026-10-27");
+  });
+  it("hoje também fechado: pede para reabrir", () => {
+    expect(() => dataNoMesAberto("2026-09-15", "2026-09-30", fechados, "reclassificar"))
+      .toThrow("Reabra o mês 09/2026 em Fechamento para reclassificar");
   });
 });

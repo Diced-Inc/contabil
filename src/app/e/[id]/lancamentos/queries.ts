@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, ilike, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { lancamentoLog, lancamentos, partidas, planoContas } from "@/db/schema";
+import { escapeLike } from "@/lib/format";
 
 export const ORIGENS = { manual: "Manual", conciliacao: "Conciliação", apuracao: "Apuração", estorno: "Estorno" } as const;
 export type Origem = keyof typeof ORIGENS;
@@ -46,7 +47,7 @@ export function listarLancamentos(empresaId: string, f: { de: string; ate: strin
         eq(lancamentos.empresaId, empresaId),
         gte(lancamentos.data, f.de),
         lte(lancamentos.data, f.ate),
-        f.texto ? ilike(lancamentos.historico, `%${f.texto.replace(/[\\%_]/g, (c) => "\\" + c)}%`) : undefined,
+        f.texto ? ilike(lancamentos.historico, `%${escapeLike(f.texto)}%`) : undefined,
         f.origem ? eq(lancamentos.origem, f.origem) : undefined,
         f.semDocMin
           ? sql`${lancamentos.status} = 'aprovado' and ${lancamentos.origem} not in ('apuracao', 'estorno')
