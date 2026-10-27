@@ -33,6 +33,8 @@ async function executar(empresaId: string, fn: (usuarioId: string) => Promise<un
 }
 
 const uuid = z.uuid("Transação inválida.");
+/** empresaId da URL: sem isso, um id malformado vira erro 500 do Postgres nos lotes. */
+const empresaValida = (id: string) => z.uuid().safeParse(id).success;
 
 const novaRegraSchema = z
   .object({
@@ -124,6 +126,7 @@ export async function desfazerConciliacao(empresaId: string, transacaoId: string
 /** Cada transação na sua própria transação do banco; o par de uma transferência é desfeito junto. */
 export async function desfazerEmLote(empresaId: string, transacaoIds: string[]): Promise<{ desfeitas: number; erros: string[] }> {
   const user = await requireUser();
+  if (!empresaValida(empresaId)) return { desfeitas: 0, erros: ["Empresa inválida."] };
   const ids = z.array(z.uuid()).safeParse(transacaoIds);
   if (!ids.success || !ids.data.length) return { desfeitas: 0, erros: ["Nenhuma transação selecionada."] };
   const txs = await db
@@ -158,6 +161,7 @@ export async function aprovarEmLote(
   opcoes: { minConfiancaIa?: number } = {},
 ): Promise<{ aprovadas: number; puladas: number; erros: string[] }> {
   const user = await requireUser();
+  if (!empresaValida(empresaId)) return { aprovadas: 0, puladas: 0, erros: ["Empresa inválida."] };
   const ids = z.array(z.uuid()).safeParse(transacaoIds);
   if (!ids.success || !ids.data.length) return { aprovadas: 0, puladas: 0, erros: ["Nenhuma transação selecionada."] };
   const min = z.number().min(0).max(1).optional().safeParse(opcoes.minConfiancaIa);
@@ -223,6 +227,7 @@ export type ClassificacaoLoteInput = z.input<typeof loteSchema>;
 /** Mesma contrapartida para várias transações do mesmo sinal; cada uma na sua própria transação do banco. */
 export async function classificarEmLote(empresaId: string, input: ClassificacaoLoteInput): Promise<{ aprovadas: number; erros: string[] }> {
   const user = await requireUser();
+  if (!empresaValida(empresaId)) return { aprovadas: 0, erros: ["Empresa inválida."] };
   const r = loteSchema.safeParse(input);
   if (!r.success) return { aprovadas: 0, erros: [r.error.issues[0].message] };
   const { transacaoIds, contaId, historicoTemplate, documento, competencia, criarRegra } = r.data;

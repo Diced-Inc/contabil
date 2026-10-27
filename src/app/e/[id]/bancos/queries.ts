@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, like, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { contasBancarias, importacoes, lancamentos, partidas, planoContas, transacoesBancarias } from "@/db/schema";
 import { cents, fromCents } from "@/lib/format";
@@ -43,7 +43,8 @@ export type ContaComSaldo = Awaited<ReturnType<typeof listarContasComSaldo>>[num
  * Conferência de saldo por conta bancária, na data do OFX com saldo mais recente:
  * diferenca = saldoOfx − saldoContabil − pendentes − ignoradas (0 quando tudo conciliado).
  */
-export async function listarContasComSaldo(empresaId: string) {
+/** `ate`: considera só OFX com saldo até essa data (checagem de um exercício passado). */
+export async function listarContasComSaldo(empresaId: string, ate?: string) {
   const ult = db
     .selectDistinctOn([importacoes.contaBancariaId], {
       contaBancariaId: importacoes.contaBancariaId,
@@ -52,6 +53,7 @@ export async function listarContasComSaldo(empresaId: string) {
       importadoEm: importacoes.createdAt,
     })
     .from(importacoes)
+    .where(ate ? lte(importacoes.dataSaldo, ate) : undefined)
     .orderBy(importacoes.contaBancariaId, sql`${importacoes.dataSaldo} desc nulls last`, desc(importacoes.createdAt))
     .as("ult");
 

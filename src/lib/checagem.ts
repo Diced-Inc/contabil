@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { listarContasComSaldo } from "@/app/e/[id]/bancos/queries";
 import { carregarEstado, mesesDoAno } from "./fechamento";
-import { cents, fmtCompetencia, fmtData, fmtValor, hoje } from "./format";
+import { cents, fmtCompetencia, fmtData, fmtValor, hoje, primeiroDiaDoMes } from "./format";
 import { balanco } from "./relatorios/balanco";
 import { saldos, type LinhaSaldo } from "./relatorios/saldos";
 
@@ -19,24 +19,36 @@ export type ItemChecagem = {
 
 const LIMITE_SEM_DOCUMENTO = 1000;
 
-/** Analíticas com saldo contrário à natureza (D com saldo credor, C com saldo devedor), exceto retificadoras "(-)". */
+/** Analíticas com saldo contrário à natureza (D com saldo credor, C com saldo devedor); retificadoras já têm a natureza certa. */
 export function naturezaInvertida(linhas: Pick<LinhaSaldo, "id" | "codigo" | "nome" | "natureza" | "tipo" | "saldoAtual">[]) {
   return linhas.filter((l) => {
-    if (l.tipo !== "analitica" || l.nome.trim().startsWith("(-)")) return false;
+    if (l.tipo !== "analitica") return false;
     const s = cents(l.saldoAtual);
     return l.natureza === "D" ? s < 0 : s > 0;
   });
 }
 
-/** Competências "YYYY-MM-01" do ano até `ate` (inclusive) sem nenhum lançamento. */
-export function mesesSemLancamento(ano: number, comLancamento: Iterable<string>, ate: string) {
+/**
+ * Competências "YYYY-MM-01" do ano sem nenhum lançamento, do mês de `inicio` (primeiro lançamento/OFX da empresa)
+ * até `ate`; o mês de `hoje` só conta a partir do dia 10.
+ */
+export function mesesSemLancamento(ano: number, comLancamento: Iterable<string>, p: { ate: string; inicio: string; hoje: string }) {
   const com = new Set(comLancamento);
-  return mesesDoAno(ano).filter((m) => m <= ate && !com.has(m));
+  const desde = primeiroDiaDoMes(p.inicio);
+  const mesHoje = Number(p.hoje.slice(8, 10)) < 10 ? primeiroDiaDoMes(p.hoje) : "";
+  return mesesDoAno(ano).filter((m) => m >= desde && m <= p.ate && m !== mesHoje && !com.has(m));
 }
 
-/** Meses com saída a sócio (débito em conta de sócio) e nenhum débito em pró-labore. */
-export function mesesSocioSemProLabore(meses: { mes: string; socio: number; proLabore: number }[]) {
-  return meses.filter((m) => m.socio > 0 && m.proLabore === 0).map((m) => m.mes);
+type SocioMes = { mes: string; status: "aprovado" | "estornado"; origem: string; socio: number; proLabore: number };
+/** Meses com saída a sócio (débito em conta de sócio) e nenhum débito em pró-labore; ignora estornados, estornos e apuração. */
+export function mesesSocioSemProLabore(linhas: SocioMes[]) {
+  const porMes = new Map<string, { socio: number; proLabore: number }>();
+  for (const l of linhas) {
+    if (l.status === "estornado" || l.origem === "estorno" || l.origem === "apuracao") continue;
+    const m = porMes.get(l.mes) ?? { socio: 0, proLabore: 0 };
+    porMes.set(l.mes, { socio: m.socio + l.socio, proLabore: m.proLabore + l.proLabore });
+  }
+  return [...porMes].filter(([, m]) => m.socio > 0 && m.proLabore === 0).map(([mes]) => mes);
 }
 
 export function resumir(itens: ItemChecagem[]) {
@@ -53,9 +65,9 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   const fim = dez < hoje() ? dez : hoje();
   const base = `/e/${empresaId}`;
 
-  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos] = await Promise.all([
+  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos, inicio] = await Promise.all([
     balanco(empresaId, ano),
-    listarContasComSaldo(empresaId),
+    listarContasComSaldo(empresaId, fim),
     carregarEstado(db, empresaId),
     saldos(empresaId, ini, fim),
     db.execute<{ mes: string; n: number }>(sql`
@@ -71,18 +83,25 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
     db.execute<{ mes: string }>(sql`
       SELECT DISTINCT date_trunc('month', data)::date::text AS mes FROM lancamentos
       WHERE empresa_id = ${empresaId} AND data BETWEEN ${ini} AND ${fim}`),
-    db.execute<{ mes: string; socio: string; prolabore: string }>(sql`
-      SELECT date_trunc('month', l.data)::date::text AS mes,
+    db.execute<{ mes: string; status: "aprovado" | "estornado"; origem: string; socio: string; prolabore: string }>(sql`
+      SELECT date_trunc('month', l.data)::date::text AS mes, l.status, l.origem,
         coalesce(sum(p.debito) FILTER (WHERE pc.nome ~* 's[óo]cio'), 0)::text AS socio,
         coalesce(sum(p.debito) FILTER (WHERE pc.nome ~* 'pr[óo][- ]?labore'), 0)::text AS prolabore
       FROM lancamentos l JOIN partidas p ON p.lancamento_id = l.id JOIN plano_contas pc ON pc.id = p.conta_id
-      WHERE l.empresa_id = ${empresaId} AND l.status = 'aprovado' AND l.origem <> 'apuracao'
-        AND l.data BETWEEN ${ini} AND ${fim}
-      GROUP BY 1`),
+      WHERE l.empresa_id = ${empresaId} AND l.data BETWEEN ${ini} AND ${fim}
+      GROUP BY 1, 2, 3`),
     db.execute<{ tipo: "receber" | "pagar"; n: number }>(sql`
       SELECT tipo, count(*)::int AS n FROM titulos
       WHERE empresa_id = ${empresaId} AND status = 'aberto' AND vencimento < ${hoje()} AND vencimento <= ${fim}
       GROUP BY tipo`),
+    // primeiro movimento da empresa (lançamento ou OFX); sem nenhum, a data de cadastro
+    db.execute<{ d: string }>(sql`
+      SELECT coalesce(
+        least(
+          (SELECT min(data) FROM lancamentos WHERE empresa_id = ${empresaId}),
+          (SELECT min(t.data) FROM transacoes_bancarias t JOIN contas_bancarias cb ON cb.id = t.conta_bancaria_id
+           WHERE cb.empresa_id = ${empresaId})),
+        (SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date FROM empresas WHERE id = ${empresaId}))::text AS d`),
   ]);
 
   const itens: ItemChecagem[] = [];
@@ -102,7 +121,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   for (const b of bancos.filter((b) => b.ativa)) {
     const item = { id: `banco-${b.id}`, titulo: `Saldo bancário: ${b.nome}`, link: `${base}/bancos` };
     if (b.diferenca === null) {
-      itens.push({ ...item, status: "alerta", detalhe: "Nenhum OFX com saldo final importado." });
+      itens.push({ ...item, status: "alerta", detalhe: `Sem OFX até ${fmtData(fim)}.` });
     } else {
       const d = cents(b.diferenca);
       itens.push({
@@ -166,7 +185,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
 
   // 7. Sócio sem pró-labore
   const semPL = mesesSocioSemProLabore(
-    [...socio].map((s) => ({ mes: s.mes, socio: cents(s.socio), proLabore: cents(s.prolabore) })),
+    [...socio].map((s) => ({ ...s, socio: cents(s.socio), proLabore: cents(s.prolabore) })),
   ).sort();
   itens.push({
     id: "socio", titulo: "Pagamentos a sócio sem pró-labore no mês",
@@ -177,7 +196,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   });
 
   // 8. Meses sem lançamento
-  const vazios = mesesSemLancamento(ano, [...porMes].map((m) => m.mes), fim);
+  const vazios = mesesSemLancamento(ano, [...porMes].map((m) => m.mes), { ate: fim, inicio: inicio[0]?.d ?? ini, hoje: hoje() });
   itens.push({
     id: "meses-vazios", titulo: "Meses sem lançamentos",
     status: vazios.length ? "alerta" : "ok",
