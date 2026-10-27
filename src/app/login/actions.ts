@@ -7,6 +7,9 @@ import { createClient, requireUser } from "@/supabase/server";
 
 export type Resultado = { erro?: string; ok?: boolean };
 
+const msgErro = (e: { code?: string; message: string }) =>
+  e.code === "same_password" ? "A nova senha deve ser diferente da atual." : e.message;
+
 function validarNovaSenha(formData: FormData) {
   const password = String(formData.get("nova") ?? "");
   if (password.length < 8) return { erro: "A nova senha precisa ter pelo menos 8 caracteres." };
@@ -43,7 +46,7 @@ export async function trocarSenha(_: Resultado, formData: FormData): Promise<Res
   if (errAtual) return { erro: "Senha atual incorreta." };
 
   const { error } = await supabase.auth.updateUser({ password: v.password });
-  if (error) return { erro: error.message };
+  if (error) return { erro: msgErro(error) };
   return { ok: true };
 }
 
@@ -68,6 +71,6 @@ export async function redefinirSenha(_: Resultado, formData: FormData): Promise<
 
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ password: v.password });
-  if (error) return { erro: error.message };
+  if (error) return { erro: msgErro(error) };
   redirect("/");
 }
