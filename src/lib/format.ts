@@ -40,7 +40,8 @@ export function fmtCpf(c: string) { return c.replace(/^(\d{3})(\d{3})(\d{3})(\d{
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 /** "2025-12-31" → "31 de dezembro de 2025". */
 export const fmtDataExtenso = (d: string) => `${Number(d.slice(8, 10))} de ${MESES[Number(d.slice(5, 7)) - 1]} de ${d.slice(0, 4)}`;
-export const REGIMES = { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" } as const;
+export const REGIMES = { simples: "Simples Nacional", mei: "MEI (SIMEI)", presumido: "Lucro Presumido", real: "Lucro Real" } as const;
+export const PORTES = { mei: "MEI", me: "Microempresa (ME)", epp: "Empresa de pequeno porte (EPP)", demais: "Demais" } as const;
 export const NATUREZAS = { D: "Devedora", C: "Credora" } as const;
 export const GRUPOS_DRE = {
   receita_bruta: "Receita bruta",

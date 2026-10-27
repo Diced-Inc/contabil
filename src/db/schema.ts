@@ -3,7 +3,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
-export const regimeEnum = pgEnum("regime_tributario", ["simples", "presumido", "real"]);
+export const regimeEnum = pgEnum("regime_tributario", ["simples", "presumido", "real", "mei"]);
+export const porteEnum = pgEnum("porte_empresa", ["mei", "me", "epp", "demais"]);
 export const naturezaEnum = pgEnum("natureza", ["D", "C"]);
 export const tipoContaEnum = pgEnum("tipo_conta", ["sintetica", "analitica"]);
 export const grupoDreEnum = pgEnum("grupo_dre", [
@@ -30,6 +31,7 @@ export const empresas = pgTable("empresas", {
   razaoSocial: text("razao_social").notNull(),
   cnpj: text("cnpj").notNull().unique(),
   regimeTributario: regimeEnum("regime_tributario").notNull().default("simples"),
+  porte: porteEnum("porte"),
   cidade: text("cidade"),
   uf: text("uf"),
   responsavelNome: text("responsavel_nome"),

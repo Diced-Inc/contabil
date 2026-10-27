@@ -29,6 +29,13 @@
       "when": 1792107243794,
       "tag": "0003_empresa_responsavel_contador",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793125341938,
+      "tag": "0004_regime_mei_porte",
+      "breakpoints": true
     }
   ]
 }

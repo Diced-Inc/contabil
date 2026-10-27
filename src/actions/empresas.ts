@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { empresas } from "@/db/schema";
+import { empresas, porteEnum, regimeEnum } from "@/db/schema";
 import { seedPlano } from "@/db/seed-plano";
 import { somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
@@ -21,7 +21,8 @@ const cpf = (msg: string) => opcional(z.string().transform(somenteDigitos).pipe(
 const empresaSchema = z.object({
   razaoSocial: z.string().trim().min(2, "Razão social deve ter ao menos 2 caracteres."),
   cnpj: z.string().transform(somenteDigitos).pipe(z.string().length(14, "CNPJ deve ter 14 dígitos.")),
-  regimeTributario: z.enum(["simples", "presumido", "real"], "Regime tributário inválido."),
+  regimeTributario: z.enum(regimeEnum.enumValues, "Regime tributário inválido."),
+  porte: z.union([z.literal("").transform(() => null), z.enum(porteEnum.enumValues)], "Porte inválido."),
   cidade: opcional(z.string()),
   uf: opcional(z.string().toUpperCase().regex(/^[A-Z]{2}$/, "UF deve ter 2 letras.")),
   responsavelNome: opcional(z.string()),

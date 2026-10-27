@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/page-header";
-import { fmtCnpj, fmtCpf, fmtDataExtenso } from "@/lib/format";
+import { fmtCnpj, fmtCpf, fmtDataExtenso, PORTES, REGIMES } from "@/lib/format";
 import { ContaDetalheProvider } from "./conta-detalhe";
 import { Imprimir } from "./imprimir";
 
@@ -8,6 +8,8 @@ type Empresa = {
   id: string;
   razaoSocial: string;
   cnpj: string;
+  regimeTributario: keyof typeof REGIMES;
+  porte: keyof typeof PORTES | null;
   cidade: string | null;
   uf: string | null;
   responsavelNome: string | null;
@@ -81,7 +83,11 @@ export function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, 
           <div className="min-w-0">
             <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">{titulo}</p>
             <p className="mt-1.5 text-lg font-semibold tracking-tight">{empresa.razaoSocial}</p>
-            <p className="text-sm text-muted-foreground tabular-nums">CNPJ {fmtCnpj(empresa.cnpj)}</p>
+            <p className="text-sm text-muted-foreground tabular-nums print:text-black">CNPJ {fmtCnpj(empresa.cnpj)}</p>
+            <p className="text-xs text-muted-foreground print:text-black">
+              Regime: {REGIMES[empresa.regimeTributario]}
+              {empresa.porte && ` · Porte: ${PORTES[empresa.porte]}`}
+            </p>
           </div>
           <dl className="shrink-0 text-right text-xs text-muted-foreground tabular-nums">
             <dt className="sr-only">Período</dt>

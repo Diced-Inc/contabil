@@ -8,11 +8,11 @@ import { NovaEmpresaDialog } from "@/components/empresa-form";
 import { Carregando, EmptyState, PageHeader } from "@/components/page-header";
 import { db } from "@/db";
 import { empresas } from "@/db/schema";
-import { fmtCnpj, REGIMES } from "@/lib/format";
+import { fmtCnpj, PORTES, REGIMES } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
 import { sair } from "./login/actions";
 
-const REGIME_BADGE = { simples: "brand", presumido: "info", real: "violet" } as const;
+const REGIME_BADGE = { simples: "brand", mei: "success", presumido: "info", real: "violet" } as const;
 
 function iniciais(nome: string) {
   const p = nome.split(/\s+/).filter((w) => w.length > 2);
@@ -70,9 +70,10 @@ async function ListaEmpresas() {
           <span className="min-w-0 flex-1">
             <span className="line-clamp-2 font-semibold leading-snug text-foreground">{e.razaoSocial}</span>
             <span className="mt-0.5 block text-sm text-muted-foreground tabular-nums">CNPJ {fmtCnpj(e.cnpj)}</span>
-            <Badge variant={REGIME_BADGE[e.regimeTributario]} className="mt-2">
-              {REGIMES[e.regimeTributario]}
-            </Badge>
+            <span className="mt-2 flex flex-wrap gap-1.5">
+              <Badge variant={REGIME_BADGE[e.regimeTributario]}>{REGIMES[e.regimeTributario]}</Badge>
+              {e.porte && <Badge variant="muted">{PORTES[e.porte]}</Badge>}
+            </span>
           </span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
         </Link>

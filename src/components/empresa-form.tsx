@@ -10,12 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { fmtCnpj, fmtCpf, REGIMES, somenteDigitos } from "@/lib/format";
+import { fmtCnpj, fmtCpf, PORTES, REGIMES, somenteDigitos } from "@/lib/format";
 
 type Empresa = {
   razaoSocial: string;
   cnpj: string;
-  regimeTributario: "simples" | "presumido" | "real";
+  regimeTributario: keyof typeof REGIMES;
+  porte: keyof typeof PORTES | null;
   cidade: string | null;
   uf: string | null;
   responsavelNome: string | null;
@@ -24,6 +25,9 @@ type Empresa = {
   contadorCpf: string | null;
   contadorCrc: string | null;
 };
+const SELECT =
+  "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+
 type Acao = (prev: EstadoForm, form: FormData) => Promise<EstadoForm>;
 
 function Campo({ label, name, className, ...props }: { label: string; name: string } & ComponentProps<typeof Input>) {
@@ -87,9 +91,18 @@ export function EmpresaForm({ action, empresa, rotulo }: { action: Acao; empresa
             id="regimeTributario"
             name="regimeTributario"
             defaultValue={empresa?.regimeTributario ?? "simples"}
-            className="h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className={SELECT}
           >
             {Object.entries(REGIMES).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="porte">Porte</Label>
+          <select id="porte" name="porte" defaultValue={empresa?.porte ?? ""} className={SELECT}>
+            <option value="">Não informado</option>
+            {Object.entries(PORTES).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
