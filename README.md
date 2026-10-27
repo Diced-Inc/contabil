@@ -52,3 +52,9 @@ Outros comandos: `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm db:generate`, `pn
 - Cálculo de tributos e obrigações acessórias
 - Cartão de crédito
 - Multiusuário (perfis, permissões, vários contadores)
+
+## Recuperação de senha
+
+Em **Configurações** o usuário troca a senha (pede a atual). Na tela de login, "Esqueci minha senha" envia um link por e-mail (só para e-mails em `ALLOWED_EMAILS`; a resposta é sempre a mesma). O link passa por `/login/confirmar`, que troca o código por sessão, e cai em `/login/redefinir`.
+
+Para o link funcionar, em **Supabase → Authentication → URL Configuration** adicione `https://contabil-psi.vercel.app/**` (e `http://localhost:3000/**` para dev) em **Redirect URLs**. O link precisa ser aberto no mesmo navegador em que foi pedido (PKCE).

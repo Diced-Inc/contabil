@@ -1,7 +1,18 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createClient } from "@/supabase/server";
+import { emailPermitido } from "@/supabase/proxy";
+import { createClient, requireUser } from "@/supabase/server";
+
+export type Resultado = { erro?: string; ok?: boolean };
+
+function validarNovaSenha(formData: FormData) {
+  const password = String(formData.get("nova") ?? "");
+  if (password.length < 8) return { erro: "A nova senha precisa ter pelo menos 8 caracteres." };
+  if (password !== String(formData.get("confirmar") ?? "")) return { erro: "As senhas não conferem." };
+  return { password };
+}
 
 export async function entrar(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
@@ -19,4 +30,44 @@ export async function sair() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function trocarSenha(_: Resultado, formData: FormData): Promise<Resultado> {
+  const user = await requireUser();
+  const v = validarNovaSenha(formData);
+  if (v.erro) return v;
+
+  const supabase = await createClient();
+  const atual = String(formData.get("atual") ?? "");
+  const { error: errAtual } = await supabase.auth.signInWithPassword({ email: user.email!, password: atual });
+  if (errAtual) return { erro: "Senha atual incorreta." };
+
+  const { error } = await supabase.auth.updateUser({ password: v.password });
+  if (error) return { erro: error.message };
+  return { ok: true };
+}
+
+export async function enviarRecuperacao(_: Resultado, formData: FormData): Promise<Resultado> {
+  const email = String(formData.get("email") ?? "").trim();
+  // Mesma resposta exista ou não o e-mail, para não revelar quem tem conta.
+  if (email && emailPermitido(email)) {
+    const origin = (await headers()).get("origin");
+    const supabase = await createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${origin}/login/confirmar`,
+    });
+    if (error) console.error("[auth] resetPasswordForEmail:", error.message);
+  }
+  return { ok: true };
+}
+
+export async function redefinirSenha(_: Resultado, formData: FormData): Promise<Resultado> {
+  await requireUser();
+  const v = validarNovaSenha(formData);
+  if (v.erro) return v;
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password: v.password });
+  if (error) return { erro: error.message };
+  redirect("/");
 }

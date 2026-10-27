@@ -5,6 +5,7 @@ import { EmpresaForm } from "@/components/empresa-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { getEmpresa } from "../empresa";
+import { SenhaCard } from "./senha-card";
 
 async function Form({ params }: Pick<PageProps<"/e/[id]/configuracoes">, "params">) {
   await connection();
@@ -28,6 +29,7 @@ export default function ConfiguracoesPage({ params }: PageProps<"/e/[id]/configu
           </Suspense>
         </CardContent>
       </Card>
+      <SenhaCard />
     </div>
   );
 }

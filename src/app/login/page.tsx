@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { BookOpenCheck, Calculator, CircleAlert, FileSpreadsheet, ListChecks, LogIn } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,9 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
                 Entrar
               </Button>
             </form>
+            <Link href="/login/recuperar" className="mt-4 block text-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+              Esqueci minha senha
+            </Link>
           </div>
         </div>
       </section>
