@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { Calculator, ChevronLeft, ChevronRight, Lock, LockOpen } from "lucide-react";
+import { Calculator, ChevronLeft, ChevronRight, Lock, LockOpen, ShieldCheck } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -113,7 +113,13 @@ async function Fechamento({ params, searchParams }: PageProps<"/e/[id]/fechament
             )}
           </CardDescription>
           <CardAction>
-            <ApuracaoBotao empresaId={id} ano={ano} apurada={!!apuracao} motivo={apuracao ? null : motivoNaoApurar} />
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={`/e/${id}/checagem?ano=${ano}`} className={buttonVariants({ variant: "outline" })}>
+                <ShieldCheck />
+                Checagem
+              </Link>
+              <ApuracaoBotao empresaId={id} ano={ano} apurada={!!apuracao} motivo={apuracao ? null : motivoNaoApurar} />
+            </div>
           </CardAction>
         </CardHeader>
       </Card>

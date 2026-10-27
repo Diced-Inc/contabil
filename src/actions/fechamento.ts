@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db, type Tx } from "@/db";
+import { checar } from "@/lib/checagem";
 import { apurarExercicio, fecharMes, reabrirMes, reverterApuracao } from "@/lib/fechamento";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
@@ -44,6 +45,12 @@ export async function reabrirMesAction(empresaId: string, competencia: string) {
 export async function apurarAction(empresaId: string, ano: number) {
   const a = anoSchema.safeParse(ano);
   if (!a.success) return { erro: a.error.issues[0].message };
+  if (!z.uuid().safeParse(empresaId).success) return { erro: "Empresa inválida." };
+  await requireUser();
+  const erros = (await checar(empresaId, a.data)).filter((i) => i.status === "erro");
+  if (erros.length) {
+    return { erro: `Corrija antes de apurar (veja Checagem): ${erros.map((e) => `${e.titulo}: ${e.detalhe}`).join(" | ")}` };
+  }
   return executar(empresaId, "Erro ao apurar o exercício.", (tx, u) => apurarExercicio(tx, empresaId, a.data, u));
 }
 

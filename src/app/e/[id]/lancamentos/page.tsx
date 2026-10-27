@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { BookOpen, Plus, Search } from "lucide-react";
+import { BookOpen, Plus, Search, X } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -37,7 +37,8 @@ async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">)
   const ate = isoData(sp.ate) ?? ultimoDiaDoMes(de);
   const texto = typeof sp.texto === "string" ? sp.texto.trim() : "";
   const origem = typeof sp.origem === "string" && sp.origem in ORIGENS ? (sp.origem as Origem) : undefined;
-  const lista = await listarLancamentos(id, { de, ate, texto, origem });
+  const semDocMin = Number(sp.semdoc) > 0 ? Number(sp.semdoc) : undefined;
+  const lista = await listarLancamentos(id, { de, ate, texto, origem, semDocMin });
 
   return (
     <>
@@ -48,6 +49,7 @@ async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">)
       />
       <Toolbar>
         <form className="contents">
+          {semDocMin && <input type="hidden" name="semdoc" value={semDocMin} />}
           <FilterField label="De">
             <Input type="date" name="de" defaultValue={de} className="w-40" />
           </FilterField>
@@ -69,6 +71,12 @@ async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">)
             <Search />
             Filtrar
           </Button>
+          {semDocMin && (
+            <Link href={`/e/${id}/lancamentos?de=${de}&ate=${ate}`} className={buttonVariants({ variant: "ghost" })}>
+              <X />
+              Sem documento ≥ R$ {fmtValor(semDocMin)}
+            </Link>
+          )}
         </form>
       </Toolbar>
 

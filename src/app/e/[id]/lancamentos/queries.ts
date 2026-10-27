@@ -26,7 +26,8 @@ const codigos = (lado: "debito" | "credito") => sql<string>`(
   where p.lancamento_id = "lancamentos"."id" and p.${sql.raw(lado)} > 0
 )`;
 
-export function listarLancamentos(empresaId: string, f: { de: string; ate: string; texto?: string; origem?: Origem }) {
+/** semDocMin: só aprovados (sem apuração/estorno), sem documento e com valor ≥ semDocMin (mesmo critério da checagem). */
+export function listarLancamentos(empresaId: string, f: { de: string; ate: string; texto?: string; origem?: Origem; semDocMin?: number }) {
   return db
     .select({
       id: lancamentos.id,
@@ -47,6 +48,11 @@ export function listarLancamentos(empresaId: string, f: { de: string; ate: strin
         lte(lancamentos.data, f.ate),
         f.texto ? ilike(lancamentos.historico, `%${f.texto.replace(/[\\%_]/g, (c) => "\\" + c)}%`) : undefined,
         f.origem ? eq(lancamentos.origem, f.origem) : undefined,
+        f.semDocMin
+          ? sql`${lancamentos.status} = 'aprovado' and ${lancamentos.origem} not in ('apuracao', 'estorno')
+              and coalesce(trim(${lancamentos.documento}), '') = ''
+              and (select sum(p.debito) from partidas p where p.lancamento_id = "lancamentos"."id") >= ${f.semDocMin}`
+          : undefined,
       ),
     )
     .orderBy(asc(lancamentos.data), asc(lancamentos.numero));
