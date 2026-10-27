@@ -5,9 +5,11 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { cn } from "cn";
 import { detalheConta } from "@/actions/relatorios";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtData, fmtSaldoDC, fmtValor } from "@/lib/format";
+import { correr, semEstornos } from "@/lib/relatorios/movimentos";
 
 type Alvo = { contaId: string; titulo: string; de: string; ate: string };
 type Dados = Awaited<ReturnType<typeof detalheConta>>;
@@ -42,13 +44,19 @@ export function ContaDetalheProvider({ empresaId, children }: { empresaId: strin
   );
 }
 
-function Conteudo({ empresaId, alvo, dados }: { empresaId: string; alvo: Alvo; dados: Dados | undefined }) {
+function Conteudo({ empresaId, alvo, dados: bruto }: { empresaId: string; alvo: Alvo; dados: Dados | undefined }) {
+  const [ocultar, setOcultar] = useState(true);
+  const dados = bruto && ocultar ? { ...bruto, ...correr(semEstornos(bruto.movimentos), bruto.saldoAnterior) } : bruto;
   const razaoHref = `/e/${empresaId}/relatorios/razao?conta=${alvo.contaId}&de=${alvo.de}&ate=${alvo.ate}`;
   return (
     <>
       <SheetHeader className="border-b pr-12">
         <SheetTitle>{alvo.titulo}</SheetTitle>
         <SheetDescription>{fmtData(alvo.de)} a {fmtData(alvo.ate)}</SheetDescription>
+        <label className="mt-1 flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <Checkbox checked={ocultar} onCheckedChange={setOcultar} />
+          Ocultar estornos
+        </label>
       </SheetHeader>
       <div className="flex-1 px-4 py-3">
         {dados === undefined ? (
@@ -89,7 +97,9 @@ function Conteudo({ empresaId, alvo, dados }: { empresaId: string; alvo: Alvo; d
                       </Link>
                     </TableCell>
                     <TableCell className="w-full max-w-0 truncate py-1.5" title={m.historico}>{m.historico}</TableCell>
-                    <TableCell className="max-w-24 truncate py-1.5 font-mono text-xs" title={m.contrapartidas}>{m.contrapartidas}</TableCell>
+                    <TableCell className="max-w-24 truncate py-1.5 font-mono text-xs" title={m.contrapartidas.map((c) => `${c.codigo} ${c.nome}`).join("\n")}>
+                      {m.contrapartidas.map((c) => c.codigo).join(", ")}
+                    </TableCell>
                     <TableCell className="py-1.5 text-right">{Number(m.debito) ? fmtValor(m.debito) : ""}</TableCell>
                     <TableCell className="py-1.5 text-right">{Number(m.credito) ? fmtValor(m.credito) : ""}</TableCell>
                     <TableCell className="py-1.5 text-right">{fmtSaldoDC(m.saldo, dados.conta.natureza)}</TableCell>
