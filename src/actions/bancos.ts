@@ -12,9 +12,8 @@ import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
 
 export type Sugestao = Awaited<ReturnType<typeof sugerirPendentes>>;
-export type EstadoImportacao = EstadoForm & { novas?: number; repetidas?: number; sugestao?: Sugestao };
 
-const MAX_OFX = 4 * 1024 * 1024; // corpo de função na Vercel: 4,5 MB
+const MAX_OFX = 4_400_000; // decimal: abaixo dos 4,5 MB da Vercel em qualquer unidade; bodySizeLimit "4.4mb" (MiB) cobre o multipart
 const LOTE = 1000; // linhas por INSERT (limite de parâmetros do Postgres)
 
 const opcional = z.string().trim().transform((s) => s || null);
@@ -100,13 +99,16 @@ function dataDoSaldo(ext: OfxExtrato) {
   return ext.dataSaldo ?? ext.dtEnd ?? ext.transacoes.reduce<string | null>((m, t) => (!m || t.data > m ? t.data : m), null);
 }
 
-export async function importarOfx(empresaId: string, _prev: EstadoImportacao, form: FormData): Promise<EstadoImportacao> {
+export type ResultadoArquivo = { erro: string } | { ok: true; novas: number; repetidas: number; ids: string[] };
+
+/** Importa um OFX (uma requisição por arquivo, por causa do limite de corpo da Vercel). A sugestão roda depois, em sugerirAposImportacao. */
+export async function importarOfxArquivo(empresaId: string, contaBancariaId: string, form: FormData): Promise<ResultadoArquivo> {
   await requireUser();
-  const id = z.uuid().safeParse(form.get("contaBancariaId"));
+  const id = z.uuid().safeParse(contaBancariaId);
   if (!id.success) return { erro: "Selecione a conta bancária." };
   const arquivo = form.get("arquivo");
   if (!(arquivo instanceof File) || arquivo.size === 0) return { erro: "Selecione o arquivo OFX." };
-  if (arquivo.size > MAX_OFX) return { erro: "Arquivo maior que 4 MB." };
+  if (arquivo.size > MAX_OFX) return { erro: "Arquivo maior que 4,4 MB." };
 
   const conta = await getContaBancaria(empresaId, id.data);
   if (!conta) return { erro: "Conta bancária não encontrada." };
@@ -162,16 +164,23 @@ export async function importarOfx(empresaId: string, _prev: EstadoImportacao, fo
     return ids;
   });
 
-  // A importação já está gravada: falha na sugestão vira aviso, nunca erro.
-  let sugestao: Sugestao;
-  try {
-    sugestao = novosIds.length
-      ? await sugerirPendentes(empresaId, novosIds)
-      : { regras: 0, transferencias: 0, ia: 0, erros: [] };
-  } catch (e) {
-    sugestao = { regras: 0, transferencias: 0, ia: 0, erros: [(e as Error).message] };
-  }
+  return { ok: true, novas: novosIds.length, repetidas: ext.transacoes.length - novosIds.length, ids: novosIds };
+}
 
+/** Regras + transferências + IA (com o teto de sempre) uma única vez sobre as transações novas de todos os arquivos. */
+export async function sugerirAposImportacao(empresaId: string, ids: string[]): Promise<Sugestao> {
+  await requireUser();
+  const r = z.array(z.uuid()).safeParse(ids);
+  let sugestao: Sugestao = { regras: 0, transferencias: 0, ia: 0, erros: [] };
+  // A importação já está gravada: falha na sugestão vira aviso, nunca erro.
+  if (!r.success) sugestao.erros.push("IDs de transação inválidos.");
+  else if (r.data.length) {
+    try {
+      sugestao = await sugerirPendentes(empresaId, r.data);
+    } catch (e) {
+      sugestao.erros.push((e as Error).message);
+    }
+  }
   revalidatePath(`/e/${empresaId}`, "layout");
-  return { ok: true, novas: novosIds.length, repetidas: ext.transacoes.length - novosIds.length, sugestao };
+  return sugestao;
 }
