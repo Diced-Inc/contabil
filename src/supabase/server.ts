@@ -1,3 +1,4 @@
+import type { User } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -39,4 +40,14 @@ export async function requireUser() {
     redirect(ERRO_NAO_AUTORIZADO);
   }
   return user;
+}
+
+/** Nome de exibição e URL assinada (1 h) da foto, ambos em user_metadata (bucket privado "avatars"). */
+export async function perfilDoUsuario(user: User) {
+  const nome: string = user.user_metadata?.display_name ?? "";
+  const path: string | undefined = user.user_metadata?.avatar_path;
+  if (!path) return { nome, avatarUrl: null };
+  const supabase = await createClient();
+  const { data } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
+  return { nome, avatarUrl: data?.signedUrl ?? null };
 }

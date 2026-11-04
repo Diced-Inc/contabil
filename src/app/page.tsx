@@ -10,7 +10,8 @@ import { Carregando, EmptyState, PageHeader } from "@/components/page-header";
 import { db } from "@/db";
 import { empresas } from "@/db/schema";
 import { fmtCnpj, PORTES, REGIMES } from "@/lib/format";
-import { requireUser } from "@/supabase/server";
+import { perfilDoUsuario, requireUser } from "@/supabase/server";
+import { Avatar } from "@/components/avatar";
 import { sair } from "./login/actions";
 
 const REGIME_BADGE = { simples: "brand", mei: "success", presumido: "info", real: "violet" } as const;
@@ -23,12 +24,11 @@ function iniciais(nome: string) {
 async function Usuario() {
   await connection();
   const user = await requireUser();
+  const { nome, avatarUrl } = await perfilDoUsuario(user);
   return (
     <div className="flex items-center gap-2">
-      <span className="hidden text-sm text-muted-foreground sm:inline">{user.email}</span>
-      <span className="flex size-8 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground uppercase">
-        {user.email?.slice(0, 1)}
-      </span>
+      <span className="hidden text-sm text-muted-foreground sm:inline">{nome || user.email}</span>
+      <Avatar url={avatarUrl} texto={nome || (user.email ?? "")} />
       <form action={sair}>
         <button
           type="submit"

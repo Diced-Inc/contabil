@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "cn";
 import { sair } from "@/app/login/actions";
+import { Avatar } from "@/components/avatar";
 import { LogoWordmark } from "@/components/logo";
 
 const RELATORIOS = [
@@ -41,11 +42,13 @@ const ativo =
   "bg-accent font-medium text-accent-foreground hover:bg-accent hover:text-accent-foreground before:absolute before:inset-y-2 before:-left-3 before:w-[3px] before:rounded-r-full before:bg-primary";
 const secao = "px-2.5 pt-5 pb-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground/80 uppercase";
 
-export function AppSidebar({ empresaId, empresaNome, pendentes, email }: {
+export function AppSidebar({ empresaId, empresaNome, pendentes, email, nome, avatarUrl }: {
   empresaId: string;
   empresaNome: string;
   pendentes: number;
   email: string;
+  nome: string;
+  avatarUrl: string | null;
 }) {
   const pathname = usePathname();
   const base = `/e/${empresaId}`;
@@ -120,10 +123,11 @@ export function AppSidebar({ empresaId, empresaNome, pendentes, email }: {
       </nav>
 
       <div className="flex items-center gap-2.5 border-t px-4 py-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground uppercase">
-          {email.slice(0, 1)}
+        <Avatar url={avatarUrl} texto={nome || email} />
+        <span className="min-w-0 flex-1 leading-tight" title={nome ? `${nome} (${email})` : email}>
+          {nome && <span className="block truncate text-sm font-medium text-foreground">{nome}</span>}
+          <span className={cn("block truncate", nome ? "text-xs text-muted-foreground" : "text-sm text-foreground")}>{email}</span>
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground" title={email}>{email}</span>
         <form action={sair}>
           <button
             type="submit"
