@@ -78,6 +78,16 @@ export const importacoes = pgTable("importacoes", {
   dataSaldo: date("data_saldo"),
   qtdTransacoes: integer("qtd_transacoes").notNull(),
   qtdNovas: integer("qtd_novas").notNull(),
+  origem: text("origem").$type<"ofx" | "csv" | "pdf">().notNull().default("ofx"),
+  createdAt: createdAt(),
+});
+
+/** Último mapeamento de colunas CSV usado na conta (um por conta). */
+export const mapeamentosCsv = pgTable("mapeamentos_csv", {
+  id: id(),
+  contaBancariaId: uuid("conta_bancaria_id").notNull().unique().references(() => contasBancarias.id, { onDelete: "cascade" }),
+  nome: text("nome"),
+  mapeamento: jsonb("mapeamento").notNull(),
   createdAt: createdAt(),
 });
 

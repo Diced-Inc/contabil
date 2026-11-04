@@ -4,9 +4,11 @@ import { and, eq, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { contasBancarias, importacoes, transacoesBancarias } from "@/db/schema";
+import { contasBancarias, importacoes, mapeamentosCsv, transacoesBancarias } from "@/db/schema";
 import { contaAtivoAnaliticaValida, getContaBancaria } from "@/app/e/[id]/bancos/queries";
 import { sugerirPendentes } from "@/lib/classificacao/pipeline";
+import { detectarCsv, parseCsv, type DeteccaoCsv, type ExtratoCsv, type MapeamentoCsv } from "@/lib/csv";
+import { atribuirFitids } from "@/lib/dedup";
 import { normalizarIdOfx, parseOfx, type OfxExtrato } from "@/lib/ofx";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
@@ -100,53 +102,59 @@ function dataDoSaldo(ext: OfxExtrato) {
 }
 
 export type ResultadoArquivo = { erro: string } | { ok: true; novas: number; repetidas: number; ids: string[] };
+type ContaBancaria = NonNullable<Awaited<ReturnType<typeof getContaBancaria>>>;
 
-/** Importa um OFX (uma requisição por arquivo, por causa do limite de corpo da Vercel). A sugestão roda depois, em sugerirAposImportacao. */
-export async function importarOfxArquivo(empresaId: string, contaBancariaId: string, form: FormData): Promise<ResultadoArquivo> {
+/** Conta da empresa, ativa; ou a mensagem de erro. */
+async function contaParaImportar(empresaId: string, contaBancariaId: string): Promise<ContaBancaria | string> {
   await requireUser();
   const id = z.uuid().safeParse(contaBancariaId);
-  if (!id.success) return { erro: "Selecione a conta bancária." };
-  const arquivo = form.get("arquivo");
-  if (!(arquivo instanceof File) || arquivo.size === 0) return { erro: "Selecione o arquivo OFX." };
-  if (arquivo.size > MAX_OFX) return { erro: "Arquivo maior que 4,4 MB." };
-
+  if (!id.success) return "Selecione a conta bancária.";
   const conta = await getContaBancaria(empresaId, id.data);
-  if (!conta) return { erro: "Conta bancária não encontrada." };
-  if (!conta.ativa) return { erro: "Conta bancária inativa." };
+  if (!conta) return "Conta bancária não encontrada.";
+  if (!conta.ativa) return "Conta bancária inativa.";
+  return conta;
+}
 
-  let ext: OfxExtrato;
-  try {
-    ext = parseOfx(Buffer.from(await arquivo.arrayBuffer()));
-  } catch (e) {
-    return { erro: `Arquivo OFX inválido: ${(e as Error).message}.` };
-  }
-  if (
-    normalizarIdOfx(ext.bankId) !== normalizarIdOfx(conta.ofxBankid) ||
-    normalizarIdOfx(ext.acctId) !== normalizarIdOfx(conta.ofxAcctid)
-  ) {
-    return { erro: `Arquivo pertence a outra conta (banco ${ext.bankId}, conta ${ext.acctId}).` };
-  }
+function lerArquivo(form: FormData, rotulo: string): File | string {
+  const arquivo = form.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) return `Selecione o arquivo ${rotulo}.`;
+  if (arquivo.size > MAX_OFX) return "Arquivo maior que 4,4 MB.";
+  return arquivo;
+}
 
+type Gravacao = {
+  nomeArquivo: string;
+  origem: "ofx" | "csv" | "pdf";
+  periodoInicio: string | null;
+  periodoFim: string | null;
+  saldoFinal: string | null;
+  dataSaldo: string | null;
+  transacoes: { fitid: string; data: string; valor: string; memo: string; tipo: string | null }[];
+};
+
+/** Grava a importação e as transações novas (FITID repetido na conta é ignorado) numa transação de banco. */
+async function gravarImportacao(conta: ContaBancaria, g: Gravacao): Promise<ResultadoArquivo> {
   const novosIds = await db.transaction(async (tx) => {
     const [imp] = await tx
       .insert(importacoes)
       .values({
         contaBancariaId: conta.id,
-        nomeArquivo: arquivo.name.slice(0, 200) || "extrato.ofx", // só exibição
-        periodoInicio: ext.dtStart,
-        periodoFim: ext.dtEnd,
-        saldoFinal: ext.saldoFinal,
-        dataSaldo: dataDoSaldo(ext),
-        qtdTransacoes: ext.transacoes.length,
+        nomeArquivo: g.nomeArquivo.slice(0, 200) || `extrato.${g.origem}`, // só exibição
+        origem: g.origem,
+        periodoInicio: g.periodoInicio,
+        periodoFim: g.periodoFim,
+        saldoFinal: g.saldoFinal,
+        dataSaldo: g.dataSaldo,
+        qtdTransacoes: g.transacoes.length,
         qtdNovas: 0,
       })
       .returning({ id: importacoes.id });
     const ids: string[] = [];
-    for (let i = 0; i < ext.transacoes.length; i += LOTE) {
+    for (let i = 0; i < g.transacoes.length; i += LOTE) {
       const inseridas = await tx
         .insert(transacoesBancarias)
         .values(
-          ext.transacoes.slice(i, i + LOTE).map((t) => ({
+          g.transacoes.slice(i, i + LOTE).map((t) => ({
             contaBancariaId: conta.id,
             importacaoId: imp.id,
             fitid: t.fitid,
@@ -163,8 +171,115 @@ export async function importarOfxArquivo(empresaId: string, contaBancariaId: str
     await tx.update(importacoes).set({ qtdNovas: ids.length }).where(eq(importacoes.id, imp.id));
     return ids;
   });
+  return { ok: true, novas: novosIds.length, repetidas: g.transacoes.length - novosIds.length, ids: novosIds };
+}
 
-  return { ok: true, novas: novosIds.length, repetidas: ext.transacoes.length - novosIds.length, ids: novosIds };
+/** Importa um OFX (uma requisição por arquivo, por causa do limite de corpo da Vercel). A sugestão roda depois, em sugerirAposImportacao. */
+export async function importarOfxArquivo(empresaId: string, contaBancariaId: string, form: FormData): Promise<ResultadoArquivo> {
+  const conta = await contaParaImportar(empresaId, contaBancariaId);
+  if (typeof conta === "string") return { erro: conta };
+  const arquivo = lerArquivo(form, "OFX");
+  if (typeof arquivo === "string") return { erro: arquivo };
+
+  let ext: OfxExtrato;
+  try {
+    ext = parseOfx(Buffer.from(await arquivo.arrayBuffer()));
+  } catch (e) {
+    return { erro: `Arquivo OFX inválido: ${(e as Error).message}.` };
+  }
+  if (
+    normalizarIdOfx(ext.bankId) !== normalizarIdOfx(conta.ofxBankid) ||
+    normalizarIdOfx(ext.acctId) !== normalizarIdOfx(conta.ofxAcctid)
+  ) {
+    return { erro: `Arquivo pertence a outra conta (banco ${ext.bankId}, conta ${ext.acctId}).` };
+  }
+  return gravarImportacao(conta, {
+    nomeArquivo: arquivo.name,
+    origem: "ofx",
+    periodoInicio: ext.dtStart,
+    periodoFim: ext.dtEnd,
+    saldoFinal: ext.saldoFinal,
+    dataSaldo: dataDoSaldo(ext),
+    transacoes: ext.transacoes,
+  });
+}
+
+const indice = z.number().int().min(0).max(200);
+const mapeamentoSchema = z.object({
+  linhaCabecalho: z.number().int().min(-1),
+  separador: z.enum([";", ",", "\t"]),
+  encoding: z.enum(["utf8", "latin1"]),
+  data: indice,
+  historico: z.array(indice).max(20),
+  valor: indice.optional(),
+  debito: indice.optional(),
+  credito: indice.optional(),
+  saldo: indice.optional(),
+  formatoData: z.enum(["DMY", "YMD", "MDY"]),
+  sinalInvertido: z.boolean().optional(),
+});
+/** Como fica gravado: o mapeamento + as colunas do cabeçalho, para reaplicar só em arquivos do mesmo layout. */
+export type MapeamentoSalvo = MapeamentoCsv & { colunas: string[] };
+
+/** Detecta o layout do CSV e devolve o mapeamento salvo da conta, se houver. Não grava nada. */
+export async function analisarCsv(
+  empresaId: string,
+  contaBancariaId: string,
+  form: FormData,
+): Promise<{ erro: string } | { deteccao: DeteccaoCsv; mapeamentoSalvo: MapeamentoSalvo | null }> {
+  const conta = await contaParaImportar(empresaId, contaBancariaId);
+  if (typeof conta === "string") return { erro: conta };
+  const arquivo = lerArquivo(form, "CSV");
+  if (typeof arquivo === "string") return { erro: arquivo };
+  const deteccao = detectarCsv(new Uint8Array(await arquivo.arrayBuffer()));
+  if (deteccao.amostra.length === 0) return { erro: "Não encontrei linhas de dados no CSV." };
+  const [m] = await db
+    .select({ mapeamento: mapeamentosCsv.mapeamento })
+    .from(mapeamentosCsv)
+    .where(eq(mapeamentosCsv.contaBancariaId, conta.id));
+  return { deteccao, mapeamentoSalvo: (m?.mapeamento as MapeamentoSalvo | undefined) ?? null };
+}
+
+export async function importarCsvArquivo(
+  empresaId: string,
+  contaBancariaId: string,
+  form: FormData,
+  mapeamento: MapeamentoSalvo,
+  salvarMapeamento: boolean,
+): Promise<ResultadoArquivo> {
+  const conta = await contaParaImportar(empresaId, contaBancariaId);
+  if (typeof conta === "string") return { erro: conta };
+  const arquivo = lerArquivo(form, "CSV");
+  if (typeof arquivo === "string") return { erro: arquivo };
+  const mp = mapeamentoSchema.safeParse(mapeamento);
+  if (!mp.success) return { erro: "Mapeamento de colunas inválido." };
+  const colunas = z.array(z.string().max(200)).max(200).safeParse(mapeamento.colunas);
+
+  let ext: ExtratoCsv;
+  try {
+    ext = parseCsv(new Uint8Array(await arquivo.arrayBuffer()), mp.data);
+  } catch (e) {
+    return { erro: `CSV inválido: ${(e as Error).message}.` };
+  }
+  if (ext.transacoes.length === 0) return { erro: "Nenhuma linha com data e valor válidos com esse mapeamento." };
+
+  const r = await gravarImportacao(conta, {
+    nomeArquivo: arquivo.name,
+    origem: "csv",
+    periodoInicio: ext.dtStart,
+    periodoFim: ext.dtEnd,
+    saldoFinal: ext.saldoFinal ?? null,
+    dataSaldo: ext.dataSaldo ?? null,
+    transacoes: atribuirFitids("csv", ext.transacoes).map((t) => ({ ...t, tipo: "CSV" })),
+  });
+  if (salvarMapeamento) {
+    const valor = { ...mp.data, colunas: colunas.success ? colunas.data : [] };
+    await db
+      .insert(mapeamentosCsv)
+      .values({ contaBancariaId: conta.id, nome: conta.banco ?? conta.nome, mapeamento: valor })
+      .onConflictDoUpdate({ target: mapeamentosCsv.contaBancariaId, set: { mapeamento: valor, createdAt: new Date() } });
+  }
+  return r;
 }
 
 /** Regras + transferências + IA (com o teto de sempre) uma única vez sobre as transações novas de todos os arquivos. */
