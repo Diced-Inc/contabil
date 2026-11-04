@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import {
-  analisarCsv, importarCsvArquivo, importarOfxArquivo, sugerirAposImportacao,
+  analisarCsv, extrairPdf, importarCsvArquivo, importarLinhasRevisadas, importarOfxArquivo, sugerirAposImportacao,
   type MapeamentoSalvo, type ResultadoArquivo,
 } from "@/actions/bancos";
 import { Button } from "@/components/ui/button";
@@ -13,35 +13,41 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { sugerirMapeamento, type DeteccaoCsv } from "@/lib/csv";
+import type { ExtratoIA } from "@/lib/extrato-ia";
 import { MapeamentoCsvPasso, selectCls } from "./mapeamento-csv";
+import { RevisaoPdfPasso, type Revisada } from "./revisao-pdf";
 
 // Igual ao MAX_OFX do servidor (bytes decimais): uma requisição por arquivo, abaixo dos 4,5 MB da Vercel.
 const MAX_OFX = 4_400_000;
 const GRANDE = "Arquivo maior que 4,4 MB";
-const ACCEPT = ".ofx,.csv";
+const ACCEPT = ".ofx,.csv,.pdf";
 
-type Tipo = "ofx" | "csv";
+type Tipo = "ofx" | "csv" | "pdf";
+type Conta = { id: string; nome: string; numero?: string | null };
 type Status =
   | { s: "fila" }
   | { s: "enviando" }
   | { s: "analisando" }
+  | { s: "extraindo" }
   | { s: "aguardando"; msg: string }
   | { s: "ok"; novas: number; repetidas: number }
   | { s: "erro"; msg: string };
 type Item = { arquivo: File; tipo: Tipo | null; status: Status };
 
 /** Passo interativo no meio da fila: a fila espera a Promise que o passo resolve. */
-type Passo = {
-  tipo: "csv"; arquivo: File; bytes: Uint8Array; deteccao: DeteccaoCsv; inicial: MapeamentoSalvo;
-  resolver: (r: { m: MapeamentoSalvo; salvar: boolean } | null) => void;
-};
+type Passo =
+  | {
+    tipo: "csv"; arquivo: File; bytes: Uint8Array; deteccao: DeteccaoCsv; inicial: MapeamentoSalvo;
+    resolver: (r: { m: MapeamentoSalvo; salvar: boolean } | null) => void;
+  }
+  | { tipo: "pdf"; arquivo: File; extracao: ExtratoIA; resolver: (r: Revisada | null) => void };
 
 const fmtTamanho = (b: number) =>
   b < 1_000_000 ? `${Math.max(1, Math.round(b / 1000))} KB` : `${(b / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
 
 function tipoDe(f: File): Tipo | null {
   const ext = f.name.toLowerCase().split(".").pop();
-  return ext === "ofx" || ext === "csv" ? ext : null;
+  return ext === "ofx" || ext === "csv" || ext === "pdf" ? ext : null;
 }
 
 /** O mapeamento salvo só vale para o mesmo layout (mesmas colunas, mesmo separador). */
@@ -53,6 +59,7 @@ function StatusTexto({ st }: { st: Status }) {
   if (st.s === "fila") return <span className="text-muted-foreground">Na fila</span>;
   if (st.s === "enviando") return <span className="text-muted-foreground">Enviando...</span>;
   if (st.s === "analisando") return <span className="text-muted-foreground">Analisando...</span>;
+  if (st.s === "extraindo") return <span className="text-muted-foreground">Extraindo com IA...</span>;
   if (st.s === "aguardando") return <span className="text-amber-600 dark:text-amber-400">{st.msg}</span>;
   if (st.s === "ok") return <span className="text-emerald-600 dark:text-emerald-400">{st.novas} novas, {st.repetidas} repetidas</span>;
   return (
@@ -66,7 +73,7 @@ function StatusTexto({ st }: { st: Status }) {
 type Fase = "escolha" | "importando" | "fim";
 
 function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
-  empresaId: string; contas: { id: string; nome: string }[]; fase: Fase; setFase: (f: Fase) => void;
+  empresaId: string; contas: Conta[]; fase: Fase; setFase: (f: Fase) => void;
   passo: Passo | null; setPasso: (p: Passo | null) => void; fechar: () => void;
 }) {
   const [contaId, setContaId] = useState(contas.length === 1 ? contas[0].id : "");
@@ -79,7 +86,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
     setItens(
       Array.from(files ?? []).map((arquivo) => {
         const tipo = tipoDe(arquivo);
-        const status: Status = !tipo ? { s: "erro", msg: "Formato não suportado (use OFX ou CSV)" }
+        const status: Status = !tipo ? { s: "erro", msg: "Formato não suportado (use OFX, CSV ou PDF)" }
           : arquivo.size > MAX_OFX ? { s: "erro", msg: GRANDE } : { s: "fila" };
         return { arquivo, tipo, status };
       }),
@@ -110,6 +117,20 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
     return importarCsvArquivo(empresaId, contaId, fd, r.m, r.salvar);
   }
 
+  /** PDF: IA extrai as linhas, o usuário revisa e só então grava. */
+  async function importarPdf(item: Item, fd: FormData, set: (s: Status) => void): Promise<ResultadoArquivo | null> {
+    set({ s: "extraindo" });
+    const e = await extrairPdf(empresaId, contaId, fd);
+    if ("erro" in e) return e;
+    if (e.transacoes.length === 0) return { erro: "A IA não encontrou movimentações no PDF." };
+    set({ s: "aguardando", msg: "Aguardando revisão" });
+    const r = await new Promise<Revisada | null>((resolver) => setPasso({ tipo: "pdf", arquivo: item.arquivo, extracao: e, resolver }));
+    setPasso(null);
+    if (!r) return null;
+    set({ s: "enviando" });
+    return importarLinhasRevisadas(empresaId, contaId, { nomeArquivo: item.arquivo.name, origem: "pdf", ...r });
+  }
+
   async function importar() {
     setFase("importando");
     setTotal(validos);
@@ -125,6 +146,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
       try {
         let r: ResultadoArquivo | null;
         if (item.tipo === "csv") r = await importarCsv(item, fd, set);
+        else if (item.tipo === "pdf") r = await importarPdf(item, fd, set);
         else {
           set({ s: "enviando" });
           r = await importarOfxArquivo(empresaId, contaId, fd);
@@ -155,6 +177,17 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
     setFase("fim");
   }
 
+  if (passo?.tipo === "pdf") {
+    return (
+      <RevisaoPdfPasso
+        nome={passo.arquivo.name}
+        extracao={passo.extracao}
+        numeroConta={contas.find((c) => c.id === contaId)?.numero ?? null}
+        onConfirmar={passo.resolver}
+        onPular={() => passo.resolver(null)}
+      />
+    );
+  }
   if (passo) {
     return (
       <MapeamentoCsvPasso
@@ -181,7 +214,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
       </div>
       {fase === "escolha" && (
         <div className="grid gap-2">
-          <Label htmlFor="arquivo">Arquivos OFX ou CSV (vários, até 4,4 MB cada)</Label>
+          <Label htmlFor="arquivo">Arquivos OFX, CSV ou PDF (vários, até 4,4 MB cada)</Label>
           <Input id="arquivo" type="file" accept={ACCEPT} multiple onChange={(e) => escolher(e.target.files)} />
         </div>
       )}
@@ -219,7 +252,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
   );
 }
 
-export function ImportarOfxDialog({ empresaId, contas }: { empresaId: string; contas: { id: string; nome: string }[] }) {
+export function ImportarOfxDialog({ empresaId, contas }: { empresaId: string; contas: Conta[] }) {
   const router = useRouter();
   const [aberta, setAberta] = useState(false);
   const [fase, setFase] = useState<Fase>("escolha");
@@ -240,7 +273,7 @@ export function ImportarOfxDialog({ empresaId, contas }: { empresaId: string; co
       </DialogTrigger>
       <DialogContent className={passo ? "max-h-[92vh] overflow-y-auto sm:max-w-5xl" : undefined}>
         <DialogHeader>
-          <DialogTitle>{passo ? "Mapear colunas do CSV" : "Importar extratos"}</DialogTitle>
+          <DialogTitle>{passo?.tipo === "pdf" ? "Revisar extrato do PDF" : passo ? "Mapear colunas do CSV" : "Importar extratos"}</DialogTitle>
         </DialogHeader>
         <Form empresaId={empresaId} contas={contas} fase={fase} setFase={setFase} passo={passo} setPasso={setPasso} fechar={() => onOpenChange(false)} />
       </DialogContent>

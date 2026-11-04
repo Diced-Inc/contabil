@@ -9,6 +9,7 @@ import { contaAtivoAnaliticaValida, getContaBancaria } from "@/app/e/[id]/bancos
 import { sugerirPendentes } from "@/lib/classificacao/pipeline";
 import { detectarCsv, parseCsv, type DeteccaoCsv, type ExtratoCsv, type MapeamentoCsv } from "@/lib/csv";
 import { atribuirFitids } from "@/lib/dedup";
+import { extrairExtratoPdf, type ExtratoIA } from "@/lib/extrato-ia";
 import { normalizarIdOfx, parseOfx, type OfxExtrato } from "@/lib/ofx";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
@@ -280,6 +281,59 @@ export async function importarCsvArquivo(
       .onConflictDoUpdate({ target: mapeamentosCsv.contaBancariaId, set: { mapeamento: valor, createdAt: new Date() } });
   }
   return r;
+}
+
+/** Extrai as linhas de um PDF de extrato com IA, para revisão. Não grava nada. */
+export async function extrairPdf(empresaId: string, contaBancariaId: string, form: FormData): Promise<{ erro: string } | ExtratoIA> {
+  const conta = await contaParaImportar(empresaId, contaBancariaId);
+  if (typeof conta === "string") return { erro: conta };
+  const arquivo = lerArquivo(form, "PDF");
+  if (typeof arquivo === "string") return { erro: arquivo };
+  try {
+    return await extrairExtratoPdf(Buffer.from(await arquivo.arrayBuffer()));
+  } catch (e) {
+    return { erro: `Falha na extração: ${(e as Error).message}` };
+  }
+}
+
+const linhaRevisada = z.object({
+  data: z.iso.date(),
+  memo: z.string().trim().max(500),
+  valor: z.string().regex(/^-?\d+(\.\d{1,2})?$/, "Valor inválido.").refine((v) => Number(v) !== 0, "Valor zerado."),
+});
+const revisaoSchema = z.object({
+  nomeArquivo: z.string().max(200),
+  origem: z.enum(["pdf", "csv"]),
+  linhas: z.array(linhaRevisada).min(1, "Nenhuma linha para importar.").max(20000),
+  saldoFinal: z.string().regex(/^-?\d+(\.\d{1,2})?$/).optional(),
+  dataSaldo: z.iso.date().optional(),
+});
+
+/** Grava linhas já revisadas na tela (PDF extraído por IA). Mesma deduplicação por data+valor+histórico. */
+export async function importarLinhasRevisadas(
+  empresaId: string,
+  contaBancariaId: string,
+  dados: z.input<typeof revisaoSchema>,
+): Promise<ResultadoArquivo> {
+  const conta = await contaParaImportar(empresaId, contaBancariaId);
+  if (typeof conta === "string") return { erro: conta };
+  const r = revisaoSchema.safeParse(dados);
+  if (!r.success) {
+    const i = r.error.issues[0];
+    return { erro: i.path[0] === "linhas" && typeof i.path[1] === "number" ? `Linha ${i.path[1] + 1}: ${i.message}` : i.message };
+  }
+  const { linhas, origem } = r.data;
+  const datas = linhas.map((l) => l.data).sort();
+  const linhasComValor = linhas.map((l) => ({ ...l, valor: Number(l.valor).toFixed(2) }));
+  return gravarImportacao(conta, {
+    nomeArquivo: r.data.nomeArquivo,
+    origem,
+    periodoInicio: datas[0],
+    periodoFim: datas[datas.length - 1],
+    saldoFinal: r.data.saldoFinal ?? null,
+    dataSaldo: r.data.saldoFinal ? (r.data.dataSaldo ?? datas[datas.length - 1]) : null,
+    transacoes: atribuirFitids(origem, linhasComValor).map((t) => ({ ...t, tipo: origem.toUpperCase() })),
+  });
 }
 
 /** Regras + transferências + IA (com o teto de sempre) uma única vez sobre as transações novas de todos os arquivos. */
