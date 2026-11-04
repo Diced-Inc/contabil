@@ -16,8 +16,9 @@ export const maxDuration = 300;
 
 const TZ = "America/Sao_Paulo";
 const DESCRICAO =
-  "Conferência na data do saldo do último OFX: diferença = saldo OFX − saldo contábil − pendentes − ignoradas. Zero quando tudo está conciliado.";
+  "Conferência na data do saldo do último extrato: diferença = saldo do extrato − saldo contábil − pendentes − ignoradas. Zero quando tudo está conciliado.";
 const traco = <span className="text-muted-foreground">-</span>;
+const ORIGEM_BADGE = { ofx: "muted", csv: "info", pdf: "violet" } as const;
 const moeda = (v: string | null) => (v === null ? traco : fmtValor(v));
 
 async function Bancos({ params }: PageProps<"/e/[id]/bancos">) {
@@ -150,7 +151,12 @@ async function Bancos({ params }: PageProps<"/e/[id]/bancos">) {
                   <TableBody>
                     {lista.map((i) => (
                       <TableRow key={i.id}>
-                        <TableCell className="max-w-64 truncate pl-5 font-medium">{i.nomeArquivo}</TableCell>
+                        <TableCell className="max-w-72 pl-5">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={ORIGEM_BADGE[i.origem]} className="shrink-0 font-mono text-[10px]">{i.origem.toUpperCase()}</Badge>
+                            <span className="truncate font-medium">{i.nomeArquivo}</span>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           {i.periodoInicio ? fmtData(i.periodoInicio) : "?"} a {i.periodoFim ? fmtData(i.periodoFim) : "?"}
                         </TableCell>

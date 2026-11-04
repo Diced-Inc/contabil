@@ -30,11 +30,20 @@ Outros comandos: `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm db:generate`, `pn
 ## Fluxo de uso
 
 1. **Empresa**: cadastre a empresa. Ela já nasce com o plano de contas padrão, que pode ser ajustado em Plano de contas.
-2. **Bancos e OFX**: cadastre cada conta bancária ligada a uma conta contábil do ativo e importe o OFX. Transações repetidas são ignoradas.
+2. **Bancos e extratos**: cadastre cada conta bancária ligada a uma conta contábil do ativo e importe o extrato (OFX, CSV ou PDF). Transações repetidas são ignoradas.
 3. **Conciliação**: revise as pendentes com a sugestão de conta. Aprove uma a uma ou em lote, classifique manualmente, case com títulos ou marque transferências entre contas. Regras criadas aqui valem para as próximas importações.
 4. **Lançamentos e títulos**: faça lançamentos manuais (ajustes, provisões) e registre contas a receber/pagar. A baixa do título acontece na conciliação.
 5. **Fechamento e apuração**: feche os meses em ordem. Com os 12 meses fechados, apure o exercício.
 6. **Relatórios**: Balancete, Balanço, DRE (com comparativo do ano anterior), Diário e Razão.
+
+## Importar CSV e PDF
+
+Além de OFX, o diálogo de importação aceita CSV e PDF (vários arquivos, até 4,4 MB cada). O histórico de importações mostra a origem de cada arquivo.
+
+- **CSV**: o sistema detecta encoding, separador e linha de cabeçalho e pede o papel de cada coluna (data, histórico, valor ou débito/crédito, saldo), o formato da data e se o sinal deve ser invertido, com prévia das linhas. O mapeamento fica salvo por conta e é reaplicado sozinho nos próximos CSV com o mesmo layout.
+- **PDF**: a IA extrai as movimentações (saídas negativas; saldos e totais ignorados) e nada é gravado antes da revisão manual, onde dá para corrigir datas, históricos e valores, remover ou adicionar linhas. Se o número da conta lido no PDF não bater com o da conta selecionada, aparece um aviso.
+- **Repetidas**: CSV e PDF não têm FITID, então a chave é data + valor + histórico. Linhas iguais no mesmo arquivo viram #2, #3 e são importadas. Mas, entre arquivos, uma movimentação legítima com mesma data, valor e texto de outra já importada é tratada como repetida: na revisão do PDF, diferencie o histórico para que ela entre. A chave de CSV e a de PDF são distintas, e nenhuma delas deduplica contra OFX, então não importe o mesmo período por dois formatos.
+- O saldo do extrato (para a conferência) vem da coluna de saldo da linha mais recente no CSV, ou do saldo final lido no PDF.
 
 ## Decisões
 

@@ -123,6 +123,7 @@ export function listarImportacoes(empresaId: string) {
       id: importacoes.id,
       contaBancariaId: importacoes.contaBancariaId,
       nomeArquivo: importacoes.nomeArquivo,
+      origem: importacoes.origem,
       periodoInicio: importacoes.periodoInicio,
       periodoFim: importacoes.periodoFim,
       qtdTransacoes: importacoes.qtdTransacoes,
