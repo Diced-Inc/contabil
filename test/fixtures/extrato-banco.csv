@@ -4,38 +4,38 @@ Período ;01/10/2026 a 01/11/2026
 Saldo ;1.000,00
 
 Data Lançamento;Histórico;Descrição;Valor;Saldo
-30/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-200,00;1.400,00
-29/10/2026;Pix recebido;Gizele Carneiro Da Silva;200,00;1.600,00
-28/10/2026;Pix recebido;Joao P Ferreira Torres;400,00;1.400,00
-27/10/2026;Pix recebido;Ouribank S.a.;10.585,48;1.000,00
-27/10/2026;Pix enviado ;Hapvida Assistencia Medica Sa;-445,81;-9.585,48
-27/10/2026;Pix enviado ;Enel Distribuicao Ceara;-522,33;-9.139,67
-27/10/2026;Pagamento de Título;SANTANDER SOC. CRED. FINANC. E;-1.975,57;-8.617,34
-27/10/2026;Pix enviado ;Nu Pagamentos Sa;-1.237,54;-6.641,77
-27/10/2026;Pix enviado ;Banco Csf;-269,33;-5.404,23
-27/10/2026;Pix enviado ;Luizacred S A Sociedade De Credito Financiamento E Investimento;-448,62;-5.134,90
-27/10/2026;Pix enviado ;Nu Pagamentos Sa;-108,00;-4.686,28
-27/10/2026;Pix enviado ;Nu Pagamentos Sa;-63,28;-4.578,28
-27/10/2026;Pix enviado ;Gizele Carneiro Da Silva;-322,00;-4.515,00
-27/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-300,00;-4.193,00
-27/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-293,13;-3.893,00
-27/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-3.600,00;-3.599,87
-25/10/2026;Pix recebido;Vinicius Dos Santos Freire;0,13;0,13
-17/10/2026;Pix recebido;Tavapps Solucoes Digitais Ltda;1.200,00;-0,00
-17/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-1.200,00;-1.200,00
-09/10/2026;Pix recebido;Marcio Barreira Rola;370,00;-0,00
-09/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-370,00;-370,00
-06/10/2026;Pix recebido;Angela Maria Oliveira Costa Freire;100,00;-0,00
-06/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-100,00;-100,00
-05/10/2026;Pix recebido;Kaio Emerson Pinheiro Lopes;200,00;-0,00
-05/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-200,00;-200,00
-05/10/2026;Pix recebido;Ouribank S.a.;6.399,10;-0,00
-05/10/2026;Pix enviado ;Banco Csf Sa;-1.108,57;-6.399,10
-05/10/2026;Pagamento efetuado;HS FINANCEIRA;-377,35;-5.290,53
-05/10/2026;Pix enviado ;Luizacred S A Sociedade De Credito Financiamento E Investimento;-624,72;-4.913,18
-05/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-1.500,00;-4.288,46
-05/10/2026;Pix enviado ;Claro;-119,90;-2.788,46
-05/10/2026;Pix enviado ;A Predial;-1.174,06;-2.668,56
-05/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-1.494,50;-1.494,50
-01/10/2026;Pix recebido;Issam Tassi Ltda;230,96;-0,00
-01/10/2026;Pix enviado ;Marcelo Barreira Rola Junior;-230,96;-230,96
+30/10/2026;Pix enviado ;Cliente Alfa Ltda;-200,00;1.400,00
+29/10/2026;Pix recebido;Fornecedor Beta ME;200,00;1.600,00
+28/10/2026;Pix recebido;Servicos Gama SA;400,00;1.400,00
+27/10/2026;Pix recebido;Comercio Delta Eireli;10.585,48;1.000,00
+27/10/2026;Pix enviado ;Consultoria Epsilon;-445,81;-9.585,48
+27/10/2026;Pix enviado ;Distribuidora Zeta;-522,33;-9.139,67
+27/10/2026;Pagamento de Título;Tecnologia Eta Ltda;-1.975,57;-8.617,34
+27/10/2026;Pix enviado ;Transportes Theta;-1.237,54;-6.641,77
+27/10/2026;Pix enviado ;Clinica Iota;-269,33;-5.404,23
+27/10/2026;Pix enviado ;Energia Kappa SA;-448,62;-5.134,90
+27/10/2026;Pix enviado ;Transportes Theta;-108,00;-4.686,28
+27/10/2026;Pix enviado ;Transportes Theta;-63,28;-4.578,28
+27/10/2026;Pix enviado ;Fornecedor Beta ME;-322,00;-4.515,00
+27/10/2026;Pix enviado ;Cliente Alfa Ltda;-300,00;-4.193,00
+27/10/2026;Pix enviado ;Cliente Alfa Ltda;-293,13;-3.893,00
+27/10/2026;Pix enviado ;Cliente Alfa Ltda;-3.600,00;-3.599,87
+25/10/2026;Pix recebido;Telecom Lambda;0,13;0,13
+17/10/2026;Pix recebido;Imobiliaria Mu;1.200,00;-0,00
+17/10/2026;Pix enviado ;Cliente Alfa Ltda;-1.200,00;-1.200,00
+09/10/2026;Pix recebido;Seguros Nu;370,00;-0,00
+09/10/2026;Pix enviado ;Cliente Alfa Ltda;-370,00;-370,00
+06/10/2026;Pix recebido;Padaria Xi;100,00;-0,00
+06/10/2026;Pix enviado ;Cliente Alfa Ltda;-100,00;-100,00
+05/10/2026;Pix recebido;Contabilidade Omicron;200,00;-0,00
+05/10/2026;Pix enviado ;Cliente Alfa Ltda;-200,00;-200,00
+05/10/2026;Pix recebido;Comercio Delta Eireli;6.399,10;-0,00
+05/10/2026;Pix enviado ;Cliente Alfa Ltda;-1.108,57;-6.399,10
+05/10/2026;Pagamento efetuado;Fornecedor Beta ME;-377,35;-5.290,53
+05/10/2026;Pix enviado ;Energia Kappa SA;-624,72;-4.913,18
+05/10/2026;Pix enviado ;Cliente Alfa Ltda;-1.500,00;-4.288,46
+05/10/2026;Pix enviado ;Servicos Gama SA;-119,90;-2.788,46
+05/10/2026;Pix enviado ;Comercio Delta Eireli;-1.174,06;-2.668,56
+05/10/2026;Pix enviado ;Cliente Alfa Ltda;-1.494,50;-1.494,50
+01/10/2026;Pix recebido;Consultoria Epsilon;230,96;-0,00
+01/10/2026;Pix enviado ;Cliente Alfa Ltda;-230,96;-230,96

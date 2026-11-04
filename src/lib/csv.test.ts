@@ -24,8 +24,8 @@ describe("parseCsv", () => {
   const r = parseCsv(fixture, sugerirMapeamento(detectarCsv(fixture)));
   it("fixture: 35 linhas, primeira, período e saldo", () => {
     expect(r.transacoes).toHaveLength(35);
-    expect(r.transacoes[0]).toMatchObject({ data: "2026-10-30", valor: "-200.00", memo: "Pix enviado - Marcelo Barreira Rola Junior" });
-    expect(r.transacoes[3]).toMatchObject({ valor: "10585.48", memo: "Pix recebido - Ouribank S.a." });
+    expect(r.transacoes[0]).toMatchObject({ data: "2026-10-30", valor: "-200.00", memo: "Pix enviado - Cliente Alfa Ltda" });
+    expect(r.transacoes[3]).toMatchObject({ valor: "10585.48", memo: "Pix recebido - Comercio Delta Eireli" });
     expect(r.dtStart).toBe("2026-10-01");
     expect(r.dtEnd).toBe("2026-10-30");
     expect(r.saldoFinal).toBe("1400.00");
