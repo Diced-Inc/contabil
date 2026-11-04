@@ -1,4 +1,4 @@
-# Contabil
+# Bruno Contábil
 
 Sistema contábil web para um contador que atende várias empresas. Ele importa extratos OFX, sugere a classificação de cada transação (regras do contador e, quando nenhuma regra casa, IA). O contador revisa e aprova, e o sistema gera os lançamentos em partidas dobradas. Depois disso, fecha os meses, apura o exercício e emite Balanço, DRE, Balancete, Diário e Razão.
 

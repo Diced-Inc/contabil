@@ -14,8 +14,8 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Contábil",
-  description: "Contabilidade e conciliação bancária",
+  title: "Bruno Contábil",
+  description: "Contabilidade para várias empresas: conciliação bancária, partidas dobradas, fechamento e relatórios contábeis.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

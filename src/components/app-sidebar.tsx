@@ -4,11 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BookOpen, Building2, Calculator, ChevronDown, ChevronsUpDown, FileText, Landmark, LayoutDashboard, ListChecks,
+  BookOpen, Building2, ChevronDown, ChevronsUpDown, FileText, Landmark, LayoutDashboard, ListChecks,
   ListTree, Lock, LogOut, Receipt, Settings, ShieldCheck, Wand2, type LucideIcon,
 } from "lucide-react";
 import { cn } from "cn";
 import { sair } from "@/app/login/actions";
+import { LogoWordmark } from "@/components/logo";
 
 const RELATORIOS = [
   ["balancete", "Balancete"],
@@ -76,11 +77,8 @@ export function AppSidebar({ empresaId, empresaNome, pendentes, email }: {
   return (
     <aside className="sticky top-0 flex h-svh w-56 shrink-0 xl:w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="px-4 pt-4 pb-3">
-        <Link href="/" className="flex items-center gap-2.5 px-1">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-            <Calculator className="size-4" />
-          </span>
-          <span className="text-[17px] font-semibold tracking-tight text-foreground">Contábil</span>
+        <Link href="/" className="block px-1">
+          <LogoWordmark />
         </Link>
         <Link
           href="/"

@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
 import { asc } from "drizzle-orm";
-import { Building2, Calculator, ChevronRight, LogOut } from "lucide-react";
+import { Building2, ChevronRight, LogOut } from "lucide-react";
+import { LogoWordmark } from "@/components/logo";
 import { Badge } from "@/components/ui/badge";
 import { NovaEmpresaDialog } from "@/components/empresa-form";
 import { Carregando, EmptyState, PageHeader } from "@/components/page-header";
@@ -87,11 +88,8 @@ export default function Home() {
     <div className="flex min-h-svh flex-1 flex-col">
       <header className="border-b bg-card">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-              <Calculator className="size-4" />
-            </span>
-            <span className="text-[17px] font-semibold tracking-tight">Contábil</span>
+          <Link href="/">
+            <LogoWordmark />
           </Link>
           <Suspense>
             <Usuario />

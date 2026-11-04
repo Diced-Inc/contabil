@@ -1,10 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { BookOpenCheck, Calculator, CircleAlert, FileSpreadsheet, ListChecks, LogIn } from "lucide-react";
+import { BookOpenCheck, CircleAlert, FileSpreadsheet, ListChecks, LogIn } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LogoWordmark } from "@/components/logo";
 import { entrar } from "./actions";
 
 async function Erro({ searchParams }: Pick<PageProps<"/login">, "searchParams">) {
@@ -33,12 +34,7 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
           className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:40px_40px]"
         />
         <div aria-hidden className="pointer-events-none absolute -right-32 -bottom-32 size-[28rem] rounded-full bg-white/10 blur-3xl" />
-        <div className="relative flex items-center gap-2.5">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/25">
-            <Calculator className="size-5" />
-          </span>
-          <span className="text-xl font-semibold tracking-tight">Contábil</span>
-        </div>
+        <LogoWordmark size={36} inverso className="relative text-xl" />
         <div className="relative max-w-md">
           <h2 className="text-3xl leading-tight font-semibold tracking-tight">
             A contabilidade da sua empresa, do extrato ao balanço.
@@ -62,12 +58,7 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
 
       <section className="flex items-center justify-center bg-muted/60 p-6 lg:bg-background">
         <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Calculator className="size-5" />
-            </span>
-            <span className="text-xl font-semibold tracking-tight">Contábil</span>
-          </div>
+          <LogoWordmark size={36} className="mb-8 text-xl lg:hidden" />
           <div className="rounded-2xl border bg-card p-8 shadow-card">
             <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
             <p className="mt-1 text-sm text-muted-foreground">Acesse com seu e-mail e senha.</p>
