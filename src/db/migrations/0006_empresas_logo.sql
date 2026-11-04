@@ -1,0 +1,1 @@
+ALTER TABLE "empresas" ADD COLUMN "logo_path" text;

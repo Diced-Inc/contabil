@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BookOpen, Building2, ChevronDown, ChevronsUpDown, FileText, Landmark, LayoutDashboard, ListChecks,
+  BookOpen, ChevronDown, ChevronsUpDown, FileText, Landmark, LayoutDashboard, ListChecks,
   ListTree, Lock, LogOut, Receipt, Settings, ShieldCheck, Wand2, type LucideIcon,
 } from "lucide-react";
 import { cn } from "cn";
@@ -42,9 +42,10 @@ const ativo =
   "bg-accent font-medium text-accent-foreground hover:bg-accent hover:text-accent-foreground before:absolute before:inset-y-2 before:-left-3 before:w-[3px] before:rounded-r-full before:bg-primary";
 const secao = "px-2.5 pt-5 pb-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground/80 uppercase";
 
-export function AppSidebar({ empresaId, empresaNome, pendentes, email, nome, avatarUrl }: {
+export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, email, nome, avatarUrl }: {
   empresaId: string;
   empresaNome: string;
+  logoUrl: string | null;
   pendentes: number;
   email: string;
   nome: string;
@@ -88,9 +89,7 @@ export function AppSidebar({ empresaId, empresaNome, pendentes, email, nome, ava
           title={`${empresaNome}. Trocar empresa`}
           className="mt-4 flex items-center gap-2.5 rounded-lg border bg-card px-2.5 py-2 shadow-xs transition-colors hover:bg-muted"
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-            <Building2 className="size-4" />
-          </span>
+          <Avatar url={logoUrl} texto={empresaNome} className="rounded-md" />
           <span className="min-w-0 flex-1 leading-tight">
             <span className="line-clamp-2 text-sm font-medium break-words text-foreground">{empresaNome}</span>
             <span className="block text-xs text-muted-foreground">Trocar empresa</span>

@@ -39,6 +39,7 @@ export const empresas = pgTable("empresas", {
   contadorNome: text("contador_nome"),
   contadorCpf: text("contador_cpf"),
   contadorCrc: text("contador_crc"),
+  logoPath: text("logo_path"),
   createdAt: createdAt(),
 });
 

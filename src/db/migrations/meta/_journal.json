@@ -43,6 +43,13 @@
       "when": 1793825511723,
       "tag": "0005_csv_pdf",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793829440400,
+      "tag": "0006_empresas_logo",
+      "breakpoints": true
     }
   ]
 }

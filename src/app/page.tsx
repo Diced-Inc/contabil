@@ -10,7 +10,7 @@ import { Carregando, EmptyState, PageHeader } from "@/components/page-header";
 import { db } from "@/db";
 import { empresas } from "@/db/schema";
 import { fmtCnpj, PORTES, REGIMES } from "@/lib/format";
-import { perfilDoUsuario, requireUser } from "@/supabase/server";
+import { logoDaEmpresa, perfilDoUsuario, requireUser } from "@/supabase/server";
 import { Avatar } from "@/components/avatar";
 import { sair } from "./login/actions";
 
@@ -47,6 +47,7 @@ async function ListaEmpresas() {
   await connection();
   await requireUser();
   const lista = await db.select().from(empresas).orderBy(asc(empresas.razaoSocial));
+  const logos = await Promise.all(lista.map(logoDaEmpresa));
   if (lista.length === 0) {
     return (
       <EmptyState
@@ -59,15 +60,19 @@ async function ListaEmpresas() {
   }
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {lista.map((e) => (
+      {lista.map((e, i) => (
         <Link
           key={e.id}
           href={`/e/${e.id}`}
           className="group flex items-center gap-4 rounded-xl border bg-card p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent text-base font-semibold text-accent-foreground">
-            {iniciais(e.razaoSocial)}
-          </span>
+          {logos[i] ? (
+            <Avatar url={logos[i]} texto="" className="size-12 rounded-xl" />
+          ) : (
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent text-base font-semibold text-accent-foreground">
+              {iniciais(e.razaoSocial)}
+            </span>
+          )}
           <span className="min-w-0 flex-1">
             <span className="line-clamp-2 font-semibold leading-snug text-foreground">{e.razaoSocial}</span>
             <span className="mt-0.5 block text-sm text-muted-foreground tabular-nums">CNPJ {fmtCnpj(e.cnpj)}</span>

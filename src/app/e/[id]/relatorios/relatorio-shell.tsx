@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/page-header";
+import { logoDaEmpresa } from "@/supabase/server";
 import { fmtCnpj, fmtCpf, fmtDataExtenso, PORTES, REGIMES } from "@/lib/format";
 import { ContaDetalheProvider } from "./conta-detalhe";
 import { Imprimir } from "./imprimir";
@@ -17,6 +18,7 @@ type Empresa = {
   contadorNome: string | null;
   contadorCpf: string | null;
   contadorCrc: string | null;
+  logoPath: string | null;
 };
 
 const emitidoEm = () =>
@@ -65,7 +67,7 @@ function Assinaturas({ empresa, data }: { empresa: Empresa; data: string }) {
 }
 
 /** Página de relatório: título + Imprimir, filtros, e a "folha" com cabeçalho de demonstração e assinaturas. Renderizar dentro do Suspense. */
-export function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, filtros, children }: {
+export async function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, filtros, children }: {
   titulo: string;
   empresa: Empresa;
   periodoLabel: string;
@@ -74,6 +76,7 @@ export function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, 
   filtros?: ReactNode;
   children: ReactNode;
 }) {
+  const logoUrl = await logoDaEmpresa(empresa);
   return (
     <div className="print:p-0">
       <PageHeader className="no-print" title={titulo} description={`${empresa.razaoSocial} · ${periodoLabel}`} actions={<Imprimir />} />
@@ -82,7 +85,13 @@ export function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, 
         <header className="flex items-end justify-between gap-6 border-b-2 border-foreground/80 px-8 pt-7 pb-4 print:px-0 print:pt-0">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">{titulo}</p>
-            <p className="mt-1.5 text-lg font-semibold tracking-tight">{empresa.razaoSocial}</p>
+            <div className="mt-1.5 flex items-center gap-2.5">
+              {logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element -- URL assinada do Storage; precisa carregar também na impressão.
+                <img src={logoUrl} alt="" className="size-8 shrink-0 rounded-md object-cover" />
+              )}
+              <p className="text-lg font-semibold tracking-tight">{empresa.razaoSocial}</p>
+            </div>
             <p className="text-sm text-muted-foreground tabular-nums print:text-black">CNPJ {fmtCnpj(empresa.cnpj)}</p>
             <p className="text-xs text-muted-foreground print:text-black">
               Regime: {REGIMES[empresa.regimeTributario]}

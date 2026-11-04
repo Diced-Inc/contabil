@@ -51,3 +51,11 @@ export async function perfilDoUsuario(user: User) {
   const { data } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
   return { nome, avatarUrl: data?.signedUrl ?? null };
 }
+
+/** URL assinada (1 h) do logo da empresa (bucket privado "logos") ou null. */
+export async function logoDaEmpresa(empresa: { logoPath: string | null }) {
+  if (!empresa.logoPath) return null;
+  const supabase = await createClient();
+  const { data } = await supabase.storage.from("logos").createSignedUrl(empresa.logoPath, 3600);
+  return data?.signedUrl ?? null;
+}
