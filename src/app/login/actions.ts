@@ -2,8 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { emailPermitido } from "@/supabase/proxy";
-import { createClient, requireUser } from "@/supabase/server";
+import { createClient, destinoPosLogin, requireSessao, vincularConvites } from "@/supabase/server";
 import { COOKIE_RECUPERACAO } from "./recuperacao";
 
 export type Resultado = { erro?: string; ok?: boolean };
@@ -24,10 +23,11 @@ export async function entrar(formData: FormData) {
   if (!email || !password) redirect("/login?erro=" + encodeURIComponent("Informe e-mail e senha."));
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) redirect("/login?erro=" + encodeURIComponent("E-mail ou senha inválidos."));
 
-  redirect("/");
+  await vincularConvites(data.user);
+  redirect(await destinoPosLogin(data.user));
 }
 
 export async function sair() {
@@ -37,7 +37,7 @@ export async function sair() {
 }
 
 export async function trocarSenha(_: Resultado, formData: FormData): Promise<Resultado> {
-  const user = await requireUser();
+  const user = await requireSessao();
   const v = validarNovaSenha(formData);
   if (v.erro) return v;
 
@@ -54,7 +54,7 @@ export async function trocarSenha(_: Resultado, formData: FormData): Promise<Res
 export async function enviarRecuperacao(_: Resultado, formData: FormData): Promise<Resultado> {
   const email = String(formData.get("email") ?? "").trim();
   // Mesma resposta exista ou não o e-mail, para não revelar quem tem conta.
-  if (email && emailPermitido(email)) {
+  if (email) {
     const origin = process.env.NEXT_PUBLIC_SITE_URL || (await headers()).get("origin");
     const supabase = await createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -66,7 +66,7 @@ export async function enviarRecuperacao(_: Resultado, formData: FormData): Promi
 }
 
 export async function redefinirSenha(_: Resultado, formData: FormData): Promise<Resultado> {
-  await requireUser();
+  const user = await requireSessao();
   const jar = await cookies();
   if (!jar.has(COOKIE_RECUPERACAO)) return { erro: "Abra o link de recuperação enviado por e-mail." };
   const v = validarNovaSenha(formData);
@@ -76,5 +76,5 @@ export async function redefinirSenha(_: Resultado, formData: FormData): Promise<
   const { error } = await supabase.auth.updateUser({ password: v.password });
   if (error) return { erro: msgErro(error) };
   jar.delete({ name: COOKIE_RECUPERACAO, path: "/login" });
-  redirect("/");
+  redirect(await destinoPosLogin(user));
 }

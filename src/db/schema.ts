@@ -21,6 +21,7 @@ export const sinalEnum = pgEnum("sinal", ["entrada", "saida", "qualquer"]);
 export const tipoTituloEnum = pgEnum("tipo_titulo", ["receber", "pagar"]);
 export const statusTituloEnum = pgEnum("status_titulo", ["aberto", "baixado", "cancelado"]);
 export const acaoLogEnum = pgEnum("acao_log", ["criado", "alterado", "estornado", "fechamento", "reabertura", "apuracao"]);
+export const papelMembroEnum = pgEnum("papel_membro", ["cliente"]);
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -195,6 +196,25 @@ export const lancamentoLog = pgTable("lancamento_log", {
   depois: jsonb("depois"),
   createdAt: createdAt(),
 });
+
+/** Quem vê todas as empresas e as telas contábeis. user_id referencia auth.users (FK na migration 0007). */
+export const contadores = pgTable("contadores", {
+  userId: uuid("user_id").primaryKey(),
+  email: text("email").notNull().unique(),
+  createdAt: createdAt(),
+});
+
+/** Acesso do cliente ao portal de uma empresa. user_id fica null até o primeiro login com o e-mail convidado. */
+export const membros = pgTable("membros", {
+  id: id(),
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  userId: uuid("user_id"),
+  email: text("email").notNull(),
+  papel: papelMembroEnum("papel").notNull().default("cliente"),
+  nome: text("nome"),
+  convidadoEm: timestamp("convidado_em", { withTimezone: true }).notNull().defaultNow(),
+  aceitoEm: timestamp("aceito_em", { withTimezone: true }),
+}, (t) => [unique().on(t.empresaId, t.email)]);
 
 export type Empresa = typeof empresas.$inferSelect;
 export type Conta = typeof planoContas.$inferSelect;

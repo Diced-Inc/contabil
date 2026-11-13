@@ -1,5 +1,5 @@
 -- Bucket privado dos logos das empresas (fora das migrations do Drizzle; aplicado à mão no Supabase em 04/11/2026).
--- Caminho: {empresaId}/logo.webp. App de um contador só: todo usuário logado (allowlist) gerencia o logo de qualquer empresa.
+-- Caminho: {empresaId}/logo.webp. Policies originais (qualquer logado) substituídas por storage-policies-v2.sql em 13/11/2026.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('logos', 'logos', false, 2097152, array['image/png','image/jpeg','image/webp'])
 on conflict (id) do nothing;

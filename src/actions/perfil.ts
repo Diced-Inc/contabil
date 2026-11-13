@@ -3,13 +3,13 @@
 import { revalidatePath } from "next/cache";
 import sharp from "sharp";
 import type { Resultado } from "@/app/login/actions";
-import { createClient, requireUser } from "@/supabase/server";
+import { createClient, requireSessao } from "@/supabase/server";
 
 const TIPOS = ["image/png", "image/jpeg", "image/webp"];
 const MAX = 2 * 1024 * 1024;
 
 export async function atualizarFoto(formData: FormData): Promise<Resultado> {
-  const user = await requireUser();
+  const user = await requireSessao();
   const foto = formData.get("foto");
   if (!(foto instanceof File) || foto.size === 0) return { erro: "Escolha uma imagem." };
   if (!TIPOS.includes(foto.type)) return { erro: "Use PNG, JPEG ou WebP." };
@@ -33,7 +33,7 @@ export async function atualizarFoto(formData: FormData): Promise<Resultado> {
 }
 
 export async function removerFoto(): Promise<Resultado> {
-  const user = await requireUser();
+  const user = await requireSessao();
   const path: string | undefined = user.user_metadata?.avatar_path;
   if (!path) return { ok: true };
   const supabase = await createClient();
@@ -46,7 +46,7 @@ export async function removerFoto(): Promise<Resultado> {
 }
 
 export async function salvarNome(_: Resultado, formData: FormData): Promise<Resultado> {
-  await requireUser();
+  await requireSessao();
   const nome = String(formData.get("nome") ?? "").trim();
   if (nome.length > 80) return { erro: "Use até 80 caracteres." };
   const supabase = await createClient();
