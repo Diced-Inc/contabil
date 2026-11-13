@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen, ChevronDown, ChevronsUpDown, FileText, Landmark, LayoutDashboard, ListChecks,
-  ListTree, Lock, LogOut, Receipt, Settings, ShieldCheck, Wand2, type LucideIcon,
+  ListTree, Lock, LogOut, Receipt, Settings, ShieldCheck, Users, Wand2, type LucideIcon,
 } from "lucide-react";
 import { cn } from "cn";
 import { sair } from "@/app/login/actions";
@@ -33,6 +33,7 @@ const OPERACAO: Item[] = [
 const CADASTROS: Item[] = [
   ["/plano-de-contas", "Plano de contas", ListTree],
   ["/regras", "Regras", Wand2],
+  ["/clientes", "Clientes", Users],
   ["/configuracoes", "Configurações", Settings],
 ];
 
