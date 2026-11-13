@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BookOpen, ChevronDown, ChevronsUpDown, FileText, Landmark, LayoutDashboard, ListChecks,
+  BookOpen, ChevronDown, ChevronsUpDown, FileText, Inbox, Landmark, LayoutDashboard, ListChecks,
   ListTree, Lock, LogOut, Receipt, Settings, ShieldCheck, Users, Wand2, type LucideIcon,
 } from "lucide-react";
 import { cn } from "cn";
@@ -23,6 +23,7 @@ const RELATORIOS = [
 type Item = [string, string, LucideIcon];
 const OPERACAO: Item[] = [
   ["", "Resumo", LayoutDashboard],
+  ["/documentos", "Documentos", Inbox],
   ["/conciliacao", "Conciliação", ListChecks],
   ["/bancos", "Bancos", Landmark],
   ["/lancamentos", "Lançamentos", BookOpen],
@@ -43,11 +44,13 @@ const ativo =
   "bg-accent font-medium text-accent-foreground hover:bg-accent hover:text-accent-foreground before:absolute before:inset-y-2 before:-left-3 before:w-[3px] before:rounded-r-full before:bg-primary";
 const secao = "px-2.5 pt-5 pb-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground/80 uppercase";
 
-export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, email, nome, avatarUrl }: {
+export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, documentosNovos, email, nome, avatarUrl }: {
   empresaId: string;
   empresaNome: string;
   logoUrl: string | null;
   pendentes: number;
+  /** Documentos do cliente ainda não processados. */
+  documentosNovos: number;
   email: string;
   nome: string;
   avatarUrl: string | null;
@@ -73,6 +76,11 @@ export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, email, 
         {path === "/conciliacao" && pendentes > 0 && (
           <span className="rounded-full bg-warning-soft px-1.5 py-px text-[11px] font-semibold text-warning ring-1 ring-warning/25 ring-inset tabular-nums">
             {pendentes}
+          </span>
+        )}
+        {path === "/documentos" && documentosNovos > 0 && (
+          <span className="rounded-full bg-info-soft px-1.5 py-px text-[11px] font-semibold text-info ring-1 ring-info/25 ring-inset tabular-nums">
+            {documentosNovos}
           </span>
         )}
       </Link>

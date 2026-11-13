@@ -111,3 +111,5 @@ export function nomeParaPath(nome: string) {
 
 export const fmtTamanho = (b: number) =>
   b < 1_000_000 ? `${Math.max(1, Math.round(b / 1000))} KB` : `${(b / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
+/** "2026-10-01" → "Outubro de 2026" (títulos). */
+export const tituloCompetencia = (c: string) => nomeCompetencia(c).replace(/^./, (l) => l.toUpperCase());

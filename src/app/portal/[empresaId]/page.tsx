@@ -1,19 +1,30 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { MailOpen, Receipt, Sparkles, Upload, type LucideIcon } from "lucide-react";
+import { and, asc, desc, eq, lt } from "drizzle-orm";
+import { CalendarClock, Check, FileText, MessageSquareText, Receipt } from "lucide-react";
+import { cn } from "cn";
 import { Avatar } from "@/components/avatar";
+import { Baixar } from "@/components/baixar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { fmtCnpj, PORTES, REGIMES } from "@/lib/format";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { db } from "@/db";
+import { garantirCiclo } from "@/db/ciclos";
+import { ciclosMensais, contasBancarias, documentosRecebidos } from "@/db/schema";
+import {
+  competenciaAtual, fmtTamanho, nomeCompetencia, ORDEM_STATUS, tituloCompetencia, passou, situacaoDas, STATUS_CICLO, textoSituacaoDas,
+  type StatusCiclo,
+} from "@/lib/ciclo";
+import { fmtCnpj, fmtData, fmtValor, hoje, PORTES, REGIMES } from "@/lib/format";
 import { logoDaEmpresa, perfilDoUsuario } from "@/supabase/server";
 import { getEmpresaPortal } from "../dados";
 import { Rodape, Topo } from "../topo";
+import { EnvioExtratos, JaPaguei } from "./ciclo-cliente";
 
-const PASSOS: [LucideIcon, string, string][] = [
-  [MailOpen, "Pedido do mês", "No começo do mês você recebe um e-mail pedindo os extratos bancários."],
-  [Upload, "Envio dos extratos", "Você sobe aqui os arquivos do banco (OFX, CSV ou PDF), sem WhatsApp."],
-  [Receipt, "DAS pronto", "Quando o contador concluir o mês, a guia do DAS aparece aqui com valor e vencimento."],
-];
+const TZ = "America/Sao_Paulo";
+const PASSOS = ["Enviar extratos", "Recebido", "Em processamento", "DAS disponível", "Pago"];
+const quando = (d: Date) => d.toLocaleString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const diaSP = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: TZ });
 
 function Dado({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
@@ -24,13 +35,77 @@ function Dado({ rotulo, children }: { rotulo: string; children: React.ReactNode 
   );
 }
 
+/** Os 5 passos do mês; o atual em destaque. das_pago completa todos. */
+function Progresso({ status }: { status: StatusCiclo }) {
+  const atual = ORDEM_STATUS.indexOf(status);
+  return (
+    <ol className="grid grid-cols-5 gap-1">
+      {PASSOS.map((rotulo, i) => {
+        const feito = i < atual || status === "das_pago";
+        const agora = i === atual && !feito;
+        return (
+          <li key={rotulo} className="grid justify-items-center gap-2 text-center">
+            <div className="relative flex w-full items-center justify-center">
+              {i > 0 && <span aria-hidden className={cn("absolute right-1/2 h-0.5 w-full", i <= atual ? "bg-primary" : "bg-border")} />}
+              <span
+                className={cn(
+                  "relative z-10 flex size-8 items-center justify-center rounded-full text-xs font-semibold tabular-nums",
+                  feito && "bg-primary text-primary-foreground",
+                  agora && "bg-card text-primary ring-2 ring-primary ring-offset-2 ring-offset-card",
+                  !feito && !agora && "bg-muted text-muted-foreground",
+                )}
+              >
+                {feito ? <Check className="size-4" /> : i + 1}
+              </span>
+            </div>
+            <span className={cn("text-xs leading-tight", agora ? "font-semibold text-foreground" : "text-muted-foreground")}>{rotulo}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
   await connection();
   const { empresaId } = await params;
   const { user, empresa } = await getEmpresaPortal(empresaId);
-  const [perfil, logoUrl] = await Promise.all([perfilDoUsuario(user), logoDaEmpresa(empresa)]);
+  const hj = hoje();
+  const competencia = competenciaAtual(hj);
+  const ciclo = await garantirCiclo(empresaId, competencia);
+  const [perfil, logoUrl, docs, contas, historico] = await Promise.all([
+    perfilDoUsuario(user),
+    logoDaEmpresa(empresa),
+    db
+      .select({
+        id: documentosRecebidos.id,
+        nome: documentosRecebidos.nomeArquivo,
+        tamanho: documentosRecebidos.tamanho,
+        createdAt: documentosRecebidos.createdAt,
+        observacao: documentosRecebidos.observacao,
+        conta: contasBancarias.nome,
+      })
+      .from(documentosRecebidos)
+      .leftJoin(contasBancarias, eq(contasBancarias.id, documentosRecebidos.contaBancariaId))
+      .where(eq(documentosRecebidos.cicloId, ciclo.id))
+      .orderBy(desc(documentosRecebidos.createdAt)),
+    db
+      .select({ id: contasBancarias.id, nome: contasBancarias.nome })
+      .from(contasBancarias)
+      .where(and(eq(contasBancarias.empresaId, empresaId), eq(contasBancarias.ativa, true)))
+      .orderBy(asc(contasBancarias.nome)),
+    db
+      .select()
+      .from(ciclosMensais)
+      .where(and(eq(ciclosMensais.empresaId, empresaId), lt(ciclosMensais.competencia, competencia)))
+      .orderBy(desc(ciclosMensais.competencia))
+      .limit(24),
+  ]);
   const primeiroNome = perfil.nome.split(/\s+/)[0];
   const local = [empresa.cidade, empresa.uf].filter(Boolean).join("/");
+  const mes = nomeCompetencia(competencia);
+  const temDas = passou(ciclo.status, "das_enviado") && ciclo.dasValor && ciclo.dasVencimento;
+  const situacao = situacaoDas(ciclo, hj);
 
   return (
     <>
@@ -60,42 +135,117 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
         </section>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-          <Card>
-            <CardHeader className="border-b">
-              <div className="flex items-start justify-between gap-3">
-                <div className="grid gap-1">
-                  <CardTitle>Em breve: envio de extratos e DAS por aqui</CardTitle>
-                  <CardDescription>O fechamento do mês vai acontecer neste portal, em três passos.</CardDescription>
-                </div>
-                <Badge variant="brand" className="shrink-0">
-                  <Sparkles />
-                  Em breve
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ol className="relative grid gap-6 py-1">
-                <span aria-hidden className="absolute top-5 bottom-5 left-[19px] w-px bg-border" />
-                {PASSOS.map(([Icon, titulo, texto], i) => (
-                  <li key={titulo} className="relative flex gap-4">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground ring-4 ring-card">
-                      <Icon className="size-4.5" />
+          <div className="grid content-start gap-6">
+            <Card>
+              <CardHeader className="border-b">
+                <CardDescription>Competência atual</CardDescription>
+                <CardTitle className="text-lg">{tituloCompetencia(competencia)}</CardTitle>
+                <CardAction>
+                  <Badge variant={STATUS_CICLO[ciclo.status].badge}>{STATUS_CICLO[ciclo.status].rotulo}</Badge>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="grid gap-5">
+                <p className="text-sm text-foreground">{STATUS_CICLO[ciclo.status].cliente}</p>
+                <Progresso status={ciclo.status} />
+              </CardContent>
+            </Card>
+
+            {temDas && (
+              <Card className={cn(situacao?.tipo === "vencido" && "border-danger/30", situacao?.tipo === "pago" && "border-success/25")}>
+                <CardHeader className="border-b">
+                  <CardTitle className="flex items-center gap-2.5">
+                    <span className="flex size-8 items-center justify-center rounded-full bg-accent text-primary">
+                      <Receipt className="size-4" />
                     </span>
-                    <div className="pt-0.5">
-                      <p className="text-sm font-semibold text-foreground">
-                        <span className="mr-1.5 text-muted-foreground tabular-nums">{i + 1}.</span>
-                        {titulo}
-                      </p>
-                      <p className="mt-0.5 text-sm text-muted-foreground">{texto}</p>
+                    DAS de {mes}
+                  </CardTitle>
+                  <CardAction>
+                    {situacao && (
+                      <Badge variant={situacao.tipo === "pago" ? "success" : situacao.tipo === "vencido" ? "danger" : "warning"}>
+                        {situacao.tipo === "vencido" ? "Vencido" : textoSituacaoDas(situacao)}
+                      </Badge>
+                    )}
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="grid gap-5">
+                  <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Valor</p>
+                      <p className="text-3xl font-semibold tracking-tight tabular-nums">R$ {fmtValor(ciclo.dasValor!)}</p>
                     </div>
-                  </li>
-                ))}
-              </ol>
-              <p className="mt-6 rounded-lg bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
-                Enquanto isso, continue mandando os documentos para o seu contador como de costume. Avisaremos por e-mail quando estiver no ar.
-              </p>
-            </CardContent>
-          </Card>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Vencimento</p>
+                      <p className="flex items-center gap-1.5 text-lg font-semibold tabular-nums">
+                        <CalendarClock className="size-4 text-muted-foreground" />
+                        {fmtData(ciclo.dasVencimento!)}
+                      </p>
+                      {situacao && situacao.tipo !== "pago" && (
+                        <p className={cn("text-sm", situacao.tipo === "vencido" ? "font-semibold text-danger" : "text-muted-foreground")}>
+                          {textoSituacaoDas(situacao)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Baixar empresaId={empresaId} competencia={competencia} rotulo="Baixar guia" size="default" variant={ciclo.status === "das_pago" ? "outline" : "default"} />
+                    {ciclo.status === "das_enviado" && <JaPaguei empresaId={empresaId} competencia={competencia} />}
+                    {ciclo.dasPagoEm && (
+                      <span className="flex items-center gap-1.5 text-sm font-medium text-success">
+                        <Check className="size-4" />
+                        Pago, informado em {diaSP(ciclo.dasPagoEm)}
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {!passou(ciclo.status, "das_enviado") && (
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Enviar extratos de {mes}</CardTitle>
+                  <CardDescription>Envie os extratos de todas as contas da empresa referentes ao mês inteiro.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <EnvioExtratos empresaId={empresaId} contas={contas} />
+                </CardContent>
+              </Card>
+            )}
+
+            {docs.length > 0 && (
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle>Arquivos enviados</CardTitle>
+                  <CardDescription>
+                    {docs.length} {docs.length === 1 ? "arquivo" : "arquivos"} de {mes}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="grid gap-2">
+                    {docs.map((d) => (
+                      <li key={d.id} className="flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm">
+                        <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{d.nome}</p>
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {quando(d.createdAt)} · {fmtTamanho(d.tamanho)}
+                            {d.conta && <> · {d.conta}</>}
+                          </p>
+                          {d.observacao && (
+                            <p className="mt-1 flex gap-1.5 text-xs text-foreground/80">
+                              <MessageSquareText className="mt-px size-3.5 shrink-0 text-muted-foreground" />
+                              {d.observacao}
+                            </p>
+                          )}
+                        </div>
+                        <Baixar empresaId={empresaId} documentoId={d.id} size="icon-sm" variant="ghost" />
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </div>
 
           <div className="grid content-start gap-6">
             {empresa.contadorNome && (
@@ -127,6 +277,50 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
             </Card>
           </div>
         </div>
+
+        {historico.length > 0 && (
+          <Card className="mt-6 gap-0 pb-0">
+            <CardHeader className="border-b">
+              <CardTitle>Meses anteriores</CardTitle>
+            </CardHeader>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-6">Competência</TableHead>
+                  <TableHead>Situação</TableHead>
+                  <TableHead className="text-right">DAS</TableHead>
+                  <TableHead>Pago em</TableHead>
+                  <TableHead className="w-0" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {historico.map((c) => {
+                  const s = situacaoDas(c, hj);
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell className="pl-6 font-medium">{tituloCompetencia(c.competencia)}</TableCell>
+                      <TableCell>
+                        {s?.tipo === "vencido" ? (
+                          <Badge variant="danger">DAS vencido</Badge>
+                        ) : (
+                          <Badge variant={STATUS_CICLO[c.status].badge}>{STATUS_CICLO[c.status].rotulo}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{c.dasValor ? `R$ ${fmtValor(c.dasValor)}` : "-"}</TableCell>
+                      <TableCell className="text-muted-foreground tabular-nums">{c.dasPagoEm ? diaSP(c.dasPagoEm) : "-"}</TableCell>
+                      <TableCell className="pr-4">
+                        <div className="flex justify-end gap-1.5">
+                          {c.dasPath && <Baixar empresaId={empresaId} competencia={c.competencia} rotulo="Guia" size="sm" variant="ghost" />}
+                          {c.status === "das_enviado" && <JaPaguei empresaId={empresaId} competencia={c.competencia} />}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
       </main>
       <Rodape />
     </>

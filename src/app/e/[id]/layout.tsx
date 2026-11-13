@@ -1,9 +1,9 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { AppSidebar } from "@/components/app-sidebar";
 import { db } from "@/db";
-import { contasBancarias, transacoesBancarias } from "@/db/schema";
+import { contasBancarias, documentosRecebidos, transacoesBancarias } from "@/db/schema";
 import { logoDaEmpresa, perfilDoUsuario, requireUser } from "@/supabase/server";
 import { getEmpresa } from "./empresa";
 
@@ -13,15 +13,21 @@ async function Shell({ params, children }: LayoutProps<"/e/[id]">) {
   const { id } = await params;
   const [empresa, perfil] = await Promise.all([getEmpresa(id), perfilDoUsuario(user)]);
   const logoUrl = await logoDaEmpresa(empresa);
-  const [{ pendentes }] = await db
-    .select({ pendentes: count() })
-    .from(transacoesBancarias)
-    .innerJoin(contasBancarias, eq(transacoesBancarias.contaBancariaId, contasBancarias.id))
-    .where(and(eq(contasBancarias.empresaId, id), eq(transacoesBancarias.status, "pendente")));
+  const [[{ pendentes }], [{ documentosNovos }]] = await Promise.all([
+    db
+      .select({ pendentes: count() })
+      .from(transacoesBancarias)
+      .innerJoin(contasBancarias, eq(transacoesBancarias.contaBancariaId, contasBancarias.id))
+      .where(and(eq(contasBancarias.empresaId, id), eq(transacoesBancarias.status, "pendente"))),
+    db
+      .select({ documentosNovos: count() })
+      .from(documentosRecebidos)
+      .where(and(eq(documentosRecebidos.empresaId, id), isNull(documentosRecebidos.processadoEm))),
+  ]);
 
   return (
     <div className="flex min-h-svh flex-1">
-      <AppSidebar empresaId={id} empresaNome={empresa.razaoSocial} logoUrl={logoUrl} pendentes={pendentes} email={user.email ?? ""} {...perfil} />
+      <AppSidebar empresaId={id} empresaNome={empresa.razaoSocial} logoUrl={logoUrl} pendentes={pendentes} documentosNovos={documentosNovos} email={user.email ?? ""} {...perfil} />
       <main className="min-w-0 flex-1 px-6 py-7 xl:px-8">
         <div className="mx-auto w-full max-w-[1280px]">{children}</div>
       </main>

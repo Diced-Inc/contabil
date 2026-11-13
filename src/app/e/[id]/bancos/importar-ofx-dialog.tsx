@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { sugerirMapeamento, type DeteccaoCsv } from "@/lib/csv";
+import { fmtTamanho } from "@/lib/ciclo";
 import type { ExtratoIA } from "@/lib/extrato-ia";
 import { MapeamentoCsvPasso, selectCls } from "./mapeamento-csv";
 import { RevisaoPdfPasso, type Revisada } from "./revisao-pdf";
@@ -42,9 +43,6 @@ type Passo =
   }
   | { tipo: "pdf"; arquivo: File; extracao: ExtratoIA; resolver: (r: Revisada | null) => void };
 
-const fmtTamanho = (b: number) =>
-  b < 1_000_000 ? `${Math.max(1, Math.round(b / 1000))} KB` : `${(b / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
-
 function tipoDe(f: File): Tipo | null {
   const ext = f.name.toLowerCase().split(".").pop();
   return ext === "ofx" || ext === "csv" || ext === "pdf" ? ext : null;
@@ -71,20 +69,24 @@ function StatusTexto({ st }: { st: Status }) {
 }
 
 type Fase = "escolha" | "importando" | "fim";
+/** Arquivo já escolhido fora do diálogo (caixa de entrada): baixado ao abrir, com a conta sugerida. */
+export type Inicial = { contaId: string | null; carregar: () => Promise<File> };
 
-function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
+function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar, inicial, onImportado }: {
   empresaId: string; contas: Conta[]; fase: Fase; setFase: (f: Fase) => void;
   passo: Passo | null; setPasso: (p: Passo | null) => void; fechar: () => void;
+  inicial?: Inicial; onImportado?: (importacaoIds: string[]) => void;
 }) {
-  const [contaId, setContaId] = useState(contas.length === 1 ? contas[0].id : "");
+  const contaInicial = inicial?.contaId && contas.some((c) => c.id === inicial.contaId) ? inicial.contaId : null;
+  const [contaId, setContaId] = useState(contaInicial ?? (contas.length === 1 ? contas[0].id : ""));
   const [itens, setItens] = useState<Item[]>([]);
   const [total, setTotal] = useState(0);
   const [feitos, setFeitos] = useState(0);
   const validos = itens.filter((i) => i.status.s === "fila").length;
 
-  function escolher(files: FileList | null) {
+  function escolher(files: File[]) {
     setItens(
-      Array.from(files ?? []).map((arquivo) => {
+      files.map((arquivo) => {
         const tipo = tipoDe(arquivo);
         const status: Status = !tipo ? { s: "erro", msg: "Formato não suportado (use OFX, CSV ou PDF)" }
           : arquivo.size > MAX_OFX ? { s: "erro", msg: GRANDE } : { s: "fila" };
@@ -92,6 +94,18 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
       }),
     );
   }
+
+  useEffect(() => {
+    if (!inicial) return;
+    let vivo = true;
+    inicial.carregar().then(
+      (f) => vivo && escolher([f]),
+      (e) => vivo && toast.error(`Não foi possível baixar o arquivo: ${(e as Error).message}`),
+    );
+    return () => {
+      vivo = false;
+    };
+  }, [inicial]);
 
   /** CSV: detecta, aplica o mapeamento salvo da conta (mesmo layout) ou pede o mapeamento ao usuário. */
   async function importarCsv(item: Item, fd: FormData, set: (s: Status) => void): Promise<ResultadoArquivo | null> {
@@ -136,6 +150,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
     setTotal(validos);
     setFeitos(0);
     const ids: string[] = [];
+    const importacoesOk: string[] = [];
     // Sequencial de propósito: arquivos da mesma conta em paralelo disputariam lock no banco,
     // e um CSV mapeado (e salvo) agora vale para os próximos do mesmo layout.
     for (const [idx, item] of itens.entries()) {
@@ -155,6 +170,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
         else if ("erro" in r) set({ s: "erro", msg: r.erro });
         else {
           ids.push(...r.ids);
+          importacoesOk.push(r.importacaoId);
           set({ s: "ok", novas: r.novas, repetidas: r.repetidas });
         }
       } catch (e) {
@@ -174,6 +190,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
         toast.warning(`Falha na sugestão: ${(e as Error).message}`);
       }
     }
+    if (importacoesOk.length) onImportado?.(importacoesOk);
     setFase("fim");
   }
 
@@ -212,10 +229,10 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
           ))}
         </select>
       </div>
-      {fase === "escolha" && (
+      {fase === "escolha" && !inicial && (
         <div className="grid gap-2">
           <Label htmlFor="arquivo">Arquivos OFX, CSV ou PDF (vários, até 4,4 MB cada)</Label>
-          <Input id="arquivo" type="file" accept={ACCEPT} multiple onChange={(e) => escolher(e.target.files)} />
+          <Input id="arquivo" type="file" accept={ACCEPT} multiple onChange={(e) => escolher(Array.from(e.target.files ?? []))} />
         </div>
       )}
       {itens.length > 0 && (
@@ -252,7 +269,12 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar }: {
   );
 }
 
-export function ImportarOfxDialog({ empresaId, contas }: { empresaId: string; contas: Conta[] }) {
+export function ImportarOfxDialog({ empresaId, contas, inicial, onImportado, gatilho }: {
+  empresaId: string; contas: Conta[];
+  inicial?: Inicial; onImportado?: (importacaoIds: string[]) => void;
+  /** Botão que abre o diálogo (padrão: "Importar extrato"). */
+  gatilho?: ReactElement;
+}) {
   const router = useRouter();
   const [aberta, setAberta] = useState(false);
   const [fase, setFase] = useState<Fase>("escolha");
@@ -267,15 +289,19 @@ export function ImportarOfxDialog({ empresaId, contas }: { empresaId: string; co
   }
   return (
     <Dialog open={aberta} onOpenChange={onOpenChange}>
-      <DialogTrigger render={<Button disabled={contas.length === 0} />}>
-        <Upload />
-        Importar extrato
-      </DialogTrigger>
+      {gatilho ? (
+        <DialogTrigger render={gatilho} />
+      ) : (
+        <DialogTrigger render={<Button disabled={contas.length === 0} />}>
+          <Upload />
+          Importar extrato
+        </DialogTrigger>
+      )}
       <DialogContent className={passo ? "max-h-[92vh] overflow-y-auto sm:max-w-5xl" : undefined}>
         <DialogHeader>
           <DialogTitle>{passo?.tipo === "pdf" ? "Revisar extrato do PDF" : passo ? "Mapear colunas do CSV" : "Importar extratos"}</DialogTitle>
         </DialogHeader>
-        <Form empresaId={empresaId} contas={contas} fase={fase} setFase={setFase} passo={passo} setPasso={setPasso} fechar={() => onOpenChange(false)} />
+        <Form empresaId={empresaId} contas={contas} fase={fase} setFase={setFase} passo={passo} setPasso={setPasso} fechar={() => onOpenChange(false)} inicial={inicial} onImportado={onImportado} />
       </DialogContent>
     </Dialog>
   );
