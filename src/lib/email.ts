@@ -26,7 +26,11 @@ const esc = (s: string) =>
 const MARCA = "#0f6e56";
 
 /** Moldura com a marca: título, parágrafos, botão e link de reserva em texto. */
-function layout({ titulo, paragrafos, botao, link }: { titulo: string; paragrafos: string[]; botao: string; link: string }) {
+const RODAPE_CLIENTE = "Você recebeu este e-mail porque seu contador liberou seu acesso. Se não esperava por ele, pode ignorar.";
+
+function layout({ titulo, paragrafos, botao, link, rodape = RODAPE_CLIENTE }: {
+  titulo: string; paragrafos: string[]; botao: string; link: string; rodape?: string;
+}) {
   const href = esc(link);
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f4f6f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1c2321">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
@@ -39,7 +43,7 @@ ${paragrafos.map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.
 <p style="margin:24px 0"><a href="${href}" style="display:inline-block;background:${MARCA};color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">${esc(botao)}</a></p>
 <p style="margin:0;font-size:13px;line-height:1.5;color:#6b7673">Se o botão não funcionar, copie e cole este endereço no navegador:<br><a href="${href}" style="color:${MARCA};word-break:break-all">${href}</a></p>
 </td></tr>
-<tr><td style="padding:16px 4px 0;font-size:12px;color:#8a9491">Você recebeu este e-mail porque seu contador liberou seu acesso. Se não esperava por ele, pode ignorar.</td></tr>
+<tr><td style="padding:16px 4px 0;font-size:12px;color:#8a9491">${esc(rodape)}</td></tr>
 </table></td></tr></table></body></html>`;
 }
 
@@ -56,5 +60,52 @@ export function emailConvite({ nome, empresa, link }: { nome: string | null; emp
     link,
   });
   const texto = `${saudacao}\n\nSeu contador liberou o acesso ao portal da ${empresa}. Por lá você vai enviar os extratos do mês e receber a guia do DAS.\n\nCrie sua senha neste link (vale por 24 horas):\n${link}\n\nSe não esperava este e-mail, pode ignorar.`;
+  return { assunto, html, texto };
+}
+
+const brl = (v: string | number) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dataBR = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+
+/** Para o contador: o cliente enviou arquivos da competência. */
+export function emailExtratoRecebido({ empresa, competencia, arquivos, quem, observacao, link }: {
+  empresa: string; competencia: string; arquivos: string[]; quem: string; observacao: string | null; link: string;
+}) {
+  const n = arquivos.length;
+  const qtd = n === 1 ? "1 arquivo" : `${n} arquivos`;
+  const assunto = `${empresa}: ${qtd} de ${competencia}`;
+  const lista = arquivos.map((a) => `&bull; ${esc(a)}`).join("<br>");
+  const html = layout({
+    titulo: "Extratos recebidos",
+    paragrafos: [
+      `<b>${esc(quem)}</b> enviou ${qtd} da <b>${esc(empresa)}</b>, competência ${esc(competencia)}:`,
+      lista,
+      ...(observacao ? [`Observação do cliente: <i>${esc(observacao)}</i>`] : []),
+    ],
+    botao: "Abrir documentos",
+    link,
+    rodape: "Aviso automático do portal do cliente.",
+  });
+  const texto = `${quem} enviou ${qtd} da ${empresa}, competência ${competencia}:\n${arquivos.map((a) => `- ${a}`).join("\n")}\n${
+    observacao ? `\nObservação do cliente: ${observacao}\n` : ""
+  }\nAbrir documentos: ${link}`;
+  return { assunto, html, texto };
+}
+
+/** Para o cliente: mês concluído, guia do DAS disponível no portal. */
+export function emailDasDisponivel({ empresa, competencia, valor, vencimento, link }: {
+  empresa: string; competencia: string; valor: string; vencimento: string; link: string;
+}) {
+  const assunto = `DAS de ${competencia} disponível: ${brl(valor)}, vence ${dataBR(vencimento)}`;
+  const html = layout({
+    titulo: "Seu DAS está pronto",
+    paragrafos: [
+      `O contador concluiu o mês de <b>${esc(competencia)}</b> da <b>${esc(empresa)}</b>.`,
+      `Valor do DAS: <b>${brl(valor)}</b><br>Vencimento: <b>${dataBR(vencimento)}</b>`,
+      "Baixe a guia no portal e, depois de pagar, clique em \"Já paguei\" para avisar o contador.",
+    ],
+    botao: "Baixar a guia",
+    link,
+  });
+  const texto = `O contador concluiu o mês de ${competencia} da ${empresa}.\n\nValor do DAS: ${brl(valor)}\nVencimento: ${dataBR(vencimento)}\n\nBaixe a guia no portal e, depois de pagar, clique em "Já paguei":\n${link}`;
   return { assunto, html, texto };
 }

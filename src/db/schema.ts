@@ -1,7 +1,7 @@
 import {
   pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 export const regimeEnum = pgEnum("regime_tributario", ["simples", "presumido", "real", "mei"]);
 export const porteEnum = pgEnum("porte_empresa", ["mei", "me", "epp", "demais"]);
@@ -22,6 +22,10 @@ export const tipoTituloEnum = pgEnum("tipo_titulo", ["receber", "pagar"]);
 export const statusTituloEnum = pgEnum("status_titulo", ["aberto", "baixado", "cancelado"]);
 export const acaoLogEnum = pgEnum("acao_log", ["criado", "alterado", "estornado", "fechamento", "reabertura", "apuracao"]);
 export const papelMembroEnum = pgEnum("papel_membro", ["cliente"]);
+export const statusCicloEnum = pgEnum("status_ciclo", [
+  "aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago",
+]);
+export const statusNotificacaoEnum = pgEnum("status_notificacao", ["enviado", "erro", "nao_configurado"]);
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -216,6 +220,62 @@ export const membros = pgTable("membros", {
   aceitoEm: timestamp("aceito_em", { withTimezone: true }),
 }, (t) => [unique().on(t.empresaId, t.email)]);
 
+/** Ciclo mensal com o cliente: extratos da competência → processamento → DAS. Criado sob demanda. */
+export const ciclosMensais = pgTable("ciclos_mensais", {
+  id: id(),
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  competencia: date("competencia").notNull(),
+  status: statusCicloEnum("status").notNull().default("aguardando_extrato"),
+  extratoSolicitadoEm: timestamp("extrato_solicitado_em", { withTimezone: true }),
+  extratoRecebidoEm: timestamp("extrato_recebido_em", { withTimezone: true }),
+  concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+  dasValor: money("das_valor"),
+  dasVencimento: date("das_vencimento"),
+  dasPath: text("das_path"),
+  dasEnviadoEm: timestamp("das_enviado_em", { withTimezone: true }),
+  dasPagoEm: timestamp("das_pago_em", { withTimezone: true }),
+  dasPagoPor: uuid("das_pago_por"),
+  observacao: text("observacao"),
+  createdAt: createdAt(),
+}, (t) => [unique().on(t.empresaId, t.competencia)]);
+
+/** Arquivo enviado pelo cliente (bucket documentos), até o contador importar ou marcar como processado. */
+export const documentosRecebidos = pgTable("documentos_recebidos", {
+  id: id(),
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  cicloId: uuid("ciclo_id").notNull().references(() => ciclosMensais.id, { onDelete: "cascade" }),
+  contaBancariaId: uuid("conta_bancaria_id").references(() => contasBancarias.id, { onDelete: "set null" }),
+  nomeArquivo: text("nome_arquivo").notNull(),
+  path: text("path").notNull().unique(),
+  mime: text("mime").notNull(),
+  tamanho: integer("tamanho").notNull(),
+  observacao: text("observacao"),
+  enviadoPor: uuid("enviado_por"),
+  createdAt: createdAt(),
+  processadoEm: timestamp("processado_em", { withTimezone: true }),
+  importacaoId: uuid("importacao_id").references(() => importacoes.id, { onDelete: "set null" }),
+});
+
+export type TipoNotificacao =
+  | "convite" | "pedido_extrato" | "lembrete_extrato" | "extrato_recebido" | "das_disponivel" | "lembrete_das" | "recuperacao_senha";
+
+/** Histórico e idempotência dos e-mails: um por (ciclo, tipo, destinatário, dia). */
+export const notificacoes = pgTable("notificacoes", {
+  id: id(),
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  cicloId: uuid("ciclo_id").references(() => ciclosMensais.id, { onDelete: "cascade" }),
+  tipo: text("tipo").$type<TipoNotificacao>().notNull(),
+  para: text("para").notNull(),
+  assunto: text("assunto").notNull(),
+  status: statusNotificacaoEnum("status").notNull(),
+  resendId: text("resend_id"),
+  erro: text("erro"),
+  dataRef: date("data_ref").notNull().default(sql`(now() at time zone 'America/Sao_Paulo')::date`),
+  createdAt: createdAt(),
+}, (t) => [unique().on(t.cicloId, t.tipo, t.para, t.dataRef)]);
+
+export type CicloMensal = typeof ciclosMensais.$inferSelect;
+export type StatusCiclo = CicloMensal["status"];
 export type Empresa = typeof empresas.$inferSelect;
 export type Conta = typeof planoContas.$inferSelect;
 export type ContaBancaria = typeof contasBancarias.$inferSelect;

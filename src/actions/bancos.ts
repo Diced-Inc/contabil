@@ -102,7 +102,7 @@ function dataDoSaldo(ext: OfxExtrato) {
   return ext.dataSaldo ?? ext.dtEnd ?? ext.transacoes.reduce<string | null>((m, t) => (!m || t.data > m ? t.data : m), null);
 }
 
-export type ResultadoArquivo = { erro: string } | { ok: true; novas: number; repetidas: number; ids: string[] };
+export type ResultadoArquivo = { erro: string } | { ok: true; novas: number; repetidas: number; ids: string[]; importacaoId: string };
 type ContaBancaria = NonNullable<Awaited<ReturnType<typeof getContaBancaria>>>;
 
 /** Conta da empresa, ativa; ou a mensagem de erro. */
@@ -135,7 +135,7 @@ type Gravacao = {
 
 /** Grava a importação e as transações novas (FITID repetido na conta é ignorado) numa transação de banco. */
 async function gravarImportacao(conta: ContaBancaria, g: Gravacao): Promise<ResultadoArquivo> {
-  const novosIds = await db.transaction(async (tx) => {
+  const { impId, novosIds } = await db.transaction(async (tx) => {
     const [imp] = await tx
       .insert(importacoes)
       .values({
@@ -170,9 +170,9 @@ async function gravarImportacao(conta: ContaBancaria, g: Gravacao): Promise<Resu
       ids.push(...inseridas.map((t) => t.id));
     }
     await tx.update(importacoes).set({ qtdNovas: ids.length }).where(eq(importacoes.id, imp.id));
-    return ids;
+    return { impId: imp.id, novosIds: ids };
   });
-  return { ok: true, novas: novosIds.length, repetidas: g.transacoes.length - novosIds.length, ids: novosIds };
+  return { ok: true, novas: novosIds.length, repetidas: g.transacoes.length - novosIds.length, ids: novosIds, importacaoId: impId };
 }
 
 /** Importa um OFX (uma requisição por arquivo, por causa do limite de corpo da Vercel). A sugestão roda depois, em sugerirAposImportacao. */
