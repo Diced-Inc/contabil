@@ -14,6 +14,7 @@ import { fmtData, fmtValor, hoje } from "@/lib/format";
 import { dre } from "@/lib/relatorios/dre";
 import { listarContasComSaldo } from "./bancos/queries";
 import { getEmpresa } from "./empresa";
+import { PortalCard } from "./portal-card";
 import { contarPendentes, ultimosLancamentos } from "./queries";
 
 const verLink = (href: string, label: string) => (
@@ -88,6 +89,7 @@ async function Resumo({ params }: PageProps<"/e/[id]">) {
   return (
     <>
       <PageHeader title="Resumo" description={`${empresa.razaoSocial} · posição em ${fmtData(ate)}`} />
+      <PortalCard empresa={empresa} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat

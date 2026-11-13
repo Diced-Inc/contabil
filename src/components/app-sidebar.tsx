@@ -23,7 +23,6 @@ const RELATORIOS = [
 type Item = [string, string, LucideIcon];
 const OPERACAO: Item[] = [
   ["", "Resumo", LayoutDashboard],
-  ["/documentos", "Documentos", Inbox],
   ["/conciliacao", "Conciliação", ListChecks],
   ["/bancos", "Bancos", Landmark],
   ["/lancamentos", "Lançamentos", BookOpen],
@@ -31,10 +30,14 @@ const OPERACAO: Item[] = [
   ["/fechamento", "Fechamento", Lock],
   ["/checagem", "Checagem", ShieldCheck],
 ];
+/** O que o contador usa com o cliente: quem acessa e o que chegou. */
+const PORTAL: Item[] = [
+  ["/clientes", "Clientes", Users],
+  ["/documentos", "Documentos recebidos", Inbox],
+];
 const CADASTROS: Item[] = [
   ["/plano-de-contas", "Plano de contas", ListTree],
   ["/regras", "Regras", Wand2],
-  ["/clientes", "Clientes", Users],
   ["/configuracoes", "Configurações", Settings],
 ];
 
@@ -110,6 +113,9 @@ export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, documen
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         <p className={cn(secao, "pt-2")}>Operação</p>
         <div className="space-y-0.5">{OPERACAO.map(link)}</div>
+
+        <p className={secao}>Portal do cliente</p>
+        <div className="space-y-0.5">{PORTAL.map(link)}</div>
 
         <button
           type="button"

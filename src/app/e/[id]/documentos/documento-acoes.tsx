@@ -55,17 +55,28 @@ export function DocumentoAcoes({ empresaId, documento, contas }: {
           inicial={inicial}
           onImportado={(ids) => marcar(ids[0])}
           gatilho={
-            <Button size="sm" variant={documento.processado ? "outline" : "default"} disabled={contas.length === 0}>
+            <Button
+              size="sm"
+              variant={documento.processado ? "outline" : "default"}
+              disabled={contas.length === 0}
+              title={contas.length === 0 ? "Cadastre a conta bancária em Bancos para importar." : "Abre a importação de extrato com este arquivo."}
+            >
               <Upload />
-              Importar
+              {documento.processado ? "Importar de novo" : "Importar"}
             </Button>
           }
         />
       )}
       {!documento.processado && (
-        <Button size="sm" variant="outline" onClick={() => marcar(null)} disabled={pendente}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => marcar(null)}
+          disabled={pendente}
+          title="Use quando você já lançou este arquivo de outro jeito ou ele não precisa ser importado."
+        >
           <Check />
-          Marcar como processado
+          {pendente ? "Marcando..." : "Marcar como processado"}
         </Button>
       )}
     </>

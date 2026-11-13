@@ -1,13 +1,16 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { CheckCircle2, FileText, Inbox, MessageSquareText } from "lucide-react";
+import Link from "next/link";
+import { and, count, desc, eq, sql } from "drizzle-orm";
+import { CheckCircle2, FileText, FileUp, Inbox, Landmark, MailOpen, MessageSquareText, Upload } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Carregando, EmptyState, PageHeader, TablePanel } from "@/components/page-header";
 import { Baixar } from "@/components/baixar";
 import { db } from "@/db";
-import { ciclosMensais, contasBancarias, documentosRecebidos } from "@/db/schema";
+import { ciclosMensais, contasBancarias, documentosRecebidos, membros } from "@/db/schema";
 import { extensao, fmtTamanho, STATUS_CICLO, tituloCompetencia } from "@/lib/ciclo";
 import { getEmpresa } from "../empresa";
 import { DocumentoAcoes } from "./documento-acoes";
@@ -16,7 +19,15 @@ import { DocumentoAcoes } from "./documento-acoes";
 export const maxDuration = 300;
 
 const TZ = "America/Sao_Paulo";
-const DESCRICAO = "Arquivos que o cliente enviou pelo portal. Importe com o fluxo de sempre ou marque como processado.";
+const DESCRICAO = "Extratos e arquivos que o cliente enviou pelo portal. Clique em Importar para lançar o extrato, como em Bancos.";
+const TITULO = "Documentos recebidos";
+
+/** Como os arquivos chegam aqui, para o estado vazio. */
+const PASSOS = [
+  { icone: MailOpen, texto: "Todo mês o cliente recebe o pedido por e-mail." },
+  { icone: FileUp, texto: "Ele envia os extratos (OFX, CSV ou PDF) pelo portal." },
+  { icone: Upload, texto: "Os arquivos chegam aqui e você clica em Importar." },
+];
 const quando = (d: Date) =>
   d.toLocaleString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -24,7 +35,7 @@ async function Documentos({ params }: PageProps<"/e/[id]/documentos">) {
   await connection();
   const { id } = await params;
   await getEmpresa(id);
-  const [docs, contas] = await Promise.all([
+  const [docs, contas, [{ clientes }]] = await Promise.all([
     db
       .select({
         id: documentosRecebidos.id,
@@ -49,18 +60,54 @@ async function Documentos({ params }: PageProps<"/e/[id]/documentos">) {
       .select({ id: contasBancarias.id, nome: contasBancarias.nome, numero: contasBancarias.numero })
       .from(contasBancarias)
       .where(and(eq(contasBancarias.empresaId, id), eq(contasBancarias.ativa, true))),
+    db.select({ clientes: count() }).from(membros).where(eq(membros.empresaId, id)),
   ]);
 
   const grupos = Map.groupBy(docs, (d) => d.competencia);
 
   return (
     <>
-      <PageHeader title="Documentos" description={DESCRICAO} />
+      <PageHeader title={TITULO} description={DESCRICAO} />
+      {docs.length > 0 && contas.length === 0 && (
+        <Alert className="mb-4">
+          <Landmark />
+          <AlertDescription>
+            Para importar um extrato, cadastre antes a conta bancária da empresa.{" "}
+            <Link href={`/e/${id}/bancos`} className="font-medium text-primary underline-offset-4 hover:underline">
+              Ir para Bancos
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
       {docs.length === 0 ? (
         <EmptyState
           icon={Inbox}
-          title="Nenhum documento recebido"
-          hint="Quando o cliente enviar os extratos pelo portal, eles aparecem aqui para você importar."
+          title="Nenhum arquivo recebido ainda"
+          hint={
+            <>
+              Esta é a caixa de entrada do portal do cliente.
+              <ol className="mt-5 grid gap-3 text-left sm:-mx-6">
+                {PASSOS.map(({ icone: Icone, texto }, i) => (
+                  <li key={texto} className="flex items-start gap-3">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-primary">
+                      <Icone className="size-3.5" />
+                    </span>
+                    <span className="pt-1 text-foreground/80">
+                      <span className="sr-only">{i + 1}. </span>
+                      {texto}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          }
+          action={
+            clientes === 0 && (
+              <Link href={`/e/${id}/clientes`} className={buttonVariants()}>
+                Convidar o cliente para o portal
+              </Link>
+            )
+          }
         />
       ) : (
         <div className="grid gap-6">
@@ -111,7 +158,7 @@ async function Documentos({ params }: PageProps<"/e/[id]/documentos">) {
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">{d.conta ?? "Não informado"}</TableCell>
+                          <TableCell className="text-muted-foreground">{d.conta ?? "Não informada"}</TableCell>
                           <TableCell className="text-muted-foreground">{d.enviadoPor ?? "-"}</TableCell>
                           <TableCell className="text-muted-foreground tabular-nums">{quando(d.createdAt)}</TableCell>
                           <TableCell>
@@ -126,12 +173,12 @@ async function Documentos({ params }: PageProps<"/e/[id]/documentos">) {
                           </TableCell>
                           <TableCell className="pr-3">
                             <div className="flex justify-end gap-1.5">
-                              <Baixar empresaId={id} documentoId={d.id} size="icon-sm" variant="ghost" />
                               <DocumentoAcoes
                                 empresaId={id}
                                 documento={{ id: d.id, nome: d.nome, contaId: d.contaId, processado: !!d.processadoEm }}
                                 contas={contas}
                               />
+                              <Baixar empresaId={id} documentoId={d.id} size="icon-sm" variant="ghost" />
                             </div>
                           </TableCell>
                         </TableRow>
@@ -150,7 +197,7 @@ async function Documentos({ params }: PageProps<"/e/[id]/documentos">) {
 
 export default function DocumentosPage(props: PageProps<"/e/[id]/documentos">) {
   return (
-    <Suspense fallback={<><PageHeader title="Documentos" description={DESCRICAO} /><Carregando /></>}>
+    <Suspense fallback={<><PageHeader title={TITULO} description={DESCRICAO} /><Carregando /></>}>
       <Documentos {...props} />
     </Suspense>
   );

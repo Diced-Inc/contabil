@@ -48,7 +48,7 @@ export function EmptyState({ icon: Icon, title, hint, action, className }: {
         <Icon className="size-5" />
       </div>
       <p className="text-sm font-semibold text-foreground">{title}</p>
-      {hint && <p className="mt-1 max-w-sm text-sm text-muted-foreground">{hint}</p>}
+      {hint && <div className="mt-1 max-w-sm text-sm text-muted-foreground">{hint}</div>}
       {action && <div className="mt-5 flex flex-wrap justify-center gap-2">{action}</div>}
     </div>
   );
