@@ -63,18 +63,36 @@ export const listaPtBR = (itens: (string | number)[]) =>
 
 const ordenar = (xs: number[]) => [...new Set(xs)].sort((a, b) => a - b);
 
-/** Resumo em português do que a configuração faz, para o contador conferir antes de ligar. */
-export function textoAvisos(config: Omit<ConfigAvisos, "avisosAtivos">, hoje: string) {
+/** Padrão das colunas em empresas (schema): dia 1, lembretes +4 e +9, DAS 3 dias antes e no dia. */
+export const PADRAO_AVISOS: Omit<ConfigAvisos, "avisosAtivos"> = { diaPedidoExtrato: 1, lembretesExtratoDias: [4, 9], diasAntesVencimentoDas: [3, 0] };
+
+export type EtapaAviso = { quando: string; texto: string; tipo: TipoAviso };
+
+/** Linha do tempo do mês em português, para o contador conferir antes de ligar. */
+export function etapasAvisos(config: Omit<ConfigAvisos, "avisosAtivos">, hoje: string): EtapaAviso[] {
   const fim = ultimoDiaDoMes(hoje);
   const mes = nomeCompetencia(competenciaAtual(hoje)).split(" ")[0];
-  const partes = [`Dia ${config.diaPedidoExtrato} pedimos os extratos de ${mes}`];
+  const etapas: EtapaAviso[] = [{ quando: `Dia ${config.diaPedidoExtrato}`, texto: `pedimos os extratos de ${mes}`, tipo: "pedido_extrato" }];
   const lembretes = ordenar(config.lembretesExtratoDias.map((d) => Math.min(config.diaPedidoExtrato + d, fim)));
-  if (lembretes.length) partes.push(`lembramos ${lembretes.length === 1 ? "no dia" : "nos dias"} ${listaPtBR(lembretes)}`);
+  if (lembretes.length) {
+    etapas.push({ quando: `${lembretes.length === 1 ? "Dia" : "Dias"} ${listaPtBR(lembretes)}`, texto: "lembramos se ainda não enviou", tipo: "lembrete_extrato" });
+  }
   const antes = ordenar(config.diasAntesVencimentoDas)
     .reverse()
     .map((d) => (d === 0 ? "no dia do vencimento" : d === 1 ? "1 dia antes" : `${d} dias antes`));
-  partes.push(`avisamos do DAS ${listaPtBR([...antes, "no dia seguinte se não for pago"])}`);
-  return partes.join("; ");
+  etapas.push(
+    antes.length
+      ? { quando: listaPtBR(antes).replace(/^./, (l) => l.toUpperCase()), texto: "lembramos o DAS (e no dia seguinte, se não foi pago)", tipo: "lembrete_das" }
+      : { quando: "Dia seguinte ao vencimento", texto: "avisamos se o DAS não foi pago", tipo: "lembrete_das" },
+  );
+  return etapas;
+}
+
+/** Próxima data ("YYYY-MM-DD") do pedido do extrato: este mês se o dia ainda não chegou, senão no seguinte. */
+export function proximoPedido(hoje: string, dia: number) {
+  const [ano, mes] = [Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7))];
+  const [a, m] = Number(hoje.slice(8, 10)) < dia ? [ano, mes] : mes === 12 ? [ano + 1, 1] : [ano, mes + 1];
+  return `${a}-${String(m).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 }
 
 /** Tipo de e-mail (tabela notificacoes) em português, para o histórico e a simulação. */

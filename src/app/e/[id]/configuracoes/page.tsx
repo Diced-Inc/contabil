@@ -20,14 +20,14 @@ async function Form({ params }: Pick<PageProps<"/e/[id]/configuracoes">, "params
 export default function ConfiguracoesPage({ params }: PageProps<"/e/[id]/configuracoes">) {
   return (
     <div className="max-w-2xl">
-      <PageHeader title="Configurações" description="Dados cadastrais usados nos cabeçalhos dos relatórios." />
-      <Card>
+      <PageHeader title="Configurações" description="Dados da empresa, logo, avisos ao cliente e a sua conta." />
+      <Card id="dados" className="scroll-mt-6">
         <CardHeader className="border-b">
           <CardTitle>Dados da empresa</CardTitle>
-          <CardDescription>Identificação, endereço, responsável legal e contador. Os nomes aparecem nas assinaturas dos relatórios.</CardDescription>
+          <CardDescription>Identificação, endereço, responsável legal e contador. Os nomes aparecem nas assinaturas dos relatórios e o nome da empresa nos e-mails ao cliente.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
+          <Suspense fallback={<div className="h-96 animate-pulse rounded-xl bg-muted" aria-busy="true" aria-label="Carregando" />}>
             <Form params={params} />
           </Suspense>
         </CardContent>

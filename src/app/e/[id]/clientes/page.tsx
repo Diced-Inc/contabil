@@ -15,11 +15,11 @@ import { getEmpresa } from "../empresa";
 import { ConvidarClienteDialog, ReenviarConviteDialog, RemoverClienteDialog } from "./clientes-dialogs";
 
 const TZ = "America/Sao_Paulo";
-const DESCRICAO = "Quem da empresa acessa o portal do cliente: envia os extratos do mês e recebe a guia do DAS.";
+const DESCRICAO = "Quem da empresa acessa o portal: por lá o cliente envia os extratos do mês e recebe a guia do DAS.";
 const STATUS_AVISO = {
   enviado: { rotulo: "Enviado", badge: "success" },
   erro: { rotulo: "Erro", badge: "danger" },
-  nao_configurado: { rotulo: "Não configurado", badge: "muted" },
+  nao_configurado: { rotulo: "Não saiu (e-mail desligado)", badge: "muted" },
 } as const;
 const traco =<span className="text-muted-foreground">-</span>;
 const quando = (d: Date | null) =>
@@ -28,7 +28,7 @@ const quando = (d: Date | null) =>
 async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
   await connection();
   const { id } = await params;
-  await getEmpresa(id);
+  const empresa = await getEmpresa(id);
   const avisosQ = db
     .select()
     .from(notificacoes)
@@ -51,7 +51,7 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
 
   return (
     <>
-      <PageHeader title="Clientes" description={DESCRICAO} actions={<ConvidarClienteDialog empresaId={id} />} />
+      <PageHeader title="Clientes" description={DESCRICAO} actions={lista.length > 0 && <ConvidarClienteDialog empresaId={id} empresa={empresa.razaoSocial} />} />
       {!adminClient() && (
         <Alert className="mb-4">
           <Info />
@@ -63,9 +63,9 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
       {lista.length === 0 ? (
         <EmptyState
           icon={Users}
-          title="Nenhum cliente com acesso"
-          hint="Convide o dono da empresa para enviar os extratos pelo portal em vez do WhatsApp."
-          action={<ConvidarClienteDialog empresaId={id} />}
+          title="Ninguém da empresa tem acesso ao portal ainda"
+          hint="Convide o dono ou o responsável financeiro. Ele recebe um e-mail para criar a senha e, a partir daí, manda os extratos pelo portal em vez do WhatsApp."
+          action={<ConvidarClienteDialog empresaId={id} empresa={empresa.razaoSocial} />}
         />
       ) : (
         <TablePanel>
@@ -76,7 +76,7 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
                 <TableHead>Status</TableHead>
                 <TableHead>Convidado em</TableHead>
                 <TableHead>Último acesso</TableHead>
-                <TableHead className="w-24" />
+                <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -92,14 +92,18 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {m.userId ? <Badge variant="success">Ativo</Badge> : <Badge variant="warning">Convidado</Badge>}
+                    {m.userId ? (
+                      <Badge variant="success">Ativo</Badge>
+                    ) : (
+                      <Badge variant="warning" title="O cliente ainda não criou a senha pelo link do e-mail.">Aguardando aceite</Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground tabular-nums">{quando(m.convidadoEm)}</TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums">{quando(m.ultimoAcesso)}</TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">{m.ultimoAcesso ? quando(m.ultimoAcesso) : "Nunca entrou"}</TableCell>
                   <TableCell className="pr-3">
-                    <div className="flex justify-end gap-0.5">
-                      {!m.userId && <ReenviarConviteDialog empresaId={id} membroId={m.id} email={m.email} />}
-                      <RemoverClienteDialog empresaId={id} membroId={m.id} quem={m.nome || m.email} />
+                    <div className="flex justify-end gap-1.5">
+                      {!m.userId && <ReenviarConviteDialog empresaId={id} membroId={m.id} email={m.email} nome={m.nome} />}
+                      <RemoverClienteDialog empresaId={id} membroId={m.id} quem={m.nome || m.email} empresa={empresa.razaoSocial} ativo={!!m.userId} />
                     </div>
                   </TableCell>
                 </TableRow>
@@ -109,16 +113,19 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
         </TablePanel>
       )}
 
-      <h2 className="mt-8 mb-3 text-sm font-semibold text-foreground">Avisos enviados</h2>
+      <div className="mt-8 mb-3">
+        <h2 className="text-sm font-semibold text-foreground">E-mails enviados ao cliente</h2>
+        <p className="text-sm text-muted-foreground">Convites, pedidos de extrato, lembretes e DAS desta empresa, do mais recente para o mais antigo.</p>
+      </div>
       {avisos.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum e-mail enviado ainda para esta empresa.</p>
+        <p className="rounded-xl border border-dashed bg-card px-5 py-6 text-sm text-muted-foreground">Nenhum e-mail enviado ainda para esta empresa.</p>
       ) : (
         <TablePanel>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-5">Data</TableHead>
-                <TableHead>Aviso</TableHead>
+                <TableHead>E-mail</TableHead>
                 <TableHead>Para</TableHead>
                 <TableHead className="pr-5">Status</TableHead>
               </TableRow>

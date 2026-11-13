@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avisosDoDia, listaPtBR, textoAvisos, type CicloAviso, type ConfigAvisos } from "./avisos";
+import { avisosDoDia, etapasAvisos, listaPtBR, proximoPedido, type CicloAviso, type ConfigAvisos } from "./avisos";
 
 const config: ConfigAvisos = { avisosAtivos: true, diaPedidoExtrato: 1, lembretesExtratoDias: [4, 9], diasAntesVencimentoDas: [3, 0] };
 const outubro = (c: Partial<CicloAviso> = {}): CicloAviso => ({
@@ -100,12 +100,22 @@ describe("textos", () => {
     expect(listaPtBR([5, 10])).toBe("5 e 10");
     expect(listaPtBR([5, 10, 15])).toBe("5, 10 e 15");
   });
-  it("textoAvisos resume a configuração", () => {
-    expect(textoAvisos(config, "2026-11-13")).toBe(
-      "Dia 1 pedimos os extratos de outubro; lembramos nos dias 5 e 10; avisamos do DAS 3 dias antes, no dia do vencimento e no dia seguinte se não for pago",
-    );
-    expect(textoAvisos({ diaPedidoExtrato: 25, lembretesExtratoDias: [9], diasAntesVencimentoDas: [] }, "2027-02-10")).toBe(
-      "Dia 25 pedimos os extratos de janeiro; lembramos no dia 28; avisamos do DAS no dia seguinte se não for pago",
-    );
+  it("etapasAvisos monta a linha do tempo", () => {
+    expect(etapasAvisos(config, "2026-11-13").map((e) => `${e.quando}: ${e.texto}`)).toEqual([
+      "Dia 1: pedimos os extratos de outubro",
+      "Dias 5 e 10: lembramos se ainda não enviou",
+      "3 dias antes e no dia do vencimento: lembramos o DAS (e no dia seguinte, se não foi pago)",
+    ]);
+    expect(etapasAvisos({ diaPedidoExtrato: 25, lembretesExtratoDias: [9], diasAntesVencimentoDas: [] }, "2027-02-10").map((e) => e.quando)).toEqual([
+      "Dia 25",
+      "Dia 28",
+      "Dia seguinte ao vencimento",
+    ]);
+  });
+  it("proximoPedido", () => {
+    expect(proximoPedido("2026-11-13", 1)).toBe("2026-12-01");
+    expect(proximoPedido("2026-11-13", 20)).toBe("2026-11-20");
+    expect(proximoPedido("2026-11-20", 20)).toBe("2026-12-20");
+    expect(proximoPedido("2026-12-05", 1)).toBe("2027-01-01");
   });
 });

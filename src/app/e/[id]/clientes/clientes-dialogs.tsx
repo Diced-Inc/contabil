@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
-import { Copy, MailPlus, Send, TriangleAlert, Trash2, UserPlus } from "lucide-react";
+import { useActionState, useState, useTransition, type ReactNode } from "react";
+import { CircleCheck, Copy, FileUp, MailPlus, Receipt, Send, TriangleAlert, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { convidarCliente, reenviarConvite, removerCliente, type EstadoConvite } from "@/actions/clientes";
 import { Erro } from "@/app/login/senha-forms";
+import { VerEmail } from "@/components/ver-email";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,15 +40,41 @@ function Aviso({ estado }: { estado: EstadoConvite }) {
   );
 }
 
-function ConviteForm({ empresaId, fechar }: { empresaId: string; fechar: (aberta: boolean) => void }) {
-  const [estado, enviar, pendente] = useActionState(convidarCliente.bind(null, empresaId), {});
-  useEffect(() => {
-    if (estado.ok && !estado.aviso) {
-      toast.success("Convite enviado por e-mail.");
-      fechar(false);
-    }
-  }, [estado, fechar]);
+/** Estado de sucesso dentro do diálogo: o contador vê para quem foi, sem depender do toast. */
+function Sucesso({ titulo, children }: { titulo: string; children: ReactNode }) {
+  return (
+    <>
+      <div className="flex flex-col items-center gap-3 py-2 text-center" role="status">
+        <span className="flex size-12 items-center justify-center rounded-full bg-success-soft text-success ring-8 ring-success-soft/40">
+          <CircleCheck className="size-6" />
+        </span>
+        <p className="text-base font-semibold text-foreground">{titulo}</p>
+        <p className="max-w-sm text-sm text-muted-foreground">{children}</p>
+      </div>
+      <DialogFooter>
+        <DialogClose render={<Button />}>Concluído</DialogClose>
+      </DialogFooter>
+    </>
+  );
+}
 
+function ConviteForm({ empresaId, empresa }: { empresaId: string; empresa: string }) {
+  const [estado, enviar, pendente] = useActionState(convidarCliente.bind(null, empresaId), {});
+  const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
+  const quem = email.trim() || "o cliente";
+
+  if (estado.ok && !estado.link) {
+    return estado.aviso ? (
+      <Sucesso titulo={`Acesso liberado para ${email}`}>
+        Esse e-mail já tinha conta no portal. Ele já pode entrar e ver a {empresa}, sem precisar de convite.
+      </Sucesso>
+    ) : (
+      <Sucesso titulo={`Convite enviado para ${email}`}>
+        O link vale 24 horas. Quando o cliente criar a senha, ele aparece como <b className="font-medium text-foreground">Ativo</b> na lista.
+      </Sucesso>
+    );
+  }
   if (estado.aviso) {
     return (
       <>
@@ -60,30 +87,65 @@ function ConviteForm({ empresaId, fechar }: { empresaId: string; fechar: (aberta
   }
   return (
     <form action={enviar} className="grid gap-4">
+      <div className="rounded-lg border bg-muted/40 p-4 text-sm leading-relaxed text-foreground/90">
+        <p>
+          Vamos mandar um e-mail para <b className="font-semibold break-all text-foreground">{quem}</b> com um link para criar a senha e acessar
+          o portal da <b className="font-semibold text-foreground">{empresa}</b>. Ele só vê esta empresa.
+        </p>
+        <ul className="mt-3 grid gap-1.5 text-muted-foreground">
+          <li className="flex items-center gap-2">
+            <FileUp className="size-4 shrink-0 text-primary" /> Pelo portal ele envia os extratos do mês.
+          </li>
+          <li className="flex items-center gap-2">
+            <Receipt className="size-4 shrink-0 text-primary" /> E recebe a guia do DAS quando você concluir o mês.
+          </li>
+        </ul>
+      </div>
       <Erro>{estado.erro}</Erro>
       <div className="grid gap-2">
-        <Label htmlFor="cliente-nome">Nome</Label>
-        <Input id="cliente-nome" name="nome" maxLength={80} placeholder="Ex.: Marcelo Barreira" autoComplete="off" />
+        <Label htmlFor="cliente-email">E-mail do cliente</Label>
+        <Input
+          id="cliente-email"
+          name="email"
+          type="email"
+          required
+          placeholder="cliente@empresa.com.br"
+          autoComplete="off"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="cliente-email">E-mail</Label>
-        <Input id="cliente-email" name="email" type="email" required placeholder="cliente@empresa.com.br" autoComplete="off" />
-        <p className="text-xs text-muted-foreground">O cliente recebe um link para criar a senha e só vê esta empresa.</p>
+        <Label htmlFor="cliente-nome">
+          Nome <span className="font-normal text-muted-foreground">(opcional, usado na saudação)</span>
+        </Label>
+        <Input
+          id="cliente-nome"
+          name="nome"
+          maxLength={80}
+          placeholder="Ex.: Marcelo Barreira"
+          autoComplete="off"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+        />
       </div>
-      <DialogFooter>
-        <DialogClose render={<Button variant="outline" type="button" />}>Cancelar</DialogClose>
-        <Button type="submit" disabled={pendente}>
-          <Send />
-          {pendente ? "Enviando..." : "Enviar convite"}
-        </Button>
+      <DialogFooter className="items-center sm:justify-between">
+        <VerEmail empresaId={empresaId} tipo="convite" dados={{ nome }} para={email.trim() || undefined} />
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <DialogClose render={<Button variant="outline" type="button" />}>Cancelar</DialogClose>
+          <Button type="submit" disabled={pendente}>
+            <Send />
+            {pendente ? "Enviando..." : "Enviar convite"}
+          </Button>
+        </div>
       </DialogFooter>
     </form>
   );
 }
 
-export function ConvidarClienteDialog({ empresaId }: { empresaId: string }) {
+export function ConvidarClienteDialog({ empresaId, empresa }: { empresaId: string; empresa: string }) {
   const [aberta, setAberta] = useState(false);
-  // key nova a cada abertura: o formulário volta limpo depois de um aviso
+  // key nova a cada abertura: o formulário volta limpo depois de um envio
   const [chave, setChave] = useState(0);
   return (
     <Dialog
@@ -100,27 +162,20 @@ export function ConvidarClienteDialog({ empresaId }: { empresaId: string }) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Convidar cliente</DialogTitle>
-          <DialogDescription>Dê acesso ao portal para o dono ou responsável financeiro da empresa.</DialogDescription>
+          <DialogDescription>Dê acesso ao portal para o dono ou o responsável financeiro da empresa.</DialogDescription>
         </DialogHeader>
-        <ConviteForm key={chave} empresaId={empresaId} fechar={setAberta} />
+        <ConviteForm key={chave} empresaId={empresaId} empresa={empresa} />
       </DialogContent>
     </Dialog>
   );
 }
 
-export function ReenviarConviteDialog({ empresaId, membroId, email }: { empresaId: string; membroId: string; email: string }) {
+export function ReenviarConviteDialog({ empresaId, membroId, email, nome }: { empresaId: string; membroId: string; email: string; nome: string | null }) {
   const [aberta, setAberta] = useState(false);
   const [estado, setEstado] = useState<EstadoConvite>({});
   const [pendente, iniciar] = useTransition();
-  const reenviar = () =>
-    iniciar(async () => {
-      const r = await reenviarConvite(empresaId, membroId);
-      setEstado(r);
-      if (r.ok && !r.aviso) {
-        toast.success("Convite reenviado.");
-        setAberta(false);
-      }
-    });
+  const reenviar = () => iniciar(async () => setEstado(await reenviarConvite(empresaId, membroId)));
+  const enviado = estado.ok && !estado.aviso;
   return (
     <Dialog
       open={aberta}
@@ -129,50 +184,76 @@ export function ReenviarConviteDialog({ empresaId, membroId, email }: { empresaI
         setEstado({});
       }}
     >
-      <DialogTrigger render={<Button variant="ghost" size="icon-sm" title="Reenviar convite" aria-label="Reenviar convite" />}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <MailPlus />
+        Reenviar convite
       </DialogTrigger>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Reenviar convite</DialogTitle>
-          <DialogDescription>Um novo link de acesso vai para {email}. O link anterior deixa de valer.</DialogDescription>
-        </DialogHeader>
-        <Erro>{estado.erro}</Erro>
-        <Aviso estado={estado} />
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>{estado.aviso ? "Fechar" : "Cancelar"}</DialogClose>
-          {!estado.aviso && (
-            <Button disabled={pendente} onClick={reenviar}>
-              <Send />
-              {pendente ? "Enviando..." : "Reenviar"}
-            </Button>
-          )}
-        </DialogFooter>
+        {enviado ? (
+          <Sucesso titulo={`Convite reenviado para ${email}`}>O novo link vale 24 horas. O link anterior parou de funcionar.</Sucesso>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Reenviar o convite?</DialogTitle>
+              <DialogDescription>
+                Vamos mandar um novo e-mail para <b className="font-medium text-foreground">{email}</b> com outro link para criar a senha. O link
+                anterior para de funcionar e o novo vale 24 horas.
+              </DialogDescription>
+            </DialogHeader>
+            <Erro>{estado.erro}</Erro>
+            <Aviso estado={estado} />
+            <DialogFooter className="items-center sm:justify-between">
+              {estado.aviso ? <span /> : <VerEmail empresaId={empresaId} tipo="convite" dados={{ nome: nome ?? undefined }} para={email} />}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <DialogClose render={<Button variant="outline" />}>{estado.aviso ? "Fechar" : "Cancelar"}</DialogClose>
+                {!estado.aviso && (
+                  <Button disabled={pendente} onClick={reenviar}>
+                    <Send />
+                    {pendente ? "Enviando..." : "Reenviar convite"}
+                  </Button>
+                )}
+              </div>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-export function RemoverClienteDialog({ empresaId, membroId, quem }: { empresaId: string; membroId: string; quem: string }) {
+export function RemoverClienteDialog({ empresaId, membroId, quem, empresa, ativo }: {
+  empresaId: string; membroId: string; quem: string; empresa: string; ativo: boolean;
+}) {
   const [aberta, setAberta] = useState(false);
   const [pendente, iniciar] = useTransition();
   const remover = () =>
     iniciar(async () => {
       const r = await removerCliente(empresaId, membroId);
       if (r.erro) return void toast.error(r.erro);
-      toast.success("Acesso removido.");
+      toast.success(`Acesso de ${quem} removido.`);
       setAberta(false);
     });
   return (
     <Dialog open={aberta} onOpenChange={setAberta}>
-      <DialogTrigger render={<Button variant="ghost" size="icon-sm" title="Remover acesso" aria-label="Remover acesso" />}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" className="text-muted-foreground hover:text-danger" />}>
         <Trash2 />
+        Remover
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Remover o acesso de {quem}?</DialogTitle>
-          <DialogDescription>O cliente deixa de ver esta empresa no portal na hora. Dá para convidar de novo depois.</DialogDescription>
+          <DialogDescription>O que acontece:</DialogDescription>
         </DialogHeader>
+        <ul className="grid list-disc gap-1.5 pl-5 text-sm text-muted-foreground marker:text-border">
+          {ativo ? (
+            <li>Deixa de ver a {empresa} no portal na hora.</li>
+          ) : (
+            <li>O convite pendente deixa de valer para esta empresa.</li>
+          )}
+          <li>Para de receber os e-mails de extrato e do DAS.</li>
+          <li>Os arquivos que ele já enviou continuam em Documentos.</li>
+          <li>Dá para convidar de novo depois.</li>
+        </ul>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
           <Button variant="destructive" disabled={pendente} onClick={remover}>

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, sql } from "drizzle-orm";
 import { Calculator, ChevronLeft, ChevronRight, Handshake, Lock, LockOpen, ShieldCheck } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/comp
 import { Carregando, PageHeader } from "@/components/page-header";
 import { Baixar } from "@/components/baixar";
 import { db } from "@/db";
-import { ciclosMensais, documentosRecebidos } from "@/db/schema";
+import { ciclosMensais, documentosRecebidos, membros } from "@/db/schema";
 import { competenciaAtual, passou, tituloCompetencia, situacaoDas, somarMeses, STATUS_CICLO, textoSituacaoDas } from "@/lib/ciclo";
 import { fmtData, fmtValor, hoje, lerAno } from "@/lib/format";
 import { getEmpresa } from "../empresa";
@@ -28,7 +28,7 @@ const dataHoraSP = (d: Date) =>
 
 /** Ciclo com o cliente da competência escolhida (?ciclo=AAAA-MM; padrão: a que o cliente está enviando agora). */
 async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; competencia: string; ano: number }) {
-  const [[ciclo], [docs]] = await Promise.all([
+  const [[ciclo], [docs], clientes] = await Promise.all([
     db
       .select()
       .from(ciclosMensais)
@@ -38,6 +38,10 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
       .from(documentosRecebidos)
       .innerJoin(ciclosMensais, eq(ciclosMensais.id, documentosRecebidos.cicloId))
       .where(and(eq(ciclosMensais.empresaId, empresaId), eq(ciclosMensais.competencia, competencia))),
+    db
+      .select({ email: membros.email })
+      .from(membros)
+      .where(and(eq(membros.empresaId, empresaId), isNotNull(membros.userId), isNotNull(membros.aceitoEm))),
   ]);
   const status = ciclo?.status ?? "aguardando_extrato";
   const st = STATUS_CICLO[status];
@@ -100,6 +104,8 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
                 empresaId={empresaId}
                 competencia={competencia}
                 vencimentoSugerido={`${somarMeses(competencia, 1).slice(0, 8)}20`}
+                clientes={clientes.map((c) => c.email)}
+                hoje={hoje()}
               />
             )}
           </div>

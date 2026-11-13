@@ -35,13 +35,13 @@ async function Conteudo({ params }: { params: Promise<{ id: string }> }) {
 
 export function AvisosCard({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Card className="mt-6">
+    <Card id="avisos" className="mt-6 scroll-mt-6">
       <CardHeader className="border-b">
         <CardTitle>Avisos ao cliente</CardTitle>
-        <CardDescription>E-mails automáticos todo dia às 8h: pedido dos extratos do mês, lembretes e vencimento do DAS.</CardDescription>
+        <CardDescription>E-mails que o sistema manda sozinho para o cliente: pede os extratos todo mês, lembra quem esqueceu e avisa do vencimento do DAS.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
+        <Suspense fallback={<div className="h-72 animate-pulse rounded-xl bg-muted" aria-busy="true" aria-label="Carregando" />}>
           <Conteudo params={params} />
         </Suspense>
       </CardContent>
