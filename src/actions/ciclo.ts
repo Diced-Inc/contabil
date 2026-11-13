@@ -6,16 +6,15 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { db } from "@/db";
-import { bucketDocumentos, garantirCiclo, objetosDocumentos } from "@/db/ciclos";
+import { bucketDocumentos, garantirCiclo, notificar, objetosDocumentos } from "@/db/ciclos";
 import {
-  ciclosMensais, contadores, contasBancarias, documentosRecebidos, empresas, importacoes, membros, notificacoes,
-  type CicloMensal, type TipoNotificacao,
+  ciclosMensais, contadores, contasBancarias, documentosRecebidos, empresas, importacoes, membros, type CicloMensal,
 } from "@/db/schema";
 import {
   competenciaAtual, MAX_DOCUMENTO, mimeDocumento, nomeCompetencia, nomeParaPath, proximoStatus, TransicaoInvalida,
   type EventoCiclo,
 } from "@/lib/ciclo";
-import { emailDasDisponivel, emailExtratoRecebido, enviarEmail, type Email } from "@/lib/email";
+import { emailDasDisponivel, emailExtratoRecebido } from "@/lib/email";
 import { hoje, parseValorBR } from "@/lib/format";
 import { requireMembro, requireUser } from "@/supabase/server";
 
@@ -33,21 +32,6 @@ async function siteUrl() {
 async function nomeEmpresa(empresaId: string) {
   const [e] = await db.select({ nome: empresas.razaoSocial }).from(empresas).where(eq(empresas.id, empresaId));
   return e?.nome ?? "";
-}
-
-/** Envia e registra a tentativa (uma linha por ciclo/tipo/destinatário/dia; nova tentativa no mesmo dia atualiza). */
-async function notificar(base: { empresaId: string; cicloId: string; tipo: TipoNotificacao }, para: string, email: Omit<Email, "para">) {
-  const r = await enviarEmail({ para, ...email });
-  if (r.status === "erro") console.error(`[notificacao] ${base.tipo} para ${para}:`, r.erro);
-  const v = { status: r.status, resendId: r.id ?? null, erro: r.erro ?? null, assunto: email.assunto };
-  await db
-    .insert(notificacoes)
-    .values({ ...base, para, ...v })
-    .onConflictDoUpdate({
-      target: [notificacoes.cicloId, notificacoes.tipo, notificacoes.para, notificacoes.dataRef],
-      set: { ...v, createdAt: new Date() },
-    });
-  return r.status;
 }
 
 /**

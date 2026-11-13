@@ -2,6 +2,8 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { emailConfigurado, emailRecuperacaoSenha, enviarEmail } from "@/lib/email";
+import { adminClient } from "@/supabase/admin";
 import { createClient, destinoPosLogin, requireSessao, vincularConvites } from "@/supabase/server";
 import { COOKIE_RECUPERACAO } from "./recuperacao";
 
@@ -56,6 +58,19 @@ export async function enviarRecuperacao(_: Resultado, formData: FormData): Promi
   // Mesma resposta exista ou não o e-mail, para não revelar quem tem conta.
   if (email) {
     const origin = process.env.NEXT_PUBLIC_SITE_URL || (await headers()).get("origin");
+    // Com service role + Resend, o link sai com a nossa marca; senão, o SMTP do Supabase.
+    const admin = adminClient();
+    if (admin && emailConfigurado()) {
+      const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email });
+      if (error) {
+        console.error("[auth] generateLink recovery:", error.message); // e-mail sem conta cai aqui; a resposta é a mesma
+        return { ok: true };
+      }
+      const params = new URLSearchParams({ token_hash: data.properties.hashed_token, type: "recovery" });
+      const r = await enviarEmail({ para: email, ...emailRecuperacaoSenha({ link: `${origin}/login/confirmar?${params}` }) });
+      if (r.status !== "enviado") console.error("[auth] e-mail de recuperação:", r.status, r.erro);
+      return { ok: true };
+    }
     const supabase = await createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${origin}/login/confirmar`,

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { Info, Users } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -8,14 +8,20 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Carregando, EmptyState, PageHeader, TablePanel } from "@/components/page-header";
 import { db } from "@/db";
-import { membros } from "@/db/schema";
+import { membros, notificacoes } from "@/db/schema";
+import { ROTULO_NOTIFICACAO } from "@/lib/avisos";
 import { adminClient } from "@/supabase/admin";
 import { getEmpresa } from "../empresa";
 import { ConvidarClienteDialog, ReenviarConviteDialog, RemoverClienteDialog } from "./clientes-dialogs";
 
 const TZ = "America/Sao_Paulo";
 const DESCRICAO = "Quem da empresa acessa o portal do cliente: envia os extratos do mês e recebe a guia do DAS.";
-const traco = <span className="text-muted-foreground">-</span>;
+const STATUS_AVISO = {
+  enviado: { rotulo: "Enviado", badge: "success" },
+  erro: { rotulo: "Erro", badge: "danger" },
+  nao_configurado: { rotulo: "Não configurado", badge: "muted" },
+} as const;
+const traco =<span className="text-muted-foreground">-</span>;
 const quando = (d: Date | null) =>
   d ? d.toLocaleString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : traco;
 
@@ -23,7 +29,13 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
   await connection();
   const { id } = await params;
   await getEmpresa(id);
-  const lista = await db
+  const avisosQ = db
+    .select()
+    .from(notificacoes)
+    .where(eq(notificacoes.empresaId, id))
+    .orderBy(desc(notificacoes.createdAt))
+    .limit(50);
+  const listaQ = db
     .select({
       id: membros.id,
       nome: membros.nome,
@@ -35,6 +47,7 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
     .from(membros)
     .where(eq(membros.empresaId, id))
     .orderBy(asc(membros.email));
+  const [lista, avisos] = await Promise.all([listaQ, avisosQ]);
 
   return (
     <>
@@ -88,6 +101,41 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
                       {!m.userId && <ReenviarConviteDialog empresaId={id} membroId={m.id} email={m.email} />}
                       <RemoverClienteDialog empresaId={id} membroId={m.id} quem={m.nome || m.email} />
                     </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TablePanel>
+      )}
+
+      <h2 className="mt-8 mb-3 text-sm font-semibold text-foreground">Avisos enviados</h2>
+      {avisos.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhum e-mail enviado ainda para esta empresa.</p>
+      ) : (
+        <TablePanel>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-5">Data</TableHead>
+                <TableHead>Aviso</TableHead>
+                <TableHead>Para</TableHead>
+                <TableHead className="pr-5">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {avisos.map((n) => (
+                <TableRow key={n.id}>
+                  <TableCell className="pl-5 text-muted-foreground tabular-nums">{quando(n.createdAt)}</TableCell>
+                  <TableCell>
+                    <div className="font-medium text-foreground">{ROTULO_NOTIFICACAO[n.tipo]}</div>
+                    <div className="max-w-80 truncate text-xs text-muted-foreground" title={n.assunto}>{n.assunto}</div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{n.para}</TableCell>
+                  <TableCell className="pr-5">
+                    <Badge variant={STATUS_AVISO[n.status].badge} title={n.erro ?? undefined}>
+                      {STATUS_AVISO[n.status].rotulo}
+                    </Badge>
                   </TableCell>
                 </TableRow>
               ))}

@@ -5,6 +5,7 @@ import { EmpresaForm } from "@/components/empresa-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { getEmpresa } from "../empresa";
+import { AvisosCard } from "./avisos-card";
 import { LogoCard } from "./logo-card";
 import { PerfilCard } from "./perfil-card";
 import { SenhaCard } from "./senha-card";
@@ -32,6 +33,7 @@ export default function ConfiguracoesPage({ params }: PageProps<"/e/[id]/configu
         </CardContent>
       </Card>
       <LogoCard params={params} />
+      <AvisosCard params={params} />
       <PerfilCard />
       <SenhaCard />
     </div>

@@ -2,6 +2,8 @@
 export type ResultadoEmail = { status: "enviado" | "erro" | "nao_configurado"; id?: string; erro?: string };
 export type Email = { para: string; assunto: string; html: string; texto: string };
 
+export const emailConfigurado = () => !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+
 export async function enviarEmail({ para, assunto, html, texto }: Email): Promise<ResultadoEmail> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
@@ -107,5 +109,62 @@ export function emailDasDisponivel({ empresa, competencia, valor, vencimento, li
     link,
   });
   const texto = `O contador concluiu o mês de ${competencia} da ${empresa}.\n\nValor do DAS: ${brl(valor)}\nVencimento: ${dataBR(vencimento)}\n\nBaixe a guia no portal e, depois de pagar, clique em "Já paguei":\n${link}`;
+  return { assunto, html, texto };
+}
+
+/** Para o cliente: pedido mensal dos extratos (lembrete = mesmo pedido, tom de reforço). */
+export function emailPedidoExtrato({ empresa, competencia, link, lembrete = false }: {
+  empresa: string; competencia: string; link: string; lembrete?: boolean;
+}) {
+  const assunto = lembrete
+    ? `Lembrete: extratos de ${competencia} da ${empresa}`
+    : `Envie os extratos de ${competencia} da ${empresa}`;
+  const abertura = lembrete
+    ? `Ainda não recebemos os extratos de <b>${esc(competencia)}</b> da <b>${esc(empresa)}</b>.`
+    : `Chegou a hora de enviar os extratos de <b>${esc(competencia)}</b> da <b>${esc(empresa)}</b>.`;
+  const corpo = "Mande pelo portal os extratos bancários do mês (OFX, CSV ou PDF). Com eles o contador fecha o mês e envia a guia do DAS.";
+  const html = layout({
+    titulo: lembrete ? "Faltam os extratos do mês" : "Hora de enviar os extratos",
+    paragrafos: [abertura, corpo],
+    botao: "Enviar extratos",
+    link,
+  });
+  const texto = `${abertura.replace(/<\/?b>/g, "")}\n\n${corpo}\n\nEnviar extratos: ${link}`;
+  return { assunto, html, texto };
+}
+
+/** Para o cliente: DAS em aberto perto do vencimento (dias = vencimento - hoje; negativo = vencido). */
+export function emailLembreteDas({ empresa, competencia, valor, vencimento, dias, link }: {
+  empresa: string; competencia: string; valor: string; vencimento: string; dias: number; link: string;
+}) {
+  const quando = dias < 0 ? "venceu ontem" : dias === 0 ? "vence hoje" : dias === 1 ? "vence amanhã" : `vence em ${dias} dias`;
+  const assunto = `DAS de ${competencia} ${quando}: ${brl(valor)}`;
+  const html = layout({
+    titulo: dias < 0 ? "Seu DAS venceu" : "Lembrete do DAS",
+    paragrafos: [
+      `O DAS de <b>${esc(competencia)}</b> da <b>${esc(empresa)}</b> ${quando}.`,
+      `Valor: <b>${brl(valor)}</b><br>Vencimento: <b>${dataBR(vencimento)}</b>`,
+      dias < 0
+        ? "Se ainda não pagou, fale com o contador para gerar uma guia atualizada. Se já pagou, clique em \"Já paguei\" no portal."
+        : "Baixe a guia no portal e, depois de pagar, clique em \"Já paguei\" para avisar o contador.",
+    ],
+    botao: "Abrir o portal",
+    link,
+  });
+  const texto = `O DAS de ${competencia} da ${empresa} ${quando}.\n\nValor: ${brl(valor)}\nVencimento: ${dataBR(vencimento)}\n\nPortal: ${link}`;
+  return { assunto, html, texto };
+}
+
+/** Link de redefinição de senha (substitui o e-mail do Supabase quando o Resend está configurado). */
+export function emailRecuperacaoSenha({ link }: { link: string }) {
+  const assunto = "Redefinir sua senha";
+  const html = layout({
+    titulo: "Redefinir sua senha",
+    paragrafos: ["Recebemos um pedido para redefinir a senha da sua conta.", "Clique no botão abaixo para criar uma nova senha. O link vale por 24 horas."],
+    botao: "Criar nova senha",
+    link,
+    rodape: "Se você não pediu, pode ignorar este e-mail: sua senha continua a mesma.",
+  });
+  const texto = `Recebemos um pedido para redefinir a senha da sua conta.\n\nCrie uma nova senha neste link (vale por 24 horas):\n${link}\n\nSe você não pediu, pode ignorar este e-mail.`;
   return { assunto, html, texto };
 }

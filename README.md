@@ -67,3 +67,26 @@ Além de OFX, o diálogo de importação aceita CSV e PDF (vários arquivos, at�
 Em **Configurações** o usuário troca a senha (pede a atual). Na tela de login, "Esqueci minha senha" envia um link por e-mail (só para e-mails em `ALLOWED_EMAILS`; a resposta é sempre a mesma). O link passa por `/login/confirmar`, que troca o código por sessão, e cai em `/login/redefinir`.
 
 Para o link funcionar, em **Supabase → Authentication → URL Configuration** adicione `https://contabil-psi.vercel.app/**` (e `http://localhost:3000/**` para dev) em **Redirect URLs**. O link precisa ser aberto no mesmo navegador em que foi pedido (PKCE).
+
+## Avisos por e-mail
+
+Todo dia às 08:00 (Brasília) a Vercel chama `/api/cron/avisos` (`vercel.json`, `"0 11 * * *"` em UTC; no plano Hobby o disparo pode cair em qualquer minuto dessa hora). Para cada empresa com **Avisos ao cliente** ligado em Configurações e ao menos um cliente ativo, a rota manda:
+
+- **Pedido de extrato** no dia configurado (1 a 28), pedindo o mês anterior, se o ciclo ainda está aguardando extrato. Se o cron falhar num dia, o pedido sai no dia seguinte; os lembretes perdidos não são reenviados.
+- **Lembretes de extrato** N dias depois do pedido (dia além do fim do mês cai no último dia), enquanto o cliente não enviar.
+- **Lembretes do DAS** N dias antes do vencimento e um aviso no dia seguinte ao vencimento, enquanto o DAS não for marcado como pago.
+
+Cada envio fica em `notificacoes` (histórico em Clientes → Avisos enviados); o mesmo aviso não sai duas vezes para o mesmo e-mail no mesmo dia, e o pedido não se repete depois de enviado. O botão **Simular avisos de hoje** mostra o que sairia com a configuração salva, sem enviar.
+
+Variáveis (Vercel → Settings → Environment Variables):
+
+| Variável | Para quê |
+| --- | --- |
+| `RESEND_API_KEY` | Envio pelo [Resend](https://resend.com). Sem ela, os avisos ficam registrados como "Não configurado". |
+| `EMAIL_FROM` | Remetente, ex.: `Bruno Contábil <avisos@seudominio.com.br>`. O domínio precisa estar verificado no Resend (Domains → Add domain, registros SPF/DKIM no DNS). |
+| `SUPABASE_SERVICE_ROLE_KEY` | Convites e links de recuperação de senha gerados pelo servidor. |
+| `CRON_SECRET` | A Vercel envia `Authorization: Bearer <CRON_SECRET>`; sem ela a rota recusa. |
+
+Com `SUPABASE_SERVICE_ROLE_KEY` e o Resend configurados, o e-mail de recuperação de senha também sai pelo Resend com a marca do sistema; sem eles, continua o SMTP do Supabase.
+
+Teste local: `curl -H "Authorization: Bearer $CRON_SECRET" "http://localhost:3000/api/cron/avisos?empresa=<id>&simular=1"`.

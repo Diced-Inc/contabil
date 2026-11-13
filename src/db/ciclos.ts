@@ -1,8 +1,28 @@
 import { and, eq, sql } from "drizzle-orm";
+import { enviarEmail, type Email } from "@/lib/email";
 import { adminClient } from "@/supabase/admin";
 import { createClient } from "@/supabase/server";
 import { db } from ".";
-import { ciclosMensais } from "./schema";
+import { ciclosMensais, notificacoes, type TipoNotificacao } from "./schema";
+
+/** Envia e registra a tentativa (uma linha por ciclo/tipo/destinatário/dia; nova tentativa no mesmo dia atualiza). */
+export async function notificar(
+  base: { empresaId: string; cicloId: string; tipo: TipoNotificacao },
+  para: string,
+  email: Omit<Email, "para">,
+) {
+  const r = await enviarEmail({ para, ...email });
+  if (r.status === "erro") console.error(`[notificacao] ${base.tipo} para ${para}:`, r.erro);
+  const v = { status: r.status, resendId: r.id ?? null, erro: r.erro ?? null, assunto: email.assunto };
+  await db
+    .insert(notificacoes)
+    .values({ ...base, para, ...v })
+    .onConflictDoUpdate({
+      target: [notificacoes.cicloId, notificacoes.tipo, notificacoes.para, notificacoes.dataRef],
+      set: { ...v, createdAt: new Date() },
+    });
+  return r.status;
+}
 
 /** Ciclo da competência, criado na primeira vez que alguém precisa dele. */
 export async function garantirCiclo(empresaId: string, competencia: string) {

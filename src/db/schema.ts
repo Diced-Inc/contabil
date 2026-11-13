@@ -45,6 +45,11 @@ export const empresas = pgTable("empresas", {
   contadorCpf: text("contador_cpf"),
   contadorCrc: text("contador_crc"),
   logoPath: text("logo_path"),
+  // Avisos por e-mail ao cliente (cron diário): dia do pedido do extrato, lembretes (dias depois do pedido), lembretes do DAS (dias antes do vencimento).
+  avisosAtivos: boolean("avisos_ativos").notNull().default(false),
+  diaPedidoExtrato: integer("dia_pedido_extrato").notNull().default(1),
+  lembretesExtratoDias: integer("lembretes_extrato_dias").array().notNull().default(sql`'{4,9}'`),
+  diasAntesVencimentoDas: integer("dias_antes_vencimento_das").array().notNull().default(sql`'{3,0}'`),
   createdAt: createdAt(),
 });
 
