@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen, ChevronDown, ChevronsUpDown, FileText, Inbox, Landmark, LayoutDashboard, ListChecks,
-  ListTree, Lock, LogOut, Receipt, Settings, ShieldCheck, Users, Wand2, type LucideIcon,
+  ListTree, Lock, LogOut, Mail, Receipt, Settings, ShieldCheck, Users, Wand2, type LucideIcon,
 } from "lucide-react";
 import { cn } from "cn";
 import { sair } from "@/app/login/actions";
@@ -142,6 +142,14 @@ export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, documen
           {nome && <span className="block truncate text-sm font-medium text-foreground">{nome}</span>}
           <span className={cn("block truncate", nome ? "text-xs text-muted-foreground" : "text-sm text-foreground")}>{email}</span>
         </span>
+        <Link
+          href="/configuracoes-gerais/emails"
+          aria-label="E-mails do escritório"
+          title="E-mails do escritório"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Mail className="size-4" />
+        </Link>
         <form action={sair}>
           <button
             type="submit"

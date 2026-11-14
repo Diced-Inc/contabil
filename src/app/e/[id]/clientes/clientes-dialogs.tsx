@@ -41,7 +41,7 @@ function Aviso({ estado }: { estado: EstadoConvite }) {
 }
 
 /** Estado de sucesso dentro do diálogo: o contador vê para quem foi, sem depender do toast. */
-function Sucesso({ titulo, children }: { titulo: string; children: ReactNode }) {
+export function Sucesso({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
     <>
       <div className="flex flex-col items-center gap-3 py-2 text-center" role="status">

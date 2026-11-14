@@ -71,6 +71,13 @@
       "when": 1794593254256,
       "tag": "0009_avisos_empresa",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794668018954,
+      "tag": "0010_enderecos_pendentes",
+      "breakpoints": true
     }
   ]
 }

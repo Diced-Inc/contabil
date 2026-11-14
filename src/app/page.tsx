@@ -2,47 +2,25 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
 import { asc, count, eq, isNull, or } from "drizzle-orm";
-import { Building2, ChevronRight, Inbox, LogOut } from "lucide-react";
+import { Building2, ChevronRight, Inbox, Mail } from "lucide-react";
 import { cn } from "cn";
-import { LogoWordmark } from "@/components/logo";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Topo } from "@/components/topo";
 import { NovaEmpresaDialog } from "@/components/empresa-form";
 import { Carregando, EmptyState, PageHeader } from "@/components/page-header";
 import { db } from "@/db";
 import { ciclosMensais, documentosRecebidos, empresas, membros, type CicloMensal } from "@/db/schema";
 import { competenciaAtual, nomeCompetencia, situacaoDas, STATUS_CICLO, textoSituacaoDas, type SituacaoDas, type StatusCiclo } from "@/lib/ciclo";
 import { fmtCnpj, hoje, PORTES, REGIMES } from "@/lib/format";
-import { logoDaEmpresa, perfilDoUsuario, requireUser } from "@/supabase/server";
+import { logoDaEmpresa, requireUser } from "@/supabase/server";
 import { Avatar } from "@/components/avatar";
-import { sair } from "./login/actions";
 
 const REGIME_BADGE = { simples: "brand", mei: "success", presumido: "info", real: "violet" } as const;
 
 function iniciais(nome: string) {
   const p = nome.split(/\s+/).filter((w) => w.length > 2);
   return ((p[0]?.[0] ?? nome[0] ?? "?") + (p[1]?.[0] ?? "")).toUpperCase();
-}
-
-async function Usuario() {
-  await connection();
-  const user = await requireUser();
-  const { nome, avatarUrl } = await perfilDoUsuario(user);
-  return (
-    <div className="flex items-center gap-2">
-      <span className="hidden text-sm text-muted-foreground sm:inline">{nome || user.email}</span>
-      <Avatar url={avatarUrl} texto={nome || (user.email ?? "")} />
-      <form action={sair}>
-        <button
-          type="submit"
-          aria-label="Sair"
-          title="Sair"
-          className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <LogOut className="size-4" />
-        </button>
-      </form>
-    </div>
-  );
 }
 
 /** portal: ninguém convidado, convite sem aceite ou cliente com acesso. */
@@ -176,16 +154,12 @@ async function ListaEmpresas() {
 export default function Home() {
   return (
     <div className="flex min-h-svh flex-1 flex-col">
-      <header className="border-b bg-card">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
-          <Link href="/">
-            <LogoWordmark />
-          </Link>
-          <Suspense>
-            <Usuario />
-          </Suspense>
-        </div>
-      </header>
+      <Topo>
+        <Link href="/configuracoes-gerais/emails" title="E-mails do escritório" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <Mail />
+          <span className="hidden md:inline">E-mails do escritório</span>
+        </Link>
+      </Topo>
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
         <PageHeader
           title="Empresas"

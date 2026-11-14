@@ -90,3 +90,17 @@ Variáveis (Vercel → Settings → Environment Variables):
 Com `SUPABASE_SERVICE_ROLE_KEY` e o Resend configurados, o e-mail de recuperação de senha também sai pelo Resend com a marca do sistema; sem eles, continua o SMTP do Supabase.
 
 Teste local: `curl -H "Authorization: Bearer $CRON_SECRET" "http://localhost:3000/api/cron/avisos?empresa=<id>&simular=1"`.
+
+## E-mails do escritório
+
+Tela **E-mails do escritório** (botão no topo da lista de empresas e ícone de envelope no rodapé da barra lateral, rota `/configuracoes-gerais/emails`). Os endereços `@EMAIL_DOMINIO` são redirecionamentos do [Cloudflare Email Routing](https://developers.cloudflare.com/email-routing/) para caixas reais (não há caixa própria). O contador cria, edita, pausa e remove endereços e escolhe o e-mail que recebe.
+
+- Um e-mail que recebe (destino) precisa clicar no link de confirmação que o Cloudflare manda. Enquanto não confirma, o endereço fica em `enderecos_pendentes`; a cada visita à tela (e a cada 15 s com a tela aberta) o sistema cria a regra quando o destino confirmar, ou descarta o pendente se a regra já existir.
+- `avisos`, `postmaster` e `abuse` são reservados (`avisos@` é o remetente do Resend).
+- A tela traz o passo a passo do Gmail "Enviar e-mail como" via SMTP do Resend (`smtp.resend.com`, porta 465, usuário `resend`). A chave SMTP nunca aparece nem fica guardada no app.
+
+| Variável | Para quê |
+| --- | --- |
+| `CLOUDFLARE_EMAIL_TOKEN` | Token da conta com **Account › Email Routing Addresses › Edit** (destinos) e **Zone › Email Routing Rules › Edit** (endereços). Sem a segunda, a tela avisa e guarda os novos endereços como pendentes. |
+| `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ZONE_ID` | Conta e zona do domínio no Cloudflare. |
+| `EMAIL_DOMINIO` | Domínio do escritório, ex.: `dbcontador.com.br`. |

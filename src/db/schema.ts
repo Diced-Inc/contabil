@@ -295,3 +295,11 @@ export const partidasRelations = relations(partidas, ({ one }) => ({
   lancamento: one(lancamentos, { fields: [partidas.lancamentoId], references: [lancamentos.id] }),
   conta: one(planoContas, { fields: [partidas.contaId], references: [planoContas.id] }),
 }));
+
+/** Endereço do domínio do escritório esperando o destino confirmar no Cloudflare; vira regra na próxima visita à tela. */
+export const enderecosPendentes = pgTable("enderecos_pendentes", {
+  local: text("local").primaryKey(),
+  destino: text("destino").notNull(),
+  nome: text("nome"),
+  createdAt: createdAt(),
+});
