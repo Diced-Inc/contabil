@@ -148,7 +148,13 @@ export async function listarEnderecos(): Promise<Resultado<{ enderecos: Endereco
 export async function listarDestinos(): Promise<Resultado<Destino[]>> {
   const r = await cf<{ id: string; email: string; verified: string | null }[]>("destinos", destinos("?per_page=50"));
   if ("erro" in r) return r;
-  return { dados: r.dados.result.map((d) => ({ id: d.id, email: d.email.toLowerCase(), verificado: d.verified ?? null })) };
+  // A conta do Cloudflare é compartilhada com outros projetos: esconde destinos que não são do escritório.
+  const ocultos = new Set((process.env.EMAIL_DESTINOS_OCULTOS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+  return {
+    dados: r.dados.result
+      .map((d) => ({ id: d.id, email: d.email.toLowerCase(), verificado: d.verified ?? null }))
+      .filter((d) => !ocultos.has(d.email)),
+  };
 }
 
 /** Cadastra o e-mail que vai receber; o Cloudflare manda a ele um link de confirmação. */
