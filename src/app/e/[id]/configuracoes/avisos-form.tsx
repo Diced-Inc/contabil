@@ -185,8 +185,8 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
           ))}
         </ol>
         <p className="mt-4 border-t pt-3 text-sm text-muted-foreground">
-          O e-mail com a guia sai sempre, mesmo com os avisos desligados. Os lembretes param quando o cliente clica em &ldquo;Já paguei&rdquo; ou o
-          mês é encerrado.
+          O e-mail com as guias sai sempre, mesmo com os avisos desligados. Os lembretes param quando o cliente clica em &ldquo;Já paguei&rdquo; em todas
+          as guias ou o mês é encerrado.
         </p>
       </section>
 

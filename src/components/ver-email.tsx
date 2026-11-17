@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 export function VerEmail({ empresaId, tipo, dados, para, rotulo = "Ver e-mail", className }: {
   empresaId: string;
   tipo: TipoPrevia;
-  dados?: { nome?: string; competencia?: string; valor?: string; vencimento?: string };
+  dados?: { nome?: string; competencia?: string };
   /** Destinatário mostrado no cabeçalho (só exibição). */
   para?: string;
   rotulo?: string;

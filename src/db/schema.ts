@@ -294,7 +294,7 @@ export const documentosRecebidos = pgTable("documentos_recebidos", {
 
 export type TipoNotificacao =
   | "convite" | "pedido_extrato" | "lembrete_extrato" | "extrato_recebido" | "extrato_por_fora" | "das_disponivel" | "lembrete_das"
-  | "das_pago" | "recuperacao_senha";
+  | "das_pago" | "guias_disponiveis" | "recuperacao_senha";
 
 /** Histórico e idempotência dos e-mails: um por (ciclo, tipo, destinatário, dia). */
 export const notificacoes = pgTable("notificacoes", {

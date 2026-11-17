@@ -1,9 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { enviarEmail, type Email } from "@/lib/email";
 import { adminClient } from "@/supabase/admin";
 import { createClient } from "@/supabase/server";
 import { db } from ".";
-import { ciclosMensais, notificacoes, type TipoNotificacao } from "./schema";
+import { ciclosMensais, guias, notificacoes, type TipoNotificacao } from "./schema";
 
 /** Envia e registra a tentativa (uma linha por ciclo/tipo/destinatário/dia; nova tentativa no mesmo dia atualiza). */
 export async function notificar(
@@ -49,4 +49,14 @@ export async function objetosDocumentos(paths: string[]) {
     select name, metadata->>'size' as tamanho, metadata->>'mimetype' as mime
     from storage.objects where bucket_id = 'documentos' and name in ${paths}`);
   return new Map(linhas.map((l) => [l.name, { tamanho: Number(l.tamanho ?? 0), mime: l.mime ?? "application/octet-stream" }]));
+}
+
+/** Guias dos ciclos, por vencimento. Sem `comRascunhos`, só as já enviadas ao cliente. Quem chama já autorizou. */
+export function listarGuias(cicloIds: string[], { comRascunhos }: { comRascunhos: boolean }) {
+  if (cicloIds.length === 0) return Promise.resolve([]);
+  return db
+    .select()
+    .from(guias)
+    .where(and(inArray(guias.cicloId, cicloIds), comRascunhos ? undefined : isNotNull(guias.enviadoEm)))
+    .orderBy(asc(guias.vencimento), asc(guias.createdAt));
 }

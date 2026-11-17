@@ -148,10 +148,10 @@ export function emailConvite({ nome, empresa, link }: { nome: string | null; emp
   const saudacao = nome ? `Olá, ${nome}!` : "Olá!";
   const html = layout({
     empresa,
-    previa: "Crie sua senha para enviar os extratos e receber a guia do DAS pelo portal.",
+    previa: "Crie sua senha para enviar os extratos e receber as guias de imposto pelo portal.",
     titulo: saudacao,
     antes: [
-      `Seu contador liberou seu acesso ao portal da <b>${esc(empresa)}</b> no ${MARCA}. Por lá você envia os extratos do mês e recebe a guia do DAS.`,
+      `Seu contador liberou seu acesso ao portal da <b>${esc(empresa)}</b> no ${MARCA}. Por lá você envia os extratos do mês e recebe as guias de imposto.`,
       "Para entrar, crie sua senha. O link vale por 24 horas.",
     ],
     botao: "Criar minha senha",
@@ -162,7 +162,7 @@ export function emailConvite({ nome, empresa, link }: { nome: string | null; emp
     html,
     texto: corpoTexto(
       saudacao,
-      `Seu contador liberou seu acesso ao portal da ${empresa} no ${MARCA}. Por lá você envia os extratos do mês e recebe a guia do DAS.`,
+      `Seu contador liberou seu acesso ao portal da ${empresa} no ${MARCA}. Por lá você envia os extratos do mês e recebe as guias de imposto.`,
       `Crie sua senha neste link (vale por 24 horas):\n${link}`,
       "Se não esperava este e-mail, pode ignorar.",
     ),
@@ -229,58 +229,130 @@ export function emailExtratoPorFora({ empresa, mes, quem, nota, link }: {
   };
 }
 
-/** Para o contador: o cliente clicou em "Já paguei". */
-export function emailDasPago({ empresa, competencia, valor, quem, quando, link }: {
-  empresa: string; competencia: string; valor: string | null; quem: string; quando: string; link: string;
+/** Guia num e-mail: nome (DAS, DARF previdenciário...), valor e vencimento. */
+export type GuiaEmail = { nome: string; valor: string; vencimento: string };
+
+/** Soma em centavos (sem erro de ponto flutuante). */
+const somaGuias = (gs: { valor: string }[]) => gs.reduce((s, g) => s + Math.round(Number(g.valor) * 100), 0) / 100;
+const umaOuVarias = (gs: unknown[], uma: string, varias: string) => (gs.length === 1 ? uma : varias);
+
+/** Destaque das guias: com uma, valor grande + vencimento e período; com várias, o total grande e uma linha por guia. */
+function destaqueGuias(gs: GuiaEmail[], competencia: string, rotuloTotal: string): Destaque {
+  if (gs.length === 1) {
+    const [g] = gs;
+    return { grande: { rotulo: `Valor do ${g.nome}`, valor: brl(g.valor) }, lado: [["Vencimento", dataBR(g.vencimento)], ["Período de apuração", esc(competencia)]] };
+  }
+  return {
+    grande: { rotulo: rotuloTotal, valor: brl(somaGuias(gs)) },
+    linhas: gs.map((g) => [g.nome, `${brl(g.valor)} <span style="font-weight:400">&middot; vence ${dataBR(g.vencimento)}</span>`]),
+  };
+}
+
+const textoGuias = (gs: GuiaEmail[]) =>
+  [...gs.map((g) => `- ${g.nome}: ${brl(g.valor)}, vence ${dataBR(g.vencimento)}`), ...(gs.length > 1 ? [`Total: ${brl(somaGuias(gs))}`] : [])].join("\n");
+
+/** Para o contador: o cliente clicou em "Já paguei" numa guia. `faltam` = guias enviadas ainda em aberto. */
+export function emailGuiaPaga({ empresa, competencia, guia, faltam, quem, quando, link }: {
+  empresa: string; competencia: string; guia: { nome: string; valor: string }; faltam: string[]; quem: string; quando: string; link: string;
 }) {
+  const situacao = faltam.length === 0 ? "Todas as guias do mês estão pagas." : `Ainda em aberto: ${faltam.join(", ")}.`;
   const html = layout({
     empresa,
-    previa: `${quem} marcou o DAS de ${competencia} como pago.`,
-    titulo: "DAS pago pelo cliente",
-    antes: [`<b>${esc(quem)}</b> marcou como pago o DAS de <b>${esc(competencia)}</b>.`],
+    previa: `${quem} marcou o ${guia.nome} de ${competencia} como pago. ${situacao}`,
+    titulo: faltam.length === 0 ? "Todas as guias pagas" : "Guia paga pelo cliente",
+    antes: [`<b>${esc(quem)}</b> marcou como pago o <b>${esc(guia.nome)}</b> de <b>${esc(competencia)}</b>.`],
     destaque: {
-      grande: valor ? { rotulo: "Valor", valor: brl(valor) } : undefined,
+      grande: { rotulo: `Valor do ${guia.nome}`, valor: brl(guia.valor) },
       lado: [["Competência", esc(competencia)], ["Informado em", esc(quando)]],
+      linhas: [["Situação do mês", esc(situacao)]],
     },
     botao: "Abrir o fechamento",
     link,
     rodape: RODAPE_CONTADOR,
   });
   return {
-    assunto: comMarca(`DAS de ${mesDe(competencia)} pago: ${empresa}${valor ? ` (${brl(valor)})` : ""}`),
+    assunto: comMarca(`${guia.nome} de ${mesDe(competencia)} pago: ${empresa} (${brl(guia.valor)})`),
     html,
     texto: corpoTexto(
-      `${quem} marcou como pago o DAS de ${competencia} da ${empresa}.`,
-      `${valor ? `Valor: ${brl(valor)}\n` : ""}Informado em: ${quando}`,
+      `${quem} marcou como pago o ${guia.nome} de ${competencia} da ${empresa}.`,
+      `Valor: ${brl(guia.valor)}\nInformado em: ${quando}`,
+      situacao,
       `Abrir o fechamento: ${link}`,
     ),
   };
 }
 
-/** Para o cliente: mês concluído, guia do DAS disponível no portal. */
-export function emailDasDisponivel({ empresa, competencia, valor, vencimento, link }: {
-  empresa: string; competencia: string; valor: string; vencimento: string; link: string;
+/** Para o cliente: guias do mês disponíveis no portal. `extra` = guia enviada depois do primeiro envio. */
+export function emailGuiasDisponiveis({ empresa, competencia, guias, extra = false, link }: {
+  empresa: string; competencia: string; guias: GuiaEmail[]; extra?: boolean; link: string;
 }) {
+  const [g] = guias;
+  const varias = guias.length > 1;
+  const abertura = extra
+    ? `O contador enviou ${umaOuVarias(guias, "mais uma guia", `mais ${guias.length} guias`)} de <b>${esc(competencia)}</b>. Já está no portal.`
+    : `O contador concluiu o mês de <b>${esc(competencia)}</b>. ${umaOuVarias(guias, "A guia já está", `As ${guias.length} guias já estão`)} no portal.`;
+  const fim = `Baixe ${umaOuVarias(guias, "a guia", "cada guia")}, pague até o vencimento e clique em <b>Já paguei</b> no portal para avisar o contador.`;
   const html = layout({
     empresa,
-    previa: `${brl(valor)} com vencimento em ${dataBR(vencimento)}. A guia já está no portal.`,
-    titulo: "Seu DAS está pronto",
-    antes: [`O contador concluiu o mês de <b>${esc(competencia)}</b>. A guia já está no portal.`],
-    destaque: {
-      grande: { rotulo: "Valor do DAS", valor: brl(valor) },
-      lado: [["Vencimento", dataBR(vencimento)], ["Período de apuração", esc(competencia)]],
-    },
-    depois: ["Baixe a guia, pague até o vencimento e clique em <b>Já paguei</b> no portal para avisar o contador."],
-    botao: "Baixar a guia",
+    previa: varias
+      ? `${guias.length} guias, total de ${brl(somaGuias(guias))}. A primeira vence em ${dataBR(g.vencimento)}.`
+      : `${brl(g.valor)} com vencimento em ${dataBR(g.vencimento)}. A guia já está no portal.`,
+    titulo: extra ? "Nova guia disponível" : umaOuVarias(guias, `Seu ${g.nome} está pronto`, "Suas guias estão prontas"),
+    antes: [abertura],
+    destaque: destaqueGuias(guias, competencia, "Total do mês"),
+    depois: [fim],
+    botao: umaOuVarias(guias, "Baixar a guia", "Baixar as guias"),
     link,
   });
   return {
-    assunto: comMarca(`Seu DAS de ${mesDe(competencia)} está disponível: ${brl(valor)}, vence ${diaMes(vencimento)}`),
+    assunto: comMarca(
+      varias
+        ? `Suas guias de ${mesDe(competencia)} estão disponíveis: ${guias.length} guias, ${brl(somaGuias(guias))}`
+        : `${extra ? "Nova guia: " : "Seu "}${g.nome} de ${mesDe(competencia)}${extra ? "" : " está disponível"}: ${brl(g.valor)}, vence ${diaMes(g.vencimento)}`,
+    ),
+    html,
+    texto: corpoTexto(abertura.replace(/<\/?b>/g, ""), textoGuias(guias), `${fim.replace(/<\/?b>/g, "")}\n${link}`),
+  };
+}
+
+/** Para o cliente: guias em aberto do mês (só as não pagas). `dias` = vencimento mais próximo - hoje (negativo = vencida). */
+export function emailLembreteGuias({ empresa, competencia, guias, dias, link }: {
+  empresa: string; competencia: string; guias: GuiaEmail[]; dias: number; link: string;
+}) {
+  const [g] = guias;
+  const varias = guias.length > 1;
+  const quando = dias < 0 ? "venceu" : dias === 0 ? "vence hoje" : dias === 1 ? "vence amanhã" : `vence em ${dias} dias`;
+  const html = layout({
+    empresa,
+    previa: varias
+      ? `${guias.length} guias em aberto, ${brl(somaGuias(guias))}. Já pagou? Avise pelo portal.`
+      : `${brl(g.valor)}, vencimento em ${dataBR(g.vencimento)}. Já pagou? Avise pelo portal.`,
+    titulo: varias ? `Suas guias: a primeira ${quando}` : `Seu ${g.nome} ${quando}`,
+    antes: [
+      varias
+        ? `Ainda não vimos o pagamento de ${guias.length} guias de <b>${esc(competencia)}</b>.`
+        : `Ainda não vimos o pagamento do ${esc(g.nome)} de <b>${esc(competencia)}</b>.`,
+    ],
+    destaque: destaqueGuias(guias, competencia, "Em aberto"),
+    depois: [
+      dias < 0
+        ? "Se ainda não pagou, fale com o contador para gerar uma guia atualizada. Se já pagou, clique em <b>Já paguei</b> no portal."
+        : "Já pagou? Clique em <b>Já paguei</b> no portal e os lembretes param.",
+    ],
+    botao: dias < 0 ? "Abrir o portal" : umaOuVarias(guias, "Baixar a guia", "Baixar as guias"),
+    link,
+  });
+  return {
+    assunto: comMarca(
+      varias
+        ? `Lembrete: ${guias.length} guias de ${mesDe(competencia)} em aberto, a primeira ${quando}`
+        : `Lembrete: seu ${g.nome} de ${mesDe(competencia)} ${quando} (${brl(g.valor)})`,
+    ),
     html,
     texto: corpoTexto(
-      `O contador concluiu o mês de ${competencia} da ${empresa}.`,
-      `Valor do DAS: ${brl(valor)}\nVencimento: ${dataBR(vencimento)}\nPeríodo de apuração: ${competencia}`,
-      `Baixe a guia no portal e, depois de pagar, clique em "Já paguei":\n${link}`,
+      varias ? `Guias de ${competencia} da ${empresa} em aberto; a primeira ${quando}.` : `O ${g.nome} de ${competencia} da ${empresa} ${quando}.`,
+      textoGuias(guias),
+      `Portal: ${link}`,
     ),
   };
 }
@@ -293,7 +365,7 @@ export function emailPedidoExtrato({ empresa, competencia, link, lembrete = fals
   const abertura = lembrete
     ? `Ainda não recebemos os extratos de <b>${esc(competencia)}</b>.`
     : `Chegou a hora de enviar os extratos de <b>${esc(competencia)}</b>.`;
-  const corpo = "Com eles o contador fecha o mês e envia a guia do DAS.";
+  const corpo = "Com eles o contador fecha o mês e envia as guias de imposto.";
   const html = layout({
     empresa,
     previa: lembrete ? `Ainda faltam os extratos de ${competencia}.` : `Mande pelo portal os extratos bancários de ${competencia}.`,
@@ -317,35 +389,6 @@ export function emailPedidoExtrato({ empresa, competencia, link, lembrete = fals
       `Mês pedido: ${competencia}\nO que enviar: extratos de todas as contas da empresa (OFX, CSV ou PDF)`,
       `Enviar extratos: ${link}`,
     ),
-  };
-}
-
-/** Para o cliente: DAS em aberto (dias = vencimento - hoje; negativo = vencido). */
-export function emailLembreteDas({ empresa, competencia, valor, vencimento, dias, link }: {
-  empresa: string; competencia: string; valor: string; vencimento: string; dias: number; link: string;
-}) {
-  const quando = dias < 0 ? "venceu" : dias === 0 ? "vence hoje" : dias === 1 ? "vence amanhã" : `vence em ${dias} dias`;
-  const html = layout({
-    empresa,
-    previa: `${brl(valor)}, vencimento em ${dataBR(vencimento)}. Já pagou? Avise pelo portal.`,
-    titulo: `Seu DAS ${quando}`,
-    antes: [`Ainda não vimos o pagamento do DAS de <b>${esc(competencia)}</b>.`],
-    destaque: {
-      grande: { rotulo: "Valor do DAS", valor: brl(valor) },
-      lado: [["Vencimento", dataBR(vencimento)], ["Período de apuração", esc(competencia)]],
-    },
-    depois: [
-      dias < 0
-        ? "Se ainda não pagou, fale com o contador para gerar uma guia atualizada. Se já pagou, clique em <b>Já paguei</b> no portal."
-        : "Já pagou? Clique em <b>Já paguei</b> no portal e os lembretes param.",
-    ],
-    botao: dias < 0 ? "Abrir o portal" : "Baixar a guia",
-    link,
-  });
-  return {
-    assunto: comMarca(`Lembrete: seu DAS de ${mesDe(competencia)} ${quando} (${brl(valor)})`),
-    html,
-    texto: corpoTexto(`O DAS de ${competencia} da ${empresa} ${quando}.`, `Valor: ${brl(valor)}\nVencimento: ${dataBR(vencimento)}`, `Portal: ${link}`),
   };
 }
 

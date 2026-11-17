@@ -1,22 +1,23 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import { bucketDocumentos, garantirCiclo, notificar, objetosDocumentos } from "@/db/ciclos";
 import {
-  ciclosMensais, contadores, contasBancarias, documentosRecebidos, empresas, importacoes, membros, type CicloMensal,
+  ciclosMensais, contadores, contasBancarias, documentosRecebidos, empresas, guias, importacoes, membros, type CicloMensal, type Guia,
 } from "@/db/schema";
 import {
-  competenciaAtual, MAX_DOCUMENTO, mimeDocumento, MOTIVOS_ENCERRAMENTO, nomeCompetencia, nomeParaPath, proximoStatus, TransicaoInvalida,
-  type EventoCiclo, type MotivoEncerramento,
+  competenciaAtual, MAX_DOCUMENTO, mimeDocumento, MOTIVOS_ENCERRAMENTO, nomeCompetencia, nomeParaPath, proximoStatus, statusPelasGuias,
+  TransicaoInvalida, type EventoCiclo, type MotivoEncerramento,
 } from "@/lib/ciclo";
-import { emailDasDisponivel, emailDasPago, emailExtratoPorFora, emailExtratoRecebido, type Email } from "@/lib/email";
-import { lerGuiaPdf, type Guia } from "@/lib/das";
+import { lerGuiaPdf, type Guia as GuiaLida } from "@/lib/das";
+import { emailExtratoPorFora, emailExtratoRecebido, emailGuiaPaga, emailGuiasDisponiveis, type Email } from "@/lib/email";
 import { fmtCnpj, hoje, parseValorBR } from "@/lib/format";
+import { arquivoGuia, rotuloGuia, tipoDetectado, TIPOS_GUIA, type TipoGuia } from "@/lib/guias";
 import { requireMembro, requireUser } from "@/supabase/server";
 import type { User } from "@supabase/supabase-js";
 
@@ -48,13 +49,14 @@ async function nomeEmpresa(empresaId: string) {
 
 /**
  * Aplica um evento ao ciclo da competência com lock de linha: valida a transição e grava o novo status + campos extras.
- * `set` recebe o ciclo atual (para checagens) e devolve os campos a gravar.
+ * `set` recebe o ciclo atual e a transação (para checar e mexer nas guias; lança TransicaoInvalida para recusar) e devolve
+ * os campos a gravar. Depois, o status considera as guias (statusPelasGuias: das_pago quando todas as enviadas estão pagas).
  */
 async function mudarCiclo(
   empresaId: string,
   competencia: string,
   evento: EventoCiclo,
-  set: (c: CicloMensal) => Partial<CicloMensal> = () => ({}),
+  set: (c: CicloMensal, tx: Tx) => Partial<CicloMensal> | Promise<Partial<CicloMensal>> = () => ({}),
 ): Promise<Resultado<{ ciclo: CicloMensal }>> {
   await garantirCiclo(empresaId, competencia);
   try {
@@ -64,8 +66,14 @@ async function mudarCiclo(
         .from(ciclosMensais)
         .where(and(eq(ciclosMensais.empresaId, empresaId), eq(ciclosMensais.competencia, competencia)))
         .for("update");
-      const status = proximoStatus(c.status, evento);
-      const [novo] = await tx.update(ciclosMensais).set({ ...set(c), status }).where(eq(ciclosMensais.id, c.id)).returning();
+      const base = proximoStatus(c.status, evento);
+      const campos = await set(c, tx);
+      const gs = await tx.select({ enviadoEm: guias.enviadoEm, pagoEm: guias.pagoEm }).from(guias).where(eq(guias.cicloId, c.id));
+      const [novo] = await tx
+        .update(ciclosMensais)
+        .set({ ...campos, status: statusPelasGuias(base, gs) })
+        .where(eq(ciclosMensais.id, c.id))
+        .returning();
       return novo;
     });
     return { ok: true, ciclo };
@@ -223,38 +231,64 @@ export async function baixarDocumento(empresaId: string, documentoId: string): P
   return urlDeDownload(d.path, d.nome);
 }
 
-/** Download da guia do DAS da competência. */
-export async function baixarDas(empresaId: string, competencia: string): Promise<Resultado<{ url: string }>> {
-  await requireMembro(empresaId);
-  if (!competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
-  const [c] = await db
-    .select({ path: ciclosMensais.dasPath })
-    .from(ciclosMensais)
-    .where(and(eq(ciclosMensais.empresaId, empresaId), eq(ciclosMensais.competencia, competencia)));
-  if (!c?.path) return { erro: "Guia do DAS não encontrada." };
-  return urlDeDownload(c.path, `DAS-${competencia.slice(0, 7)}.pdf`);
+/** Guia da empresa com a competência do ciclo; null se não existe ou é de outra empresa. */
+async function guiaDa(empresaId: string, guiaId: string) {
+  if (!uuid.safeParse(guiaId).success) return null;
+  const [g] = await db
+    .select({ guia: guias, competencia: ciclosMensais.competencia })
+    .from(guias)
+    .innerJoin(ciclosMensais, eq(ciclosMensais.id, guias.cicloId))
+    .where(and(eq(guias.id, guiaId), eq(guias.empresaId, empresaId)));
+  return g ?? null;
 }
 
-/** "Já paguei" (cliente, avisa os contadores por e-mail) ou "Marcar DAS como pago" (contador). */
-export async function marcarDasPago(empresaId: string, competencia: string): Promise<Resultado> {
+/** Download de uma guia. O cliente só baixa as que já foram enviadas. */
+export async function baixarGuia(empresaId: string, guiaId: string): Promise<Resultado<{ url: string }>> {
+  const { papel } = await requireMembro(empresaId);
+  const g = await guiaDa(empresaId, guiaId);
+  if (!g || (papel === "cliente" && !g.guia.enviadoEm)) return { erro: "Guia não encontrada." };
+  return urlDeDownload(g.guia.path, arquivoGuia(g.guia.tipo, g.competencia));
+}
+
+/** "Já paguei" (cliente, avisa os contadores por e-mail) ou "Marcar como paga" (contador), uma guia por vez. */
+export async function marcarGuiaPaga(empresaId: string, guiaId: string): Promise<Resultado<{ todasPagas: boolean }>> {
   const { user, papel } = await requireMembro(empresaId);
-  if (!competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
-  const m = await mudarCiclo(empresaId, competencia, "pagar", () => ({ dasPagoEm: new Date(), dasPagoPor: user.id }));
+  const g = await guiaDa(empresaId, guiaId);
+  if (!g?.guia.enviadoEm) return { erro: "Guia não encontrada." };
+  const paga: { guia?: Guia } = {};
+  const m = await mudarCiclo(empresaId, g.competencia, "pagar", async (c, tx) => {
+    [paga.guia] = await tx
+      .update(guias)
+      .set({ pagoEm: new Date(), pagoPor: user.id })
+      .where(and(eq(guias.id, guiaId), eq(guias.cicloId, c.id), isNotNull(guias.enviadoEm), isNull(guias.pagoEm)))
+      .returning();
+    if (!paga.guia) throw new TransicaoInvalida("Esta guia já está paga.");
+    return {};
+  });
   if ("erro" in m) return m;
+  const todasPagas = m.ciclo.status === "das_pago";
   if (papel === "cliente") {
-    const [empresa, site] = await Promise.all([nomeEmpresa(empresaId), siteUrl()]);
-    const email = emailDasPago({
+    const [empresa, site, abertas] = await Promise.all([
+      nomeEmpresa(empresaId),
+      siteUrl(),
+      db
+        .select({ tipo: guias.tipo, descricao: guias.descricao })
+        .from(guias)
+        .where(and(eq(guias.cicloId, m.ciclo.id), isNotNull(guias.enviadoEm), isNull(guias.pagoEm))),
+    ]);
+    const email = emailGuiaPaga({
       empresa,
-      competencia: nomeCompetencia(competencia),
-      valor: m.ciclo.dasValor,
+      competencia: nomeCompetencia(g.competencia),
+      guia: { nome: rotuloGuia(paga.guia!), valor: paga.guia!.valor },
+      faltam: abertas.map(rotuloGuia),
       quem: nomeDe(user),
-      quando: m.ciclo.dasPagoEm!.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }),
-      link: linkFechamento(site, empresaId, competencia),
+      quando: paga.guia!.pagoEm!.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }),
+      link: linkFechamento(site, empresaId, g.competencia),
     });
     await avisarContadores({ empresaId, cicloId: m.ciclo.id, tipo: "das_pago" }, email);
   }
   revalidar(empresaId);
-  return { ok: true };
+  return { ok: true, todasPagas };
 }
 
 // ---------- Contador ----------
@@ -287,82 +321,164 @@ export async function marcarProcessado(empresaId: string, documentoId: string, i
   return { ok: true };
 }
 
-/** URL de upload da guia do DAS ({empresaId}/{AAAA-MM}/das-{uuid}.pdf). */
-export async function prepararDas(empresaId: string, competencia: string): Promise<Resultado<{ envios: Envio[] }>> {
+const ENCERRADO = "O mês foi encerrado. Reabra para mexer nas guias.";
+const prefixoGuia = (empresaId: string, competencia: string) => `${pasta(empresaId, competencia)}guia-`;
+
+/** URL de upload de uma guia ({empresaId}/{AAAA-MM}/guia-{uuid}.pdf). */
+export async function prepararGuia(empresaId: string, competencia: string): Promise<Resultado<{ envios: Envio[] }>> {
   await requireUser();
   if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
-  return urlsDeEnvio([{ path: `${pasta(empresaId, competencia)}das-${randomUUID()}.pdf`, mime: "application/pdf" }]);
+  return urlsDeEnvio([{ path: `${prefixoGuia(empresaId, competencia)}${randomUUID()}.pdf`, mime: "application/pdf" }]);
 }
 
-const pathDas = (empresaId: string, competencia: string, path: string) =>
-  path.startsWith(`${pasta(empresaId, competencia)}das-`) && !path.includes("..");
+const pathGuia = (empresaId: string, competencia: string, path: string) =>
+  path.startsWith(prefixoGuia(empresaId, competencia)) && !path.includes("..");
+
+/** Confere que o PDF da guia chegou ao Storage, na pasta da competência. */
+async function conferirPdf(empresaId: string, competencia: string, path: string): Promise<string | null> {
+  if (!pathGuia(empresaId, competencia, path)) return "Guia inválida.";
+  const obj = (await objetosDocumentos([path])).get(path);
+  if (!obj) return "A guia não chegou. Envie o PDF de novo.";
+  if (obj.mime !== "application/pdf") return "A guia precisa ser um PDF.";
+  return null;
+}
 
 /**
  * Lê a guia que acabou de chegar ao Storage (o PDF não passa pela server action: limite de 4,5 MB da Vercel).
- * Devolve o que deu para ler e avisos quando o CNPJ ou o período não batem com a empresa e a competência.
+ * Devolve o que deu para ler, o tipo no vocabulário do sistema e avisos quando o CNPJ ou o período não batem.
  */
 export async function lerGuiaEnviada(
   empresaId: string,
   competencia: string,
   path: string,
-): Promise<Resultado<{ guia: Guia; fonte: "texto" | "ia" | null; avisos: string[] }>> {
+): Promise<Resultado<{ guia: GuiaLida; tipo: TipoGuia | null; fonte: "texto" | "ia" | null; avisos: string[] }>> {
   await requireUser();
   if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
-  if (!pathDas(empresaId, competencia, path)) return { erro: "Guia inválida." };
+  if (!pathGuia(empresaId, competencia, path)) return { erro: "Guia inválida." };
   const [{ data, error }, [empresa]] = await Promise.all([
     (await bucketDocumentos()).download(path),
-    db.select({ cnpj: empresas.cnpj }).from(empresas).where(eq(empresas.id, empresaId)),
+    db.select({ cnpj: empresas.cnpj, regime: empresas.regimeTributario }).from(empresas).where(eq(empresas.id, empresaId)),
   ]);
-  if (error || !data) return { erro: "Não foi possível abrir a guia enviada." };
+  if (error || !data || !empresa) return { erro: "Não foi possível abrir a guia enviada." };
   const { guia, fonte } = await lerGuiaPdf(new Uint8Array(await data.arrayBuffer()));
   const avisos: string[] = [];
-  if (guia.cnpj && empresa && guia.cnpj !== empresa.cnpj.replace(/D/g, "")) {
+  if (guia.cnpj && guia.cnpj !== empresa.cnpj.replace(/\D/g, "")) {
     avisos.push(`O CNPJ da guia (${fmtCnpj(guia.cnpj)}) não é o desta empresa (${fmtCnpj(empresa.cnpj)}). Confira se anexou a guia certa.`);
   }
   if (guia.periodo && guia.periodo !== competencia.slice(0, 7)) {
-    avisos.push(`A guia é de ${nomeCompetencia(`${guia.periodo}-01`)}, mas você está concluindo ${nomeCompetencia(competencia)}.`);
+    avisos.push(`A guia é de ${nomeCompetencia(`${guia.periodo}-01`)}, mas você está anexando em ${nomeCompetencia(competencia)}.`);
   }
-  return { ok: true, guia, fonte, avisos };
+  return { ok: true, guia, tipo: tipoDetectado(guia, empresa.regime), fonte, avisos };
 }
 
-const conclusaoSchema = z.object({
-  path: z.string().max(400),
+/** PDF anexado e abandonado (diálogo fechado sem salvar): apaga do Storage se nenhuma guia usa. */
+export async function descartarGuiaEnviada(empresaId: string, competencia: string, path: string): Promise<Resultado> {
+  await requireUser();
+  if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
+  if (!pathGuia(empresaId, competencia, path)) return { erro: "Guia inválida." };
+  const [usada] = await db.select({ id: guias.id }).from(guias).where(eq(guias.path, path));
+  if (!usada) await (await bucketDocumentos()).remove([path]);
+  return { ok: true };
+}
+
+const guiaSchema = z.object({
+  tipo: z.enum(TIPOS_GUIA, "Escolha o tipo da guia."),
+  descricao: z.string().trim().max(120).transform((s) => s || null),
   valor: z
     .string()
     .transform(parseValorBR)
-    .pipe(z.string().regex(/^\d+(\.\d{1,2})?$/, "Informe o valor do DAS.").refine((v) => Number(v) > 0, "Informe o valor do DAS.")),
+    .pipe(z.string().regex(/^\d+(\.\d{1,2})?$/, "Informe o valor da guia.").refine((v) => Number(v) > 0, "Informe o valor da guia.")),
   vencimento: z.iso.date("Informe o vencimento."),
-  observacao: z.string().trim().max(1000).transform((s) => s || null),
+  codigoReceita: z.string().trim().max(20).transform((s) => s || null),
 });
+export type DadosGuia = z.input<typeof guiaSchema>;
 
-/** "Concluir mês e enviar DAS": grava a guia, muda para das_enviado e avisa os clientes da empresa. */
-export async function concluirCiclo(
+/**
+ * Anexa (com `path` do upload) ou edita (com `guiaId`) uma guia do mês. Anexada fica como rascunho até "Enviar guias ao cliente".
+ * Guia paga não muda; mês encerrado não aceita mudanças.
+ */
+export async function salvarGuia(
   empresaId: string,
   competencia: string,
-  dados: z.input<typeof conclusaoSchema>,
-): Promise<Resultado<{ emails: { enviados: number; total: number; naoConfigurado: boolean } }>> {
+  alvo: { path: string } | { guiaId: string },
+  dados: DadosGuia,
+): Promise<Resultado> {
   await requireUser();
   if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
-  const r = conclusaoSchema.safeParse(dados);
+  const r = guiaSchema.safeParse(dados);
   if (!r.success) return { erro: r.error.issues[0].message };
-  const { path, valor, vencimento, observacao } = r.data;
-  if (!pathDas(empresaId, competencia, path)) return { erro: "Guia inválida." };
-  const obj = (await objetosDocumentos([path])).get(path);
-  if (!obj) return { erro: "A guia não chegou. Envie o PDF de novo." };
-  if (obj.mime !== "application/pdf") return { erro: "A guia precisa ser um PDF." };
+  if ("path" in alvo) {
+    const erro = await conferirPdf(empresaId, competencia, alvo.path);
+    if (erro) return { erro };
+  } else if (!uuid.safeParse(alvo.guiaId).success) return { erro: "Guia não encontrada." };
 
-  const anterior: { path: string | null } = { path: null };
-  const m = await mudarCiclo(empresaId, competencia, "concluir", (c) => {
-    anterior.path = c.dasPath;
-    const agora = new Date();
-    return {
-      concluidoEm: agora, dasValor: valor, dasVencimento: vencimento, dasPath: path, dasEnviadoEm: agora,
-      dasPagoEm: null, dasPagoPor: null, observacao,
-    };
+  const m = await mudarCiclo(empresaId, competencia, "processar", async (c, tx) => {
+    if (c.status === "encerrado") throw new TransicaoInvalida(ENCERRADO);
+    if ("path" in alvo) {
+      await tx.insert(guias).values({ ...r.data, cicloId: c.id, empresaId, path: alvo.path }).onConflictDoNothing();
+    } else {
+      const [g] = await tx
+        .update(guias)
+        .set(r.data)
+        .where(and(eq(guias.id, alvo.guiaId), eq(guias.cicloId, c.id), isNull(guias.pagoEm)))
+        .returning({ id: guias.id });
+      if (!g) throw new TransicaoInvalida("Guia não encontrada ou já paga.");
+    }
+    return {};
   });
   if ("erro" in m) return m;
-  if (anterior.path && anterior.path !== path) await (await bucketDocumentos()).remove([anterior.path]); // guia de antes da reabertura
+  revalidar(empresaId);
+  return { ok: true };
+}
 
+/** Remove uma guia que ainda não foi enviada ao cliente (registro e PDF). */
+export async function removerGuia(empresaId: string, guiaId: string): Promise<Resultado> {
+  await requireUser();
+  const g = await guiaDa(empresaId, guiaId);
+  if (!g) return { erro: "Guia não encontrada." };
+  const m = await mudarCiclo(empresaId, g.competencia, "processar", async (c, tx) => {
+    if (c.status === "encerrado") throw new TransicaoInvalida(ENCERRADO);
+    const [x] = await tx
+      .delete(guias)
+      .where(and(eq(guias.id, guiaId), eq(guias.cicloId, c.id), isNull(guias.enviadoEm)))
+      .returning({ id: guias.id });
+    if (!x) throw new TransicaoInvalida("Esta guia já foi enviada ao cliente. Reabra o mês para removê-la.");
+    return {};
+  });
+  if ("erro" in m) return m;
+  await (await bucketDocumentos()).remove([g.guia.path]);
+  revalidar(empresaId);
+  return { ok: true };
+}
+
+export type ResultadoEnvio = { qtd: number; emails: { enviados: number; total: number; naoConfigurado: boolean } };
+
+/**
+ * "Enviar guias ao cliente": marca as guias ainda não enviadas, conclui o mês (das_enviado) e manda UM e-mail com elas.
+ * Depois do primeiro envio, uma guia nova sai pelo mesmo caminho, num e-mail só com ela.
+ */
+export async function enviarGuias(empresaId: string, competencia: string): Promise<Resultado<ResultadoEnvio>> {
+  await requireUser();
+  if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
+  const envio: { guias: Guia[]; extra: boolean } = { guias: [], extra: false };
+  const m = await mudarCiclo(empresaId, competencia, "concluir", async (c, tx) => {
+    const agora = new Date();
+    envio.extra = c.status === "das_enviado" || c.status === "das_pago";
+    envio.guias = await tx
+      .update(guias)
+      .set({ enviadoEm: agora })
+      .where(and(eq(guias.cicloId, c.id), isNull(guias.enviadoEm)))
+      .returning();
+    if (envio.guias.length === 0) {
+      // Reaberto sem guia nova (todas pagas): conclui de novo sem e-mail. Sem guia nenhuma não há o que enviar.
+      const [{ id } = { id: null }] = await tx.select({ id: guias.id }).from(guias).where(eq(guias.cicloId, c.id)).limit(1);
+      if (!id) throw new TransicaoInvalida("Anexe ao menos uma guia antes de enviar.");
+    }
+    return { concluidoEm: c.concluidoEm ?? agora };
+  });
+  if ("erro" in m) return m;
+
+  const enviadas = envio.guias.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
   const [empresa, site, clientes] = await Promise.all([
     nomeEmpresa(empresaId),
     siteUrl(),
@@ -371,11 +487,27 @@ export async function concluirCiclo(
       .from(membros)
       .where(and(eq(membros.empresaId, empresaId), isNotNull(membros.userId), isNotNull(membros.aceitoEm))),
   ]);
-  const email = emailDasDisponivel({ empresa, competencia: nomeCompetencia(competencia), valor, vencimento, link: `${site}/portal/${empresaId}` });
-  const status = await Promise.all(clientes.map((c) => notificar({ empresaId, cicloId: m.ciclo.id, tipo: "das_disponivel" }, c.email, email)));
+  const status = enviadas.length
+    ? await Promise.all(
+        clientes.map((c) =>
+          notificar(
+            { empresaId, cicloId: m.ciclo.id, tipo: "guias_disponiveis" },
+            c.email,
+            emailGuiasDisponiveis({
+              empresa,
+              competencia: nomeCompetencia(competencia),
+              guias: enviadas.map((g) => ({ nome: rotuloGuia(g), valor: g.valor, vencimento: g.vencimento })),
+              extra: envio.extra,
+              link: `${site}/portal/${empresaId}`,
+            }),
+          ),
+        ),
+      )
+    : [];
   revalidar(empresaId);
   return {
     ok: true,
+    qtd: enviadas.length,
     emails: { enviados: status.filter((s) => s === "enviado").length, total: status.length, naoConfigurado: status.includes("nao_configurado") },
   };
 }
@@ -399,13 +531,17 @@ export async function encerrarCiclo(empresaId: string, competencia: string, dado
   return { ok: true };
 }
 
-/** Volta o ciclo para processamento (corrigir a guia ou desfazer o encerramento). A guia atual continua até a próxima conclusão. */
+/**
+ * Volta o ciclo para processamento (corrigir guias ou desfazer o encerramento). As guias em aberto voltam a rascunho
+ * (o cliente deixa de vê-las até o próximo envio); as pagas continuam pagas.
+ */
 export async function reabrirCiclo(empresaId: string, competencia: string): Promise<Resultado> {
   await requireUser();
   if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
-  const m = await mudarCiclo(empresaId, competencia, "reabrir", () => ({
-    concluidoEm: null, dasPagoEm: null, dasPagoPor: null, encerradoEm: null, encerradoMotivo: null, encerradoObs: null,
-  }));
+  const m = await mudarCiclo(empresaId, competencia, "reabrir", async (c, tx) => {
+    await tx.update(guias).set({ enviadoEm: null }).where(and(eq(guias.cicloId, c.id), isNull(guias.pagoEm)));
+    return { concluidoEm: null, encerradoEm: null, encerradoMotivo: null, encerradoObs: null };
+  });
   if ("erro" in m) return m;
   revalidar(empresaId);
   return { ok: true };

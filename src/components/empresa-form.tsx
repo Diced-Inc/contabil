@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, type ComponentProps, type ReactNode } from "react";
+import { useActionState, useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { CircleAlert, Plus, Save } from "lucide-react";
 import { toast } from "sonner";
 import type { EstadoForm } from "@/actions/empresas";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { fmtCnpj, fmtCpf, PORTES, REGIMES, somenteDigitos } from "@/lib/format";
 
 type Empresa = {
@@ -24,6 +25,7 @@ type Empresa = {
   contadorNome: string | null;
   contadorCpf: string | null;
   contadorCrc: string | null;
+  temProLabore: boolean;
 };
 const SELECT =
   "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -49,6 +51,21 @@ function CampoCpf({ name, valor }: { name: string; valor?: string | null }) {
       inputMode="numeric"
       onBlur={(e) => { e.currentTarget.value = fmtCpf(somenteDigitos(e.currentTarget.value)) || e.currentTarget.value; }}
     />
+  );
+}
+
+/** Switch controlado + campo escondido: o form só manda "on" quando ligado (mesmo padrão dos avisos). */
+function ProLabore({ inicial }: { inicial: boolean }) {
+  const [ligado, setLigado] = useState(inicial);
+  return (
+    <div className="flex items-start gap-3 rounded-lg border bg-muted/30 px-3 py-2.5 sm:col-span-2">
+      <Switch id="temProLabore" checked={ligado} onCheckedChange={setLigado} className="mt-0.5" aria-describedby="temProLabore-ajuda" />
+      {ligado && <input type="hidden" name="temProLabore" value="on" />}
+      <div className="grid gap-0.5">
+        <Label htmlFor="temProLabore">Tem pró-labore</Label>
+        <p id="temProLabore-ajuda" className="text-sm text-muted-foreground">Gera também o DARF previdenciário (INSS) todo mês</p>
+      </div>
+    </div>
   );
 }
 
@@ -107,6 +124,7 @@ export function EmpresaForm({ action, empresa, rotulo }: { action: Acao; empresa
             ))}
           </select>
         </div>
+        <ProLabore inicial={empresa?.temProLabore ?? false} />
       </div>
       <Secao titulo="Endereço">
         <Campo label="Cidade" name="cidade" defaultValue={empresa?.cidade ?? undefined} />

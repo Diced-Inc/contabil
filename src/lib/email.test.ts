@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  emailConvite, emailDasDisponivel, emailDasPago, emailExtratoPorFora, emailExtratoRecebido, emailLembreteDas, emailPedidoExtrato,
+  emailConvite, emailExtratoPorFora, emailExtratoRecebido, emailGuiaPaga, emailGuiasDisponiveis, emailLembreteGuias, emailPedidoExtrato,
   emailRecuperacaoSenha, enviarEmail,
 } from "./email";
 
@@ -28,13 +28,36 @@ describe("email", () => {
 });
 
 describe("templates do ciclo", () => {
-  it("das_disponivel destaca valor, vencimento e período", () => {
-    const e = emailDasDisponivel({ empresa: "Diced", competencia: "outubro de 2026", valor: "1250.5", vencimento: "2026-11-20", link: "https://x.dev/p" });
+  const das = { nome: "DAS", valor: "1250.5", vencimento: "2026-11-20" };
+  const inss = { nome: "DARF previdenciário (INSS)", valor: "330.6", vencimento: "2026-11-23" };
+  const base = { empresa: "Diced", competencia: "outubro de 2026", link: "https://x.dev/p" };
+  it("guias_disponiveis com uma guia destaca valor, vencimento e período", () => {
+    const e = emailGuiasDisponiveis({ ...base, guias: [das] });
     expect(e.assunto).toBe(`Seu DAS de outubro está disponível: ${R$("1.250,50")}, vence 20/11 · DB Contador`);
     expect(e.html).toContain(R$("1.250,50"));
     expect(e.html).toContain("20/11/2026");
     expect(e.html).toContain("Período de apuração");
     expect(e.html).toContain("Baixar a guia");
+    expect(e.texto).not.toContain("Total");
+  });
+  it("guias_disponiveis lista todas com o total; guia enviada depois sai como nova", () => {
+    const e = emailGuiasDisponiveis({ ...base, guias: [das, inss] });
+    expect(e.assunto).toBe(`Suas guias de outubro estão disponíveis: 2 guias, ${R$("1.581,10")} · DB Contador`);
+    expect(e.html).toContain("Total do mês");
+    expect(e.html).toContain("DARF previdenciário (INSS)");
+    expect(e.texto).toContain(`- DARF previdenciário (INSS): ${R$("330,60")}, vence 23/11/2026`);
+    expect(e.texto).toContain(`Total: ${R$("1.581,10")}`);
+    expect(e.html).toContain("Baixar as guias");
+    const x = emailGuiasDisponiveis({ ...base, guias: [inss], extra: true });
+    expect(x.assunto).toBe(`Nova guia: DARF previdenciário (INSS) de outubro: ${R$("330,60")}, vence 23/11 · DB Contador`);
+    expect(x.texto).toContain("enviou mais uma guia");
+  });
+  it("lembrete das guias: uma ou várias em aberto", () => {
+    const um = emailLembreteGuias({ ...base, guias: [das], dias: 3 });
+    expect(um.assunto).toBe(`Lembrete: seu DAS de outubro vence em 3 dias (${R$("1.250,50")}) · DB Contador`);
+    const varias = emailLembreteGuias({ ...base, guias: [das, inss], dias: 0 });
+    expect(varias.assunto).toBe("Lembrete: 2 guias de outubro em aberto, a primeira vence hoje · DB Contador");
+    expect(varias.html).toContain("Em aberto");
   });
   it("extrato_recebido escapa observação e usa rodapé do contador", () => {
     const e = emailExtratoRecebido({ empresa: "Diced", competencia: "outubro de 2026", arquivos: ["a.ofx", "b.pdf"], quem: "Ana", observacao: "<x>", link: "https://x.dev/d" });
@@ -46,7 +69,7 @@ describe("templates do ciclo", () => {
     const base = { empresa: "DICED DESENVOLVIMENTO DIGITAL LTDA", competencia: "outubro de 2026", link: "https://x.dev/p" };
     expect(emailPedidoExtrato(base).assunto).toBe("Envie os extratos de outubro · DB Contador");
     expect(emailPedidoExtrato({ ...base, lembrete: true }).assunto).toBe("Lembrete: faltam os extratos de outubro · DB Contador");
-    const das = emailLembreteDas({ ...base, valor: "1585.01", vencimento: "2026-11-20", dias: 3 });
+    const das = emailLembreteGuias({ ...base, guias: [{ nome: "DAS", valor: "1585.01", vencimento: "2026-11-20" }], dias: 3 });
     expect(das.assunto).toBe(`Lembrete: seu DAS de outubro vence em 3 dias (${R$("1.585,01")}) · DB Contador`);
     expect(das.html).toContain("DICED DESENVOLVIMENTO DIGITAL LTDA");
     expect(emailRecuperacaoSenha({ link: "https://x.dev/r" }).assunto).toBe("Redefina sua senha · DB Contador");
@@ -84,9 +107,14 @@ describe("templates para o contador", () => {
     const s = emailExtratoPorFora({ empresa: "Diced", mes: "outubro de 2026", quem: "Marcelo", nota: null, link: "https://x.dev/f" });
     expect(s.texto).toContain("por outro canal.");
   });
-  it("das_pago traz valor e quando", () => {
-    const e = emailDasPago({ empresa: "Diced", competencia: "outubro de 2026", valor: "99.9", quem: "Ana", quando: "16/11/2026 10:00", link: "https://x.dev/f" });
+  it("guia paga traz qual guia, valor, quando e se ainda falta alguma", () => {
+    const base = { empresa: "Diced", competencia: "outubro de 2026", guia: { nome: "DAS", valor: "99.9" }, quem: "Ana", quando: "16/11/2026 10:00", link: "https://x.dev/f" };
+    const e = emailGuiaPaga({ ...base, faltam: ["DARF previdenciário (INSS)"] });
     expect(e.assunto).toBe(`DAS de outubro pago: Diced (${R$("99,90")}) · DB Contador`);
     expect(e.texto).toContain("Informado em: 16/11/2026 10:00");
+    expect(e.texto).toContain("Ainda em aberto: DARF previdenciário (INSS).");
+    const todas = emailGuiaPaga({ ...base, faltam: [] });
+    expect(todas.texto).toContain("Todas as guias do mês estão pagas.");
+    expect(todas.html).toContain("Todas as guias pagas");
   });
 });

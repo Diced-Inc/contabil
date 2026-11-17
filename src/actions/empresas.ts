@@ -31,11 +31,17 @@ const empresaSchema = z.object({
   contadorNome: opcional(z.string()),
   contadorCpf: cpf("CPF do contador deve ter 11 dígitos."),
   contadorCrc: opcional(z.string()),
+  temProLabore: z.boolean(),
 });
 
 function ler(form: FormData) {
   return empresaSchema.safeParse(
-    Object.fromEntries(Object.keys(empresaSchema.shape).map((c) => [c, c === "regimeTributario" ? form.get(c) : (form.get(c) ?? "")])),
+    Object.fromEntries(
+      Object.keys(empresaSchema.shape).map((c) => [
+        c,
+        c === "temProLabore" ? form.get(c) === "on" : c === "regimeTributario" ? form.get(c) : (form.get(c) ?? ""),
+      ]),
+    ),
   );
 }
 
