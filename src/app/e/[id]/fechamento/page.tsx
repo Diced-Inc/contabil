@@ -8,16 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Carregando, PageHeader } from "@/components/page-header";
-import { Baixar } from "@/components/baixar";
 import { db } from "@/db";
+import { listarGuias } from "@/db/ciclos";
 import { ciclosMensais, documentosRecebidos, membros } from "@/db/schema";
-import {
-  competenciaAtual, MOTIVOS_ENCERRAMENTO, passou, tituloCompetencia, situacaoDas, somarMeses, STATUS_CICLO, textoSituacaoDas,
-} from "@/lib/ciclo";
+import { competenciaAtual, MOTIVOS_ENCERRAMENTO, passou, tituloCompetencia, somarMeses, STATUS_CICLO } from "@/lib/ciclo";
 import { fmtData, fmtValor, hoje, lerAno } from "@/lib/format";
+import { guiasEsperadas } from "@/lib/guias";
 import { getEmpresa } from "../empresa";
-import { CicloBotao, ConcluirDasDialog, EncerrarDialog } from "./ciclo-acoes";
+import { EncerrarDialog, ReabrirBotao } from "./ciclo-acoes";
 import { ApuracaoBotao, MesBotao } from "./fechamento-botoes";
+import { GuiasDoMes } from "./guias-mes";
 import { painelFechamento } from "./queries";
 
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -30,7 +30,8 @@ const dataHoraSP = (d: Date) =>
 
 /** Ciclo com o cliente da competência escolhida (?ciclo=AAAA-MM; padrão: a que o cliente está enviando agora). */
 async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; competencia: string; ano: number }) {
-  const [[ciclo], [docs], clientes] = await Promise.all([
+  const [empresa, [ciclo], [docs], clientes] = await Promise.all([
+    getEmpresa(empresaId),
     db
       .select()
       .from(ciclosMensais)
@@ -47,14 +48,14 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
   ]);
   const status = ciclo?.status ?? "aguardando_extrato";
   const st = STATUS_CICLO[status];
-  const situacao = ciclo ? situacaoDas(ciclo, hoje()) : null;
+  const guias = ciclo ? await listarGuias([ciclo.id], { comRascunhos: true }) : [];
   const link = (n: number) => `/e/${empresaId}/fechamento?ano=${ano}&ciclo=${somarMeses(competencia, n).slice(0, 7)}`;
   // Sem arquivo mas com data de recebimento = o cliente avisou que mandou por WhatsApp/e-mail (só avisarExtratoPorFora faz isso).
   const porFora = ciclo?.extratoRecebidoEm && (docs.total === 0 || ciclo.clienteObs);
   const encerrar = status !== "das_pago" && status !== "encerrado" && <EncerrarDialog empresaId={empresaId} competencia={competencia} />;
 
   return (
-    <Card className="mb-6">
+    <Card className="mb-6 pb-5">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-full bg-accent text-primary">
@@ -92,47 +93,35 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
           )}
           {ciclo?.status === "encerrado" && (
             <span className="mt-1 block text-foreground">
-              Encerrado sem DAS{ciclo.encerradoEm && <> em {dataHoraSP(ciclo.encerradoEm)}</>}
+              Encerrado sem guias{ciclo.encerradoEm && <> em {dataHoraSP(ciclo.encerradoEm)}</>}
               {ciclo.encerradoMotivo && <>: <b className="font-semibold">{MOTIVOS_ENCERRAMENTO[ciclo.encerradoMotivo].rotulo}</b></>}
               {ciclo.encerradoObs && <> · <i>{ciclo.encerradoObs}</i></>}. O cliente não recebe mais lembretes deste mês.
             </span>
           )}
-          {ciclo?.dasValor && ciclo.dasVencimento && ciclo.status !== "encerrado" && (
-            <span className="mt-1 block">
-              DAS de <b className="font-semibold text-foreground">R$ {fmtValor(ciclo.dasValor)}</b>, vencimento {fmtData(ciclo.dasVencimento)}
-              {situacao && (
-                <span className={cn("font-medium", situacao.tipo === "vencido" ? "text-danger" : situacao.tipo === "pago" ? "text-success" : "")}>
-                  {" "}· {situacao.tipo === "pago" && ciclo.dasPagoEm ? `Pago em ${dataHoraSP(ciclo.dasPagoEm)}` : textoSituacaoDas(situacao)}
-                </span>
-              )}
-              {ciclo.concluidoEm && <> · enviado em {dataHoraSP(ciclo.concluidoEm)}</>}
-            </span>
+          {ciclo?.concluidoEm && passou(status, "das_enviado") && status !== "encerrado" && (
+            <span className="mt-1 block">Guias enviadas ao cliente em {dataHoraSP(ciclo.concluidoEm)}.</span>
           )}
         </CardDescription>
         <CardAction>
           <div className="flex flex-wrap items-center gap-2">
-            {ciclo?.dasPath && <Baixar empresaId={empresaId} competencia={competencia} rotulo="Guia do DAS" size="default" />}
-            {passou(status, "das_enviado") ? (
-              <>
-                {status === "das_enviado" && <CicloBotao empresaId={empresaId} competencia={competencia} acao="pago" />}
-                {encerrar}
-                <CicloBotao empresaId={empresaId} competencia={competencia} acao="reabrir" />
-              </>
-            ) : (
-              <>
-                {encerrar}
-                <ConcluirDasDialog
-                  empresaId={empresaId}
-                  competencia={competencia}
-                  vencimentoSugerido={`${somarMeses(competencia, 1).slice(0, 8)}20`}
-                  clientes={clientes.map((c) => c.email)}
-                  hoje={hoje()}
-                />
-              </>
-            )}
+            {encerrar}
+            {passou(status, "das_enviado") && <ReabrirBotao empresaId={empresaId} competencia={competencia} />}
           </div>
         </CardAction>
       </CardHeader>
+      <GuiasDoMes
+        empresaId={empresaId}
+        competencia={competencia}
+        hoje={hoje()}
+        status={status}
+        esperadas={guiasEsperadas({ regime: empresa.regimeTributario, temProLabore: empresa.temProLabore })}
+        guias={guias.map((g) => ({
+          id: g.id, tipo: g.tipo, descricao: g.descricao, valor: g.valor, vencimento: g.vencimento, codigoReceita: g.codigoReceita,
+          enviadoEm: g.enviadoEm, pagoEm: g.pagoEm,
+        }))}
+        clientes={clientes.map((c) => c.email)}
+        vencimentoSugerido={`${somarMeses(competencia, 1).slice(0, 8)}20`}
+      />
     </Card>
   );
 }
