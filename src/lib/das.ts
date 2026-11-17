@@ -60,7 +60,9 @@ export function lerGuia(texto: string): Guia {
       : null;
   const guia: Guia = { tipo };
 
-  const [p] = depois(t, /periodo de apuracao/, PERIODO, 120);
+  // "Outubro/2026" em qualquer lugar manda: no layout do PGDAS-D o rótulo vem longe do valor e a 1ª data depois dele é o "pagar até".
+  const nome = t.match(new RegExp(`\\b(${MESES.join("|")})\\/(\\d{4})`));
+  const [p] = nome ? [nome] : depois(t, /periodo de apuracao/, PERIODO, 120);
   if (p) guia.periodo = p[1] ? mes(p[2], MESES.indexOf(p[1]) + 1) : p[3] ? mes(p[5], Number(p[4])) : mes(p[7], Number(p[6]));
 
   // "Pagar este documento até" manda (o DAS pode trazer a data prorrogada); senão "Data de Vencimento".

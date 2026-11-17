@@ -91,6 +91,22 @@ describe("lerGuia", () => {
     expect(lerGuia(DAS_AGRUPADO)).toMatchObject({ tipo: "DAS", vencimento: "2026-04-20", valor: "250.00", periodo: "2026-03", cnpj: "38477169000100" });
   });
 
+  it("DAS do PGDAS-D com o período longe do rótulo (não confunde com o pagar até)", () => {
+    const texto = `Documento de Arrecadação
+do Simples Nacional
+38.477.169/0001-00 BDX ENGENHARIA E PROJETOS LTDA
+Período de Apuração Data de Vencimento Número do Documento
+07.20.26317.2082523-2 Pagar este documento até
+23/11/2026Observações
+Valor Total do Documento
+518,71
+CNPJ Razão Social
+outubro/2026 23/11/2026
+1001 IRPJ - SIMPLES NACIONAL 40,76 40,76
+10/2026`;
+    expect(lerGuia(texto)).toMatchObject({ tipo: "DAS", vencimento: "2026-11-23", valor: "518.71", periodo: "2026-10" });
+  });
+
   it("DARF da DCTFWeb: período em data, previdenciário e código da receita", () => {
     expect(lerGuia(DARF_DCTFWEB)).toEqual({
       tipo: "DARF",
