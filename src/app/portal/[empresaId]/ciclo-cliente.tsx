@@ -90,11 +90,11 @@ export function EnvioExtratos({ empresaId, contas, onEnviado }: PropsEnvio & { o
         }}
         disabled={pendente}
         className={cn(
-          "flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed bg-muted/30 px-6 py-8 text-center transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          "flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed bg-muted/30 px-6 py-8 text-center transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
           arrastando && "border-primary bg-accent/60",
         )}
       >
-        <span className="flex size-11 items-center justify-center rounded-full bg-accent text-primary">
+        <span className="flex size-11 items-center justify-center rounded-lg bg-accent text-primary">
           <CloudUpload className="size-5" />
         </span>
         <span className="text-sm font-semibold text-foreground">Arraste os arquivos aqui ou clique para escolher</span>

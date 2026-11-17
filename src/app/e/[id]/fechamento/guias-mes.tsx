@@ -444,8 +444,8 @@ function Resultado({ r, clientes, competencia }: { r: ResultadoEnvio; clientes: 
       <div className="flex flex-col items-center gap-3 py-2 text-center" role="status">
         <span
           className={cn(
-            "flex size-12 items-center justify-center rounded-full ring-8",
-            ok || r.qtd === 0 ? "bg-success-soft text-success ring-success-soft/40" : "bg-warning-soft text-warning ring-warning-soft/40",
+            "flex size-12 items-center justify-center rounded-lg",
+            ok || r.qtd === 0 ? "bg-success-soft text-success" : "bg-warning-soft text-warning",
           )}
         >
           <Icone className="size-6" />

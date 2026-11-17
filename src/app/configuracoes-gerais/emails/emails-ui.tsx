@@ -136,7 +136,7 @@ function Resultado({ estado, editando }: { estado: EstadoEndereco; editando: boo
     return (
       <>
         <div className="flex flex-col items-center gap-3 py-2 text-center" role="status">
-          <span className="flex size-12 items-center justify-center rounded-full bg-warning-soft text-warning ring-8 ring-warning-soft/40">
+          <span className="flex size-12 items-center justify-center rounded-lg bg-warning-soft text-warning">
             {confirmacao ? <MailCheck className="size-6" /> : <Clock className="size-6" />}
           </span>
           <p className="text-base font-semibold text-foreground">{confirmacao ? "Falta confirmar o e-mail" : "Endereço guardado"}</p>
@@ -340,7 +340,7 @@ export function EnderecosCard({ dominio, lista, pendentes, destinos, confirmados
       <CardContent className="px-0">
         {vazio ? (
           <div className="flex flex-col items-center px-6 py-10 text-center">
-            <span className="mb-3 flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <span className="mb-3 flex size-11 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               <Inbox className="size-5" />
             </span>
             <p className="text-sm font-semibold text-foreground">{lista ? "Nenhum endereço ainda" : "Não deu para carregar os endereços"}</p>

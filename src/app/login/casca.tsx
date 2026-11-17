@@ -7,9 +7,9 @@ export function Casca({ titulo, descricao, children }: { titulo: string; descric
   return (
     <main className="flex min-h-svh flex-1 items-center justify-center bg-muted/60 p-6">
       <div className="w-full max-w-sm">
-        <LogoWordmark size={36} className="mb-8 text-xl" />
-        <div className="rounded-2xl border bg-card p-8 shadow-card">
-          <h1 className="text-2xl font-semibold tracking-tight">{titulo}</h1>
+        <LogoWordmark size={36} className="mb-8 text-lg" />
+        <div className="rounded-xl border bg-card p-8 shadow-card">
+          <h1 className="font-display text-[1.625rem] leading-tight font-semibold tracking-[-0.02em]">{titulo}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{descricao}</p>
           <div className="mt-6">{children}</div>
         </div>

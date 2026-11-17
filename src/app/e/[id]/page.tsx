@@ -48,11 +48,11 @@ function Stat({ label, icon: Icon, tom = "brand", valor, valorCls, ajuda, link }
       <CardContent>
         <div className="flex items-start justify-between gap-3">
           <p className="pt-1 text-xs font-semibold tracking-wider text-muted-foreground uppercase">{label}</p>
-          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", TONS[tom])}>
+          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-md", TONS[tom])}>
             <Icon className="size-4" />
           </span>
         </div>
-        <p className={cn("mt-1 text-3xl font-semibold tracking-tight tabular-nums", valorCls)}>{valor}</p>
+        <p className={cn("mt-1 font-display text-[2rem] leading-tight font-semibold tracking-[-0.02em] tabular-nums", valorCls)}>{valor}</p>
         <p className="mt-1 text-sm text-muted-foreground">{ajuda}</p>
       </CardContent>
       <div className="mx-5 mt-4 border-t pt-2 [&>a]:-ml-2">{link}</div>

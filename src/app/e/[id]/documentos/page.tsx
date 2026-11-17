@@ -89,7 +89,7 @@ async function Documentos({ params }: PageProps<"/e/[id]/documentos">) {
               <ol className="mt-5 grid gap-3 text-left sm:-mx-6">
                 {PASSOS.map(({ icone: Icone, texto }, i) => (
                   <li key={texto} className="flex items-start gap-3">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-primary">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-primary">
                       <Icone className="size-3.5" />
                     </span>
                     <span className="pt-1 text-foreground/80">

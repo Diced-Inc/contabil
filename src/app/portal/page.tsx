@@ -22,7 +22,7 @@ async function Conteudo() {
   return (
     <>
       <Topo usuario={{ ...perfil, email: user.email ?? "", ...avatarDoCliente(papel, logos.find(Boolean) ?? null, perfil.avatarUrl) }} />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <PageHeader title="Suas empresas" description="Escolha a empresa para enviar documentos e acompanhar o mês." />
         {lista.length === 0 ? (
           <EmptyState icon={Building2} title="Nenhuma empresa liberada" hint="Seu acesso foi removido. Fale com seu contador." />
@@ -34,7 +34,7 @@ async function Conteudo() {
                 href={`/portal/${e.id}`}
                 className="group flex items-center gap-4 rounded-xl border bg-card p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
               >
-                <Avatar url={logos[i]} texto={e.razaoSocial} className="size-12 rounded-xl text-base" />
+                <Avatar url={logos[i]} texto={e.razaoSocial} className="size-12 rounded-lg text-base" />
                 <span className="min-w-0 flex-1">
                   <span className="line-clamp-2 font-semibold leading-snug text-foreground">{e.razaoSocial}</span>
                   <span className="mt-0.5 block text-sm text-muted-foreground tabular-nums">CNPJ {fmtCnpj(e.cnpj)}</span>

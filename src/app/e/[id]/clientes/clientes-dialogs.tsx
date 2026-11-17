@@ -45,7 +45,7 @@ export function Sucesso({ titulo, children }: { titulo: string; children: ReactN
   return (
     <>
       <div className="flex flex-col items-center gap-3 py-2 text-center" role="status">
-        <span className="flex size-12 items-center justify-center rounded-full bg-success-soft text-success ring-8 ring-success-soft/40">
+        <span className="flex size-12 items-center justify-center rounded-lg bg-success-soft text-success">
           <CircleCheck className="size-6" />
         </span>
         <p className="text-base font-semibold text-foreground">{titulo}</p>

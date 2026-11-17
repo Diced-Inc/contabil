@@ -30,7 +30,7 @@ export function LogoForm({ empresaId, razaoSocial, logoUrl }: { empresaId: strin
 
   return (
     <div className="flex items-center gap-4">
-      <Avatar url={logoUrl} texto={razaoSocial} className="size-16 rounded-xl text-xl" />
+      <Avatar url={logoUrl} texto={razaoSocial} className="size-16 rounded-lg text-xl" />
       <div className="grid gap-2">
         <div className="flex flex-wrap gap-2">
           <input ref={arquivo} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={escolher} aria-label="Logo da empresa" />

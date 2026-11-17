@@ -98,7 +98,7 @@ export async function PortalCard({ empresa }: { empresa: Empresa }) {
   if (proximo === -1) {
     return (
       <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card px-4 py-3 shadow-card">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-success-soft text-success">
           <CircleCheck className="size-4" />
         </span>
         <p className="min-w-0 flex-1 text-sm text-muted-foreground">
@@ -131,7 +131,7 @@ export async function PortalCard({ empresa }: { empresa: Empresa }) {
     <Card className="mb-6 gap-0 pb-0">
       <CardHeader className="border-b">
         <CardTitle className="flex items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-full bg-accent text-primary">
+          <span className="flex size-8 items-center justify-center rounded-md bg-accent text-primary">
             <MonitorSmartphone className="size-4" />
           </span>
           Portal do cliente

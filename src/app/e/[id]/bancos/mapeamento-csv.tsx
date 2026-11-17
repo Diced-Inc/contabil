@@ -32,7 +32,7 @@ function comPapel(m: MapeamentoSalvo, i: number, p: Papel): MapeamentoSalvo {
 }
 
 export function valorCls(v: string | number) {
-  return Number(v) < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400";
+  return Number(v) < 0 ? "text-destructive" : "text-success";
 }
 
 export function MapeamentoCsvPasso({ nome, bytes, deteccao, inicial, onConfirmar, onPular }: {

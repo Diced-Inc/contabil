@@ -90,7 +90,7 @@ export async function RelatorioShell({ titulo, empresa, periodoLabel, dataAssina
                 // eslint-disable-next-line @next/next/no-img-element -- URL assinada do Storage; precisa carregar também na impressão.
                 <img src={logoUrl} alt="" className="size-8 shrink-0 rounded-md object-cover" />
               )}
-              <p className="text-lg font-semibold tracking-tight">{empresa.razaoSocial}</p>
+              <p className="font-display text-lg font-semibold tracking-[-0.02em]">{empresa.razaoSocial}</p>
             </div>
             <p className="text-sm text-muted-foreground tabular-nums print:text-black">CNPJ {fmtCnpj(empresa.cnpj)}</p>
             <p className="text-xs text-muted-foreground print:text-black">

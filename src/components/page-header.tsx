@@ -12,7 +12,7 @@ export function PageHeader({ title, description, actions, className }: {
   return (
     <header className={cn("mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3", className)}>
       <div className="min-w-0 space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+        <h1 className="font-display text-[1.625rem] leading-tight font-semibold tracking-[-0.02em] text-foreground">{title}</h1>
         {description && <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -44,7 +44,7 @@ export function EmptyState({ icon: Icon, title, hint, action, className }: {
 }) {
   return (
     <div className={cn("flex flex-col items-center justify-center rounded-xl border border-dashed bg-card px-6 py-14 text-center", className)}>
-      <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground ring-8 ring-muted/40">
+      <div className="mb-4 flex size-12 items-center justify-center rounded-lg bg-muted text-muted-foreground">
         <Icon className="size-5" />
       </div>
       <p className="text-sm font-semibold text-foreground">{title}</p>

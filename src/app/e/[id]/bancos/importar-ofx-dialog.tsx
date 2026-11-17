@@ -58,8 +58,8 @@ function StatusTexto({ st }: { st: Status }) {
   if (st.s === "enviando") return <span className="text-muted-foreground">Enviando...</span>;
   if (st.s === "analisando") return <span className="text-muted-foreground">Analisando...</span>;
   if (st.s === "extraindo") return <span className="text-muted-foreground">Extraindo com IA...</span>;
-  if (st.s === "aguardando") return <span className="text-amber-600 dark:text-amber-400">{st.msg}</span>;
-  if (st.s === "ok") return <span className="text-emerald-600 dark:text-emerald-400">{st.novas} novas, {st.repetidas} repetidas</span>;
+  if (st.s === "aguardando") return <span className="text-warning">{st.msg}</span>;
+  if (st.s === "ok") return <span className="text-success">{st.novas} novas, {st.repetidas} repetidas</span>;
   return (
     <span className="text-destructive">
       {st.msg}

@@ -70,7 +70,7 @@ function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<P
           <Badge variant={entrada ? "success" : "danger"}>{entrada ? "Entradas" : "Saídas"}</Badge>
           <span className="text-xs text-muted-foreground">{ts.length} transações</span>
         </div>
-        <SheetTitle className="text-2xl">
+        <SheetTitle className="font-display text-2xl tracking-[-0.02em]">
           <span className="mr-1 text-base font-medium text-muted-foreground">R$</span>
           <Valor v={soma} className="font-semibold" />
         </SheetTitle>

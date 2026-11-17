@@ -135,7 +135,7 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
     <Card className="mb-6 pb-5">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-full bg-accent text-primary">
+          <span className="flex size-8 items-center justify-center rounded-md bg-accent text-primary">
             <Handshake className="size-4" />
           </span>
           Ciclo com o cliente
@@ -150,7 +150,7 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
           </span>
           <Badge variant={st.badge}>{st.rotulo}</Badge>
         </CardTitle>
-        <CardDescription className="pl-10.5">
+        <CardDescription className="sm:pl-10.5">
           {docs.total === 0 ? (
             "Nenhum arquivo recebido do cliente nesta competência."
           ) : (
@@ -273,7 +273,7 @@ async function Fechamento({ params, searchParams }: PageProps<"/e/[id]/fechament
               </div>
               <span
                 className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-full",
+                  "flex size-8 shrink-0 items-center justify-center rounded-md",
                   m.fechadoEm ? "bg-success-soft text-success ring-1 ring-success/20" : "bg-muted text-muted-foreground",
                 )}
               >
@@ -293,13 +293,13 @@ async function Fechamento({ params, searchParams }: PageProps<"/e/[id]/fechament
       <Card className="mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-full bg-accent text-primary">
+            <span className="flex size-8 items-center justify-center rounded-md bg-accent text-primary">
               <Calculator className="size-4" />
             </span>
             Apuração do exercício {ano}
             {apuracao ? <Badge variant="success">Apurado</Badge> : <Badge variant="muted">Não apurado</Badge>}
           </CardTitle>
-          <CardDescription className="pl-10.5">
+          <CardDescription className="sm:pl-10.5">
             {apuracao ? (
               <>
                 Apurada em {dataHora(apuracao.apuradoEm)} (lançamento em {fmtData(`${ano}-12-31`)}).{" "}

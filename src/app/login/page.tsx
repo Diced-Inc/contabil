@@ -28,21 +28,16 @@ const DESTAQUES = [
 export default function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <main className="grid min-h-svh flex-1 lg:grid-cols-[1.05fr_1fr]">
-      <section className="relative hidden overflow-hidden bg-primary p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:40px_40px]"
-        />
-        <div aria-hidden className="pointer-events-none absolute -right-32 -bottom-32 size-[28rem] rounded-full bg-white/10 blur-3xl" />
-        <LogoWordmark size={36} inverso className="relative text-xl" />
-        <div className="relative max-w-md">
-          <h2 className="text-3xl leading-tight font-semibold tracking-tight">
+      <section className="hidden bg-primary p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
+        <LogoWordmark size={36} inverso className="text-lg" />
+        <div className="max-w-md">
+          <h2 className="font-display text-[2rem] leading-tight font-semibold tracking-[-0.02em]">
             A contabilidade da sua empresa, do extrato ao balanço.
           </h2>
           <ul className="mt-8 space-y-5">
             {DESTAQUES.map(([Icon, titulo, texto]) => (
               <li key={titulo} className="flex gap-3.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/12 ring-1 ring-white/20">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-white/10 ring-1 ring-white/25">
                   <Icon className="size-4" />
                 </span>
                 <span>
@@ -53,14 +48,14 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
             ))}
           </ul>
         </div>
-        <p className="relative text-xs text-white/60">Acesso restrito a usuários autorizados.</p>
+        <p className="text-xs text-white/65">Acesso restrito a usuários autorizados.</p>
       </section>
 
       <section className="flex items-center justify-center bg-muted/60 p-6 lg:bg-background">
         <div className="w-full max-w-sm">
-          <LogoWordmark size={36} className="mb-8 text-xl lg:hidden" />
-          <div className="rounded-2xl border bg-card p-8 shadow-card">
-            <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
+          <LogoWordmark size={36} className="mb-8 text-lg lg:hidden" />
+          <div className="rounded-xl border bg-card p-8 shadow-card">
+            <h1 className="font-display text-[1.625rem] leading-tight font-semibold tracking-[-0.02em]">Entrar</h1>
             <p className="mt-1 text-sm text-muted-foreground">Acesse com seu e-mail e senha.</p>
             <form action={entrar} className="mt-6 grid gap-5">
               <Suspense>

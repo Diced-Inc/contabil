@@ -106,7 +106,7 @@ function Cabecalho({ t }: { t: TransacaoBase }) {
         <Badge variant={entrada ? "success" : "danger"}>{entrada ? "Entrada" : "Saída"}</Badge>
         <span className="text-xs text-muted-foreground">{fmtData(t.data)} · {t.contaBancariaNome}</span>
       </div>
-      <SheetTitle className="text-2xl">
+      <SheetTitle className="font-display text-2xl tracking-[-0.02em]">
         <span className="mr-1 text-base font-medium text-muted-foreground">R$</span>
         <Valor v={t.valor} className="font-semibold" />
       </SheetTitle>

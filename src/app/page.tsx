@@ -120,9 +120,9 @@ async function ListaEmpresas() {
             className="group flex items-center gap-4 rounded-xl border bg-card p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           >
             {logos[i] ? (
-              <Avatar url={logos[i]} texto="" className="size-12 rounded-xl" />
+              <Avatar url={logos[i]} texto="" className="size-12 rounded-lg" />
             ) : (
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent text-base font-semibold text-accent-foreground">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-accent text-base font-semibold text-accent-foreground">
                 {iniciais(e.razaoSocial)}
               </span>
             )}
@@ -175,7 +175,7 @@ export default function Home() {
           <span className="hidden md:inline">E-mails do escritório</span>
         </Link>
       </Topo>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <PageHeader
           title="Empresas"
           description="Escolha a empresa para trabalhar. Cada uma tem seu plano de contas, bancos e lançamentos."

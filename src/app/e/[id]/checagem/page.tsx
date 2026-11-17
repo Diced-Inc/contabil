@@ -50,11 +50,11 @@ async function Checagem({ params, searchParams }: PageProps<"/e/[id]/checagem">)
           const { Icon, cor, fundo, rotulo } = STATUS[s];
           return (
             <div key={s} className="flex items-center gap-3 rounded-xl border bg-card p-4 shadow-card">
-              <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-full", fundo, cor)}>
+              <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-md", fundo, cor)}>
                 <Icon className="size-5" />
               </span>
               <div>
-                <p className="text-2xl font-semibold tabular-nums">{total[s]}</p>
+                <p className="font-display text-2xl font-semibold tracking-[-0.02em] tabular-nums">{total[s]}</p>
                 <p className="text-xs text-muted-foreground">{rotulo}</p>
               </div>
             </div>

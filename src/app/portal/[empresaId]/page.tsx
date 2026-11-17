@@ -86,7 +86,7 @@ function GuiasCard({ empresaId, titulo, guias, hj, pagavel }: { empresaId: strin
     <Card className={cn("gap-0 pb-0", cor)}>
       <CardHeader className="border-b">
         <CardTitle className="flex items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-full bg-accent text-primary">
+          <span className="flex size-8 items-center justify-center rounded-md bg-accent text-primary">
             <Receipt className="size-4" />
           </span>
           {titulo}
@@ -108,7 +108,7 @@ function GuiasCard({ empresaId, titulo, guias, hj, pagavel }: { empresaId: strin
             <li key={g.id} className="flex flex-wrap items-center gap-x-6 gap-y-3 px-6 py-4">
               <div className="min-w-40 flex-1">
                 <p className="text-sm font-medium text-foreground">{rotuloGuia(g)}</p>
-                <p className="text-2xl font-semibold tracking-tight tabular-nums">R$ {fmtValor(g.valor)}</p>
+                <p className="font-display text-2xl font-semibold tracking-[-0.02em] tabular-nums">R$ {fmtValor(g.valor)}</p>
               </div>
               <div className="min-w-32">
                 <p className="text-xs text-muted-foreground">Vencimento</p>
@@ -199,22 +199,17 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
   return (
     <>
       <Topo empresa={{ id: empresa.id, nome: empresa.razaoSocial, logoUrl }} usuario={{ ...perfil, email: user.email ?? "", ...avatarDoCliente(papel, logoUrl, perfil.avatarUrl) }} />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <section className="relative overflow-hidden rounded-2xl bg-primary px-6 py-7 text-primary-foreground shadow-card sm:px-8">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:32px_32px]"
-          />
-          <div aria-hidden className="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full bg-white/10 blur-3xl" />
-          <div className="relative flex flex-wrap items-center gap-5">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+        <section className="rounded-xl bg-primary px-6 py-7 text-primary-foreground shadow-card sm:px-8">
+          <div className="flex flex-wrap items-center gap-5">
             <Avatar
               url={logoUrl}
               texto={empresa.razaoSocial}
-              className="size-16 rounded-2xl bg-white text-2xl text-primary shadow-sm ring-1 ring-white/30"
+              className="size-16 rounded-lg bg-white text-2xl text-primary"
             />
             <div className="min-w-0 flex-1">
               <p className="text-sm text-white/75">{primeiroNome ? `Olá, ${primeiroNome}` : "Olá"}. Este é o portal da sua empresa.</p>
-              <h1 className="mt-1 text-2xl leading-tight font-semibold tracking-tight text-balance">{empresa.razaoSocial}</h1>
+              <h1 className="mt-1 font-display text-[1.625rem] leading-tight font-semibold tracking-[-0.02em] text-balance">{empresa.razaoSocial}</h1>
               <p className="mt-1.5 text-sm text-white/75 tabular-nums">
                 CNPJ {fmtCnpj(empresa.cnpj)}
                 {local && <> · {local}</>}
@@ -285,7 +280,7 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
               <Card>
                 <CardHeader className="border-b">
                   <CardTitle className="flex items-center gap-2.5">
-                    <span className="flex size-8 items-center justify-center rounded-full bg-success-soft text-success">
+                    <span className="flex size-8 items-center justify-center rounded-md bg-success-soft text-success">
                       <CheckCircle2 className="size-4" />
                     </span>
                     {docs.length ? "Recebemos seus arquivos" : porFora ? "Recebemos seu aviso" : "O contador já está com os extratos"}
