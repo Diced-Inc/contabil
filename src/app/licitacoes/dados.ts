@@ -7,7 +7,17 @@ import { limitePrazo, normalizar, separarTermos, SITUACAO_DIVULGADA, type Criter
 
 export const POR_PAGINA = 30;
 
-export type Filtros = CriteriosBusca & { q: string; prazoDias: number | null; ordem: "encerramento" | "valor"; pagina: number };
+/** Ordenações da lista (chave da URL → rótulo). */
+export const ORDENS = {
+  encerramento: "Encerra primeiro",
+  encerramento_tarde: "Encerra por último",
+  valor: "Maior valor",
+  menor_valor: "Menor valor",
+  recentes: "Mais recentes",
+} as const;
+export type Ordem = keyof typeof ORDENS;
+
+export type Filtros = CriteriosBusca & { q: string; prazoDias: number | null; ordem: Ordem; pagina: number };
 
 type SP = Record<string, string | string[] | undefined>;
 const lista = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [v] : []).map((s) => s.trim()).filter(Boolean);
@@ -40,7 +50,7 @@ export async function lerFiltros(sp: SP): Promise<Filtros & { alerta: string | n
     valorMin: valor(um(sp.min)),
     valorMax: valor(um(sp.max)),
     prazoDias: Number.isInteger(prazo) && prazo >= 0 && prazo <= 365 && um(sp.prazo) !== "" ? prazo : null,
-    ordem: um(sp.ordem) === "valor" ? "valor" : "encerramento",
+    ordem: Object.hasOwn(ORDENS, um(sp.ordem)) ? (um(sp.ordem) as Ordem) : "encerramento",
     pagina: Math.max(1, Math.min(1000, Number(um(sp.pagina)) || 1)),
     alerta: null,
   };
@@ -67,10 +77,14 @@ const abertas = () => and(eq(licitacoes.situacaoId, SITUACAO_DIVULGADA), gt(lici
 
 export async function listarAbertas(f: Filtros) {
   const where = and(abertas(), ...condicoes(f), f.prazoDias !== null ? lt(licitacoes.encerramentoPropostas, limitePrazo(f.prazoDias)) : undefined);
-  const ordem =
-    f.ordem === "valor"
-      ? [sql`${licitacoes.valorEstimado} desc nulls last`, asc(licitacoes.encerramentoPropostas)]
-      : [asc(licitacoes.encerramentoPropostas), desc(licitacoes.valorEstimado)];
+  // Sem valor divulgado (null) vai sempre para o fim.
+  const ordem = {
+    encerramento: [asc(licitacoes.encerramentoPropostas), desc(licitacoes.valorEstimado)],
+    encerramento_tarde: [desc(licitacoes.encerramentoPropostas), desc(licitacoes.valorEstimado)],
+    valor: [sql`${licitacoes.valorEstimado} desc nulls last`, asc(licitacoes.encerramentoPropostas)],
+    menor_valor: [sql`${licitacoes.valorEstimado} asc nulls last`, asc(licitacoes.encerramentoPropostas)],
+    recentes: [sql`${licitacoes.aberturaPropostas} desc nulls last`, desc(licitacoes.createdAt)],
+  }[f.ordem];
   const [itens, [{ n }]] = await Promise.all([
     db
       .select({ l: licitacoes, salvaId: licitacoesSalvas.id })

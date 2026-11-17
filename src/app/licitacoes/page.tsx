@@ -18,7 +18,7 @@ import { fmtValor } from "@/lib/format";
 import { fmtDataHoraSP, MODALIDADES, prazoEncerramento, STATUS_SALVA, type StatusSalva } from "@/lib/licitacoes";
 import { requireUser } from "@/supabase/server";
 import {
-  contarSalvas, lerFiltros, listarAbertas, listarBuscas, listarEmpresas, listarSalvas, opcoesFiltros, POR_PAGINA, type Filtros,
+  contarSalvas, lerFiltros, listarAbertas, listarBuscas, listarEmpresas, listarSalvas, opcoesFiltros, ORDENS, POR_PAGINA, type Filtros,
 } from "./dados";
 import { ArquivosBotao, AtualizarAgora, BuscaAcoes, BuscaDialog, RemoverSalva, SalvaControles, SalvarBotao } from "./licitacoes-ui";
 
@@ -172,8 +172,7 @@ async function Abertas({ sp }: { sp: Record<string, string | string[] | undefine
           </FilterField>
           <FilterField label="Ordenar por">
             <select name="ordem" defaultValue={f.ordem} className={cn(selectCls, "w-44")}>
-              <option value="encerramento">Encerra primeiro</option>
-              <option value="valor">Maior valor</option>
+              {Object.entries(ORDENS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </FilterField>
           <Button type="submit">
