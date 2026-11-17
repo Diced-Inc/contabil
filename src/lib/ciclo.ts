@@ -1,7 +1,8 @@
 /** Regras puras do ciclo mensal com o cliente (competência, transições de status, guias). */
 // das_enviado = guias enviadas ao cliente; das_pago = todas as guias enviadas pagas (nomes antigos do enum, de quando era um DAS só).
 export type StatusCiclo = "aguardando_extrato" | "extrato_recebido" | "em_processamento" | "das_enviado" | "das_pago" | "encerrado";
-export type EventoCiclo = "extrato_enviado" | "extrato_por_fora" | "processar" | "concluir" | "pagar" | "encerrar" | "reabrir";
+export type EventoCiclo =
+  | "extrato_enviado" | "extrato_por_fora" | "processar" | "editar_guia" | "concluir" | "pagar" | "encerrar" | "reabrir";
 
 /** encerrado fica no fim: conta como "passou de tudo" (progresso completo, sem envio nem guia em aberto). */
 export const ORDEM_STATUS: StatusCiclo[] = ["aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago", "encerrado"];
@@ -47,6 +48,14 @@ const TRANSICOES: Record<EventoCiclo, Partial<Record<StatusCiclo, StatusCiclo>>>
     das_pago: "das_pago",
     encerrado: "encerrado",
   },
+  // Anexar/editar/remover guia não mexe no status (rascunho é invisível ao cliente: o pedido do extrato continua); encerrado trava.
+  editar_guia: {
+    aguardando_extrato: "aguardando_extrato",
+    extrato_recebido: "extrato_recebido",
+    em_processamento: "em_processamento",
+    das_enviado: "das_enviado",
+    das_pago: "das_pago",
+  },
   // Enviar guias ao cliente. Depois do envio, uma guia nova também sai por aqui (e o mês volta a ter guia em aberto).
   concluir: {
     aguardando_extrato: "das_enviado",
@@ -71,6 +80,7 @@ const MOTIVO: Record<EventoCiclo, string> = {
   extrato_enviado: "O mês já foi concluído. Fale com o contador para enviar mais arquivos.",
   extrato_por_fora: "O contador já está com os extratos deste mês.",
   processar: "Status do ciclo inválido.",
+  editar_guia: "O mês foi encerrado. Reabra para mexer nas guias.",
   concluir: "O mês foi encerrado. Reabra o ciclo para enviar guias.",
   pagar: "Não há guia em aberto neste mês.",
   encerrar: "Este mês já foi pago ou encerrado.",

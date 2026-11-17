@@ -167,8 +167,8 @@ function GuiaForm({ empresaId, competencia, hoje, slot, guia, vencimentoSugerido
         .storage.from("documentos")
         .uploadToSignedUrl(envio.path, envio.token, new File([pdf], pdf.name, { type: "application/pdf" }));
       if (up.error) throw new Error(`Não foi possível enviar o PDF: ${up.error.message}`);
+      if (vez !== escolha.current) return void descartarGuiaEnviada(empresaId, competencia, envio.path); // arquivo já trocado
       onPath(envio.path);
-      if (vez !== escolha.current) return;
       setPath(envio.path);
       const r = await lerGuiaEnviada(empresaId, competencia, envio.path);
       if (vez !== escolha.current) return;
@@ -461,8 +461,10 @@ function Resultado({ r, clientes, competencia }: { r: ResultadoEnvio; clientes: 
 }
 
 /** "Enviar guias ao cliente": confirma (listando o que falta, se faltar), envia e mostra para quem o e-mail foi. */
-function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, extra }: {
+function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, extra, mostrar }: {
   empresaId: string; competencia: string; rascunhos: GuiaView[]; faltando: TipoGuia[]; clientes: string[]; extra: boolean;
+  /** Botão visível. O componente fica montado enquanto o diálogo está aberto, para mostrar o resultado depois do envio. */
+  mostrar: boolean;
 }) {
   const [aberta, setAberta] = useState(false);
   const [resultado, setResultado] = useState<ResultadoEnvio | null>(null);
@@ -476,7 +478,10 @@ function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, ex
       setResultado(r);
     });
   const n = rascunhos.length;
-  const rotulo = extra ? (n === 1 ? "Enviar a guia nova" : `Enviar as ${n} guias novas`) : "Enviar guias ao cliente";
+  // Mês reaberto sem guia nova (as enviadas estão todas pagas): só conclui de novo, sem e-mail.
+  const soConcluir = n === 0;
+  const rotulo = soConcluir ? "Concluir mês" : extra ? (n === 1 ? "Enviar a guia nova" : `Enviar as ${n} guias novas`) : "Enviar guias ao cliente";
+  if (!mostrar && !aberta) return null;
   return (
     <Dialog
       open={aberta}
@@ -495,13 +500,32 @@ function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, ex
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{extra ? "Enviar guia nova" : `Enviar as guias de ${nomeCompetencia(competencia)}`}</DialogTitle>
+          <DialogTitle>
+            {soConcluir ? `Concluir ${nomeCompetencia(competencia)}` : extra ? "Enviar guia nova" : `Enviar as guias de ${nomeCompetencia(competencia)}`}
+          </DialogTitle>
           <DialogDescription>
-            {extra ? "O cliente recebe um e-mail só com esta guia." : "O mês fica concluído e o cliente passa a ver as guias no portal."}
+            {soConcluir
+              ? "Não há guia nova: as guias já enviadas continuam como estão. Nenhum e-mail sai."
+              : extra
+                ? "O cliente recebe um e-mail só com esta guia."
+                : "O mês fica concluído e o cliente passa a ver as guias no portal."}
           </DialogDescription>
         </DialogHeader>
         {resultado ? (
           <Resultado r={resultado} clientes={clientes} competencia={competencia} />
+        ) : soConcluir ? (
+          <>
+            <Erro>{erro}</Erro>
+            <DialogFooter>
+              <DialogClose render={<Button variant="outline" />} disabled={pendente}>
+                Cancelar
+              </DialogClose>
+              <Button onClick={enviar} disabled={pendente}>
+                <CircleCheck />
+                {pendente ? "Concluindo..." : "Concluir mês"}
+              </Button>
+            </DialogFooter>
+          </>
         ) : (
           <>
             <Erro>{erro}</Erro>
@@ -655,9 +679,15 @@ export function GuiasDoMes({ empresaId, competencia, hoje, status, esperadas, gu
             <Plus />
             Outra guia
           </GuiaDialog>
-          {rascunhos.length > 0 && (
-            <EnviarGuias empresaId={empresaId} competencia={competencia} rascunhos={rascunhos} faltando={faltando} clientes={clientes} extra={enviado} />
-          )}
+          <EnviarGuias
+            empresaId={empresaId}
+            competencia={competencia}
+            rascunhos={rascunhos}
+            faltando={faltando}
+            clientes={clientes}
+            extra={enviado}
+            mostrar={rascunhos.length > 0 || (!enviado && guias.some((g) => g.enviadoEm))}
+          />
         </div>
       )}
     </section>

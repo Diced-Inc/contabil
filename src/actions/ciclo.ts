@@ -149,7 +149,8 @@ export async function registrarEnvio(empresaId: string, dados: z.input<typeof re
   const { arquivos, contaBancariaId, observacao } = r.data;
   const competencia = competenciaAtual(hoje());
   const prefixo = pasta(empresaId, competencia);
-  if (arquivos.some((a) => !a.path.startsWith(prefixo) || a.path.includes(".."))) return { erro: "Arquivo fora da pasta da empresa." };
+  // guia-/das- são as guias do contador: o cliente não registra uma delas como documento seu.
+  if (arquivos.some((a) => !a.path.startsWith(prefixo) || a.path.includes("..") || /^(guia|das)-/.test(a.path.slice(prefixo.length)))) return { erro: "Arquivo fora da pasta da empresa." };
 
   const objetos = await objetosDocumentos(arquivos.map((a) => a.path));
   const faltando = arquivos.find((a) => !objetos.has(a.path));
@@ -321,7 +322,6 @@ export async function marcarProcessado(empresaId: string, documentoId: string, i
   return { ok: true };
 }
 
-const ENCERRADO = "O mês foi encerrado. Reabra para mexer nas guias.";
 const prefixoGuia = (empresaId: string, competencia: string) => `${pasta(empresaId, competencia)}guia-`;
 
 /** URL de upload de uma guia ({empresaId}/{AAAA-MM}/guia-{uuid}.pdf). */
@@ -412,8 +412,7 @@ export async function salvarGuia(
     if (erro) return { erro };
   } else if (!uuid.safeParse(alvo.guiaId).success) return { erro: "Guia não encontrada." };
 
-  const m = await mudarCiclo(empresaId, competencia, "processar", async (c, tx) => {
-    if (c.status === "encerrado") throw new TransicaoInvalida(ENCERRADO);
+  const m = await mudarCiclo(empresaId, competencia, "editar_guia", async (c, tx) => {
     if ("path" in alvo) {
       await tx.insert(guias).values({ ...r.data, cicloId: c.id, empresaId, path: alvo.path }).onConflictDoNothing();
     } else {
@@ -436,8 +435,7 @@ export async function removerGuia(empresaId: string, guiaId: string): Promise<Re
   await requireUser();
   const g = await guiaDa(empresaId, guiaId);
   if (!g) return { erro: "Guia não encontrada." };
-  const m = await mudarCiclo(empresaId, g.competencia, "processar", async (c, tx) => {
-    if (c.status === "encerrado") throw new TransicaoInvalida(ENCERRADO);
+  const m = await mudarCiclo(empresaId, g.competencia, "editar_guia", async (c, tx) => {
     const [x] = await tx
       .delete(guias)
       .where(and(eq(guias.id, guiaId), eq(guias.cicloId, c.id), isNull(guias.enviadoEm)))

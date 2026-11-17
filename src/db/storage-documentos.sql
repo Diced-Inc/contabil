@@ -15,9 +15,13 @@ drop policy if exists "documentos: enviar" on storage.objects;
 drop policy if exists "documentos: apagar" on storage.objects;
 
 -- CASE garante a ordem: o cast para uuid só roda para objetos do bucket com pasta em formato de uuid.
+-- Guias (guia-*.pdf; das-*.pdf é o legado) só o contador lê direto: o cliente baixa pela URL assinada do servidor
+-- (service role), que só sai para guia já enviada. Assim o rascunho não vaza pelo Storage. (Reaplicado em 16/11/2026.)
 create policy "documentos: ler" on storage.objects for select to authenticated
   using (case when bucket_id = 'documentos' and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    then public.pode_acessar_empresa((storage.foldername(name))[1]::uuid) else false end);
+    then public.pode_acessar_empresa((storage.foldername(name))[1]::uuid)
+      and ((select public.eh_contador()) or storage.filename(name) !~ '^(guia|das)-')
+    else false end);
 create policy "documentos: enviar" on storage.objects for insert to authenticated
   with check (case when bucket_id = 'documentos' and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     then public.pode_acessar_empresa((storage.foldername(name))[1]::uuid) else false end);

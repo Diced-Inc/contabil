@@ -63,6 +63,12 @@ describe("proximoStatus", () => {
     expect(proximoStatus("das_enviado", "concluir")).toBe("das_enviado");
     expect(proximoStatus("das_pago", "concluir")).toBe("das_enviado");
   });
+  it("mexer nas guias não muda o status; mês encerrado trava", () => {
+    for (const s of ["aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago"] as const) {
+      expect(proximoStatus(s, "editar_guia")).toBe(s);
+    }
+    expect(() => proximoStatus("encerrado", "editar_guia")).toThrow(TransicaoInvalida);
+  });
   it("transições inválidas lançam", () => {
     expect(() => proximoStatus("das_enviado", "extrato_enviado")).toThrow(TransicaoInvalida);
     expect(() => proximoStatus("em_processamento", "pagar")).toThrow(TransicaoInvalida);
