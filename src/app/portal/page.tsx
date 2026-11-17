@@ -7,7 +7,7 @@ import { Avatar } from "@/components/avatar";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { fmtCnpj } from "@/lib/format";
 import { logoDaEmpresa, papelDe, perfilDoUsuario, requireSessao, requireUser } from "@/supabase/server";
-import { empresasDoCliente } from "./dados";
+import { avatarDoCliente, empresasDoCliente } from "./dados";
 import { Rodape, Topo } from "./topo";
 
 async function Conteudo() {
@@ -21,7 +21,7 @@ async function Conteudo() {
 
   return (
     <>
-      <Topo usuario={{ ...perfil, email: user.email ?? "" }} />
+      <Topo usuario={{ ...perfil, email: user.email ?? "", ...avatarDoCliente(papel, logos.find(Boolean) ?? null, perfil.avatarUrl) }} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
         <PageHeader title="Suas empresas" description="Escolha a empresa para enviar documentos e acompanhar o mês." />
         {lista.length === 0 ? (

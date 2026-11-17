@@ -14,7 +14,7 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Bruno Contábil",
+  title: "DB Contador",
   description: "Contabilidade para várias empresas: conciliação bancária, partidas dobradas, fechamento e relatórios contábeis.",
 };
 

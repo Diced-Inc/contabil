@@ -11,7 +11,7 @@ import { requireUser } from "@/supabase/server";
 import { carregarEmails } from "./dados";
 import { AtualizarSozinho, DestinosCard, EnderecosCard, GuiaGmail, NovoEnderecoDialog } from "./emails-ui";
 
-export const metadata: Metadata = { title: "E-mails do escritório | Bruno Contábil" };
+export const metadata: Metadata = { title: "E-mails do escritório | DB Contador" };
 
 const INTRO = "Endereços com o domínio do escritório. Tudo que chega neles cai no e-mail que você escolher.";
 

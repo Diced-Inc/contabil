@@ -1,4 +1,4 @@
-# Bruno Contábil
+# DB Contador
 
 Sistema contábil web para um contador que atende várias empresas. Ele importa extratos OFX, sugere a classificação de cada transação (regras do contador e, quando nenhuma regra casa, IA). O contador revisa e aprova, e o sistema gera os lançamentos em partidas dobradas. Depois disso, fecha os meses, apura o exercício e emite Balanço, DRE, Balancete, Diário e Razão.
 
@@ -83,7 +83,7 @@ Variáveis (Vercel → Settings → Environment Variables):
 | Variável | Para quê |
 | --- | --- |
 | `RESEND_API_KEY` | Envio pelo [Resend](https://resend.com). Sem ela, os avisos ficam registrados como "Não configurado". |
-| `EMAIL_FROM` | Remetente, ex.: `Bruno Contábil <avisos@seudominio.com.br>`. O domínio precisa estar verificado no Resend (Domains → Add domain, registros SPF/DKIM no DNS). |
+| `EMAIL_FROM` | Remetente, ex.: `DB Contador <avisos@dbcontador.com.br>`. O domínio precisa estar verificado no Resend (Domains → Add domain, registros SPF/DKIM no DNS). |
 | `EMAIL_REPLY_TO` | Endereço de resposta (Reply-To), ex.: `contato@dbcontador.com.br`. Quando o cliente responde um aviso, a resposta vai para cá. Vazio = sem Reply-To. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Convites e links de recuperação de senha gerados pelo servidor. |
 | `CRON_SECRET` | A Vercel envia `Authorization: Bearer <CRON_SECRET>`; sem ela a rota recusa. |

@@ -17,7 +17,7 @@ import {
 } from "@/lib/ciclo";
 import { fmtCnpj, fmtData, fmtValor, hoje, PORTES, REGIMES } from "@/lib/format";
 import { logoDaEmpresa, perfilDoUsuario } from "@/supabase/server";
-import { getEmpresaPortal } from "../dados";
+import { avatarDoCliente, getEmpresaPortal } from "../dados";
 import { Rodape, Topo } from "../topo";
 import { EnvioExtratos, JaEnviei, JaPaguei } from "./ciclo-cliente";
 
@@ -69,7 +69,7 @@ function Progresso({ status }: { status: StatusCiclo }) {
 async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
   await connection();
   const { empresaId } = await params;
-  const { user, empresa } = await getEmpresaPortal(empresaId);
+  const { user, papel, empresa } = await getEmpresaPortal(empresaId);
   const hj = hoje();
   const competencia = competenciaAtual(hj);
   const ciclo = await garantirCiclo(empresaId, competencia);
@@ -111,7 +111,7 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
 
   return (
     <>
-      <Topo empresa={{ id: empresa.id, nome: empresa.razaoSocial, logoUrl }} usuario={{ ...perfil, email: user.email ?? "" }} />
+      <Topo empresa={{ id: empresa.id, nome: empresa.razaoSocial, logoUrl }} usuario={{ ...perfil, email: user.email ?? "", ...avatarDoCliente(papel, logoUrl, perfil.avatarUrl) }} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
         <section className="relative overflow-hidden rounded-2xl bg-primary px-6 py-7 text-primary-foreground shadow-card sm:px-8">
           <div

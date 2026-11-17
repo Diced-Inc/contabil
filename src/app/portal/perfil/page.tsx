@@ -5,15 +5,20 @@ import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PerfilCard } from "@/app/e/[id]/configuracoes/perfil-card";
 import { SenhaCard } from "@/app/e/[id]/configuracoes/senha-card";
-import { papelDe, perfilDoUsuario, requireSessao, requireUser } from "@/supabase/server";
+import { logoDaEmpresa, papelDe, perfilDoUsuario, requireSessao, requireUser } from "@/supabase/server";
+import { avatarDoCliente, empresasDoCliente } from "../dados";
 import { Rodape, Topo } from "../topo";
 
 async function Barra() {
   await connection();
   const user = await requireSessao();
-  if ((await papelDe(user.id, user.email)) === null) await requireUser(); // sem papel sai
-  const perfil = await perfilDoUsuario(user);
-  return <Topo usuario={{ ...perfil, email: user.email ?? "" }} />;
+  const papel = await papelDe(user.id, user.email);
+  if (papel === null) await requireUser(); // sem papel sai
+  const [perfil, logo] = await Promise.all([
+    perfilDoUsuario(user),
+    papel === "cliente" ? empresasDoCliente(user.id).then((l) => logoDaEmpresa(l.find((e) => e.logoPath) ?? { logoPath: null })) : null,
+  ]);
+  return <Topo usuario={{ ...perfil, email: user.email ?? "", ...avatarDoCliente(papel, logo, perfil.avatarUrl) }} />;
 }
 
 export default function PerfilPage() {

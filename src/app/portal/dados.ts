@@ -6,10 +6,10 @@ import { requireMembro } from "@/supabase/server";
 
 /** Empresa do portal: exige contador ou membro dela. */
 export async function getEmpresaPortal(empresaId: string) {
-  const { user } = await requireMembro(empresaId);
+  const { user, papel } = await requireMembro(empresaId);
   const [empresa] = await db.select().from(empresas).where(eq(empresas.id, empresaId));
   if (!empresa) notFound();
-  return { user, empresa };
+  return { user, papel, empresa };
 }
 
 export function empresasDoCliente(userId: string) {
@@ -19,4 +19,10 @@ export function empresasDoCliente(userId: string) {
     .innerJoin(empresas, eq(empresas.id, membros.empresaId))
     .where(eq(membros.userId, userId))
     .orderBy(asc(empresas.razaoSocial));
+}
+
+/** Avatar do menu no portal: para o cliente, o logo da empresa (quando há); senão a foto dele (ou a inicial). */
+export function avatarDoCliente(papel: string | null, logoUrl: string | null, fotoUrl: string | null) {
+  const logo = papel === "cliente" && !!logoUrl;
+  return { avatarUrl: logo ? logoUrl : fotoUrl, avatarLogo: logo };
 }

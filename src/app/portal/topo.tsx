@@ -6,7 +6,7 @@ import { MenuUsuario } from "./menu-usuario";
 /** Barra do portal do cliente: marca, empresa atual (quando há) e menu da conta. */
 export function Topo({ empresa, usuario }: {
   empresa?: { id: string; nome: string; logoUrl: string | null };
-  usuario: { nome: string; email: string; avatarUrl: string | null };
+  usuario: { nome: string; email: string; avatarUrl: string | null; avatarLogo?: boolean };
 }) {
   return (
     <header className="sticky top-0 z-30 border-b bg-card/90 backdrop-blur supports-backdrop-filter:bg-card/75">
@@ -34,7 +34,7 @@ export function Topo({ empresa, usuario }: {
 export function Rodape() {
   return (
     <footer className="mx-auto w-full max-w-5xl px-6 pt-4 pb-8 text-xs text-muted-foreground">
-      Portal do cliente · Bruno Contábil. Dúvidas? Fale com seu contador.
+      Portal do cliente · DB Contador. Dúvidas? Fale com seu contador.
     </footer>
   );
 }

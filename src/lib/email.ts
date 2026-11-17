@@ -37,8 +37,8 @@ function layout({ titulo, paragrafos, botao, link, rodape = RODAPE_CLIENTE }: {
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f4f6f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1c2321">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px">
-<tr><td style="padding:0 4px 20px;font-size:17px"><span style="display:inline-block;width:28px;height:28px;border-radius:7px;background:${MARCA};color:#fff;font-weight:700;text-align:center;line-height:28px;vertical-align:middle">B</span>
-<span style="vertical-align:middle;margin-left:8px">Bruno <b>Contábil</b></span></td></tr>
+<tr><td style="padding:0 4px 20px;font-size:17px"><span style="display:inline-block;width:28px;height:28px;border-radius:7px;background:${MARCA};color:#fff;font-weight:700;text-align:center;line-height:28px;vertical-align:middle;font-size:13px">DB</span>
+<span style="vertical-align:middle;margin-left:8px"><b>DB</b> Contador</span></td></tr>
 <tr><td style="background:#fff;border:1px solid #e3e8e6;border-radius:16px;padding:32px">
 <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3">${esc(titulo)}</h1>
 ${paragrafos.map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#3d4744">${p}</p>`).join("")}
