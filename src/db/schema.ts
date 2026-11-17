@@ -49,7 +49,7 @@ export const empresas = pgTable("empresas", {
   contadorCrc: text("contador_crc"),
   logoPath: text("logo_path"),
   // Avisos por e-mail ao cliente (cron diário): dia do pedido do extrato, lembretes (dias depois do pedido),
-  // lembretes do DAS (dias depois do envio da guia e dias antes do vencimento).
+  // lembretes das guias (dias depois do envio de cada guia e dias antes do vencimento mais próximo).
   avisosAtivos: boolean("avisos_ativos").notNull().default(false),
   diaPedidoExtrato: integer("dia_pedido_extrato").notNull().default(1),
   lembretesExtratoDias: integer("lembretes_extrato_dias").array().notNull().default(sql`'{4,9}'`),
@@ -232,7 +232,7 @@ export const membros = pgTable("membros", {
   aceitoEm: timestamp("aceito_em", { withTimezone: true }),
 }, (t) => [unique().on(t.empresaId, t.email)]);
 
-/** Ciclo mensal com o cliente: extratos da competência → processamento → DAS. Criado sob demanda. */
+/** Ciclo mensal com o cliente: extratos da competência → processamento → guias. Criado sob demanda. */
 export const ciclosMensais = pgTable("ciclos_mensais", {
   id: id(),
   empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
@@ -249,7 +249,7 @@ export const ciclosMensais = pgTable("ciclos_mensais", {
   dasPagoEm: timestamp("das_pago_em", { withTimezone: true }),
   dasPagoPor: uuid("das_pago_por"),
   observacao: text("observacao"),
-  /** Encerrado sem DAS pelo contador; a observação é interna (o cliente não vê). */
+  /** Encerrado sem guias pelo contador; a observação é interna (o cliente não vê). */
   encerradoEm: timestamp("encerrado_em", { withTimezone: true }),
   encerradoMotivo: text("encerrado_motivo").$type<MotivoEncerramento>(),
   encerradoObs: text("encerrado_obs"),

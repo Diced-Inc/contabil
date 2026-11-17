@@ -15,7 +15,7 @@ import { getEmpresa } from "../empresa";
 import { ConvidarClienteDialog, ReenviarConviteDialog, RemoverClienteDialog } from "./clientes-dialogs";
 
 const TZ = "America/Sao_Paulo";
-const DESCRICAO = "Quem da empresa acessa o portal: por lá o cliente envia os extratos do mês e recebe a guia do DAS.";
+const DESCRICAO = "Quem da empresa acessa o portal: por lá o cliente envia os extratos do mês e recebe as guias de imposto.";
 const STATUS_AVISO = {
   enviado: { rotulo: "Enviado", badge: "success" },
   erro: { rotulo: "Erro", badge: "danger" },
@@ -115,7 +115,7 @@ async function Clientes({ params }: PageProps<"/e/[id]/clientes">) {
 
       <div className="mt-8 mb-3">
         <h2 className="text-sm font-semibold text-foreground">Avisos enviados</h2>
-        <p className="text-sm text-muted-foreground">E-mails ao cliente (convites, pedidos de extrato, lembretes, DAS) e ao contador, do mais recente para o mais antigo.</p>
+        <p className="text-sm text-muted-foreground">E-mails ao cliente (convites, pedidos de extrato, lembretes, guias) e ao contador, do mais recente para o mais antigo.</p>
       </div>
       {avisos.length === 0 ? (
         <p className="rounded-xl border border-dashed bg-card px-5 py-6 text-sm text-muted-foreground">Nenhum e-mail enviado ainda para esta empresa.</p>

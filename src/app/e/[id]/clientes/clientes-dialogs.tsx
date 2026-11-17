@@ -97,7 +97,7 @@ function ConviteForm({ empresaId, empresa }: { empresaId: string; empresa: strin
             <FileUp className="size-4 shrink-0 text-primary" /> Pelo portal ele envia os extratos do mês.
           </li>
           <li className="flex items-center gap-2">
-            <Receipt className="size-4 shrink-0 text-primary" /> E recebe a guia do DAS quando você concluir o mês.
+            <Receipt className="size-4 shrink-0 text-primary" /> E recebe as guias de imposto quando você concluir o mês.
           </li>
         </ul>
       </div>
@@ -250,7 +250,7 @@ export function RemoverClienteDialog({ empresaId, membroId, quem, empresa, ativo
           ) : (
             <li>O convite pendente deixa de valer para esta empresa.</li>
           )}
-          <li>Para de receber os e-mails de extrato e do DAS.</li>
+          <li>Para de receber os e-mails de extrato e das guias.</li>
           <li>Os arquivos que ele já enviou continuam em Documentos.</li>
           <li>Dá para convidar de novo depois.</li>
         </ul>

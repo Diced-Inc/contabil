@@ -517,7 +517,7 @@ const encerramentoSchema = z.object({
   observacao: z.string().trim().max(1000).transform((s) => s || null),
 });
 
-/** "Encerrar mês sem DAS": tira o mês das pendências e para os lembretes. Nenhum e-mail sai. */
+/** "Encerrar mês sem guias": tira o mês das pendências e para os lembretes. Nenhum e-mail sai. */
 export async function encerrarCiclo(empresaId: string, competencia: string, dados: z.input<typeof encerramentoSchema>): Promise<Resultado> {
   await requireUser();
   if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };

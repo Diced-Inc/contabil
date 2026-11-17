@@ -34,7 +34,7 @@ const ultimoDiaDoMes = (d: string) => new Date(Date.UTC(Number(d.slice(0, 4)), N
 export const diasEntre = (de: string, ate: string) => Math.round((Date.parse(ate) - Date.parse(de)) / 86_400_000);
 
 /**
- * Avisos que saem hoje ("YYYY-MM-DD" em São Paulo). `ciclos` traz o ciclo da competência atual (se existir) e os ciclos com DAS em aberto.
+ * Avisos que saem hoje ("YYYY-MM-DD" em São Paulo). `ciclos` traz o ciclo da competência atual (se existir) e os ciclos com guias em aberto (cada um com as guias enviadas).
  * Dia do cron perdido não é recuperado, exceto o pedido: se passou do dia e ninguém pediu ainda nesta competência, pede hoje.
  */
 export function avisosDoDia({ hoje, config, ciclos, membrosAtivos }: {
