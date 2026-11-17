@@ -49,9 +49,9 @@ export function VerEmail({ empresaId, tipo, dados, para, rotulo = "Ver e-mail", 
             {previa && "assunto" in previa ? previa.assunto : <span className="inline-block h-4 w-64 animate-pulse rounded bg-muted align-middle" />}
           </dd>
         </dl>
-        <div className="min-h-0 flex-1 bg-[#f4f6f5]">
+        <div className="min-h-0 flex-1 bg-muted">
           {previa === null ? (
-            <div className="m-6 h-96 animate-pulse rounded-2xl bg-white/70" aria-busy="true" aria-label="Carregando prévia" />
+            <div className="m-6 h-96 animate-pulse rounded-lg bg-card/70" aria-busy="true" aria-label="Carregando prévia" />
           ) : "erro" in previa ? (
             <p className="m-6 flex items-center gap-2 text-sm text-danger">
               <CircleAlert className="size-4" />

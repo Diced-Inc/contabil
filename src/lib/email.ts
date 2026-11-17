@@ -31,7 +31,7 @@ const CONTATO = "contato@dbcontador.com.br";
 const LOGO_PNG = "https://app.dbcontador.com.br/logo.png";
 const FONTE = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 const C = {
-  marca: "#0f6e56", texto: "#16201d", suave: "#4f5b58", fraco: "#76817e", fundo: "#f2f5f4", borda: "#e1e7e5", caixa: "#f1f7f4", caixaBorda: "#d3e6de",
+  marca: "#1f4fd8", texto: "#0f1a33", suave: "#4a5468", fraco: "#6b7488", fundo: "#f3f5f9", borda: "#e3e7ee", caixa: "#f4f7fe", caixaBorda: "#d6e0fb",
 };
 
 const RODAPE_CLIENTE = "Você recebe este e-mail porque seu contador liberou seu acesso ao portal da empresa.";
@@ -69,14 +69,14 @@ function blocoDestaque({ grande, lado, linhas = [] }: Destaque) {
       ),
     )
     .join("");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="dbc-caixa" style="margin:6px 0 22px;background:${C.caixa};border:1px solid ${C.caixaBorda};border-left:4px solid ${C.marca};border-radius:12px;border-collapse:separate">${topo}${meio}${resto}</table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="dbc-caixa" style="margin:6px 0 22px;background:${C.caixa};border:1px solid ${C.caixaBorda};border-left:4px solid ${C.marca};border-radius:6px;border-collapse:separate">${topo}${meio}${resto}</table>`;
 }
 
 /** Botão à prova de cliente: a célula tem a cor (Outlook), o link tem o padding (área de clique). */
 function botao(rotulo: string, href: string) {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px"><tr>
-<td align="center" bgcolor="${C.marca}" style="border-radius:10px;background:${C.marca}">
-<a href="${href}" target="_blank" style="display:inline-block;padding:13px 26px;font-family:${FONTE};font-size:15px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px">${esc(rotulo)}</a>
+<td align="center" bgcolor="${C.marca}" style="border-radius:6px;background:${C.marca}">
+<a href="${href}" target="_blank" style="display:inline-block;padding:13px 26px;font-family:${FONTE};font-size:15px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px">${esc(rotulo)}</a>
 </td></tr></table>`;
 }
 
@@ -102,9 +102,9 @@ function layout({ empresa, previa, titulo, antes, destaque, depois = [], botao: 
 <style>
 :root{color-scheme:light dark;supported-color-schemes:light dark}
 @media (prefers-color-scheme:dark){
-.dbc-fundo{background:#0f1413!important}.dbc-cartao{background:#182120!important;border-color:#2a3533!important}
-.dbc-texto{color:#eef3f1!important}.dbc-suave{color:#b9c4c1!important}.dbc-fraco{color:#8f9b98!important}
-.dbc-caixa{background:#13302a!important;border-color:#24524a!important}.dbc-link{color:#5fd0ae!important}
+.dbc-fundo{background:#0b1220!important}.dbc-cartao{background:#131c2e!important;border-color:#26324a!important}
+.dbc-texto{color:#eef2f8!important}.dbc-suave{color:#b6c0d4!important}.dbc-fraco{color:#8b96ad!important}
+.dbc-caixa{background:#15234a!important;border-color:#2a3f7a!important}.dbc-link{color:#8aa8ff!important}
 }
 @media (max-width:600px){.dbc-cartao{padding:26px 22px!important}.dbc-externo{padding:20px 12px!important}}
 </style></head>
@@ -115,11 +115,11 @@ function layout({ empresa, previa, titulo, antes, destaque, depois = [], botao: 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
 <tr><td style="padding:0 4px 18px;font-family:${FONTE}">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td style="vertical-align:middle;padding-right:12px"><img src="${LOGO_PNG}" width="36" height="36" alt="DB" style="display:block;border:0;border-radius:9px"></td>
+<td style="vertical-align:middle;padding-right:12px"><img src="${LOGO_PNG}" width="36" height="36" alt="DB" style="display:block;border:0"></td>
 <td style="vertical-align:middle;font-size:14px;line-height:20px">${contexto}</td>
 </tr></table>
 </td></tr>
-<tr><td class="dbc-cartao" style="background:#ffffff;border:1px solid ${C.borda};border-radius:16px;padding:34px 36px;font-family:${FONTE}">
+<tr><td class="dbc-cartao" style="background:#ffffff;border:1px solid ${C.borda};border-radius:8px;padding:34px 36px;font-family:${FONTE}">
 <h1 class="dbc-texto" style="margin:0 0 14px;font-size:23px;line-height:30px;font-weight:700;color:${C.texto};letter-spacing:-.01em">${esc(titulo)}</h1>
 ${antes.map(paragrafo).join("\n")}
 ${destaque ? blocoDestaque(destaque) : ""}
