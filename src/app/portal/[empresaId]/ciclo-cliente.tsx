@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, CloudUpload, FilePlus2, FileText, MessageCircle, Send, X } from "lucide-react";
 import { cn } from "cn";
 import { toast } from "sonner";
-import { avisarExtratoPorFora, marcarDasPago, prepararEnvio, registrarEnvio } from "@/actions/ciclo";
+import { avisarExtratoPorFora, marcarGuiaPaga, prepararEnvio, registrarEnvio } from "@/actions/ciclo";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -159,27 +159,27 @@ export function EnvioExtratos({ empresaId, contas, onEnviado }: PropsEnvio & { o
   );
 }
 
-/** "Já paguei": confirma e avisa o contador. */
-export function JaPaguei({ empresaId, competencia }: { empresaId: string; competencia: string }) {
+/** "Já paguei" de uma guia: confirma e avisa o contador. */
+export function JaPaguei({ empresaId, guiaId, nome, size = "default" }: { empresaId: string; guiaId: string; nome: string; size?: "default" | "sm" }) {
   const [aberta, setAberta] = useState(false);
   const [pendente, iniciar] = useTransition();
   const confirmar = () =>
     iniciar(async () => {
-      const r = await marcarDasPago(empresaId, competencia);
+      const r = await marcarGuiaPaga(empresaId, guiaId);
       if ("erro" in r) return void toast.error(r.erro);
-      toast.success("Pagamento registrado. Obrigado!");
+      toast.success(r.todasPagas ? "Pagamento registrado. Todas as guias do mês estão pagas. Obrigado!" : "Pagamento registrado. Obrigado!");
       setAberta(false);
     });
   return (
-    <Dialog open={aberta} onOpenChange={setAberta}>
-      <DialogTrigger render={<Button />}>
+    <Dialog open={aberta} onOpenChange={(a) => !pendente && setAberta(a)}>
+      <DialogTrigger render={<Button size={size} />}>
         <CheckCircle2 />
         Já paguei
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Confirmar o pagamento do DAS?</DialogTitle>
-          <DialogDescription>O contador vai ver que a guia deste mês foi paga. Confirme só depois de pagar.</DialogDescription>
+          <DialogTitle>Confirmar o pagamento do {nome}?</DialogTitle>
+          <DialogDescription>O contador vai ver que esta guia foi paga. Confirme só depois de pagar.</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Ainda não</DialogClose>
