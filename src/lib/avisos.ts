@@ -7,6 +7,8 @@ export type ConfigAvisos = {
   avisosAtivos: boolean;
   diaPedidoExtrato: number;
   lembretesExtratoDias: number[];
+  /** Dias depois do envio da guia (das_enviado_em) para lembrar, se não foi paga. */
+  lembretesDasAposEnvio: number[];
   diasAntesVencimentoDas: number[];
 };
 export type CicloAviso = {
@@ -14,12 +16,18 @@ export type CicloAviso = {
   status: StatusCiclo;
   dasVencimento: string | null;
   extratoSolicitadoEm: Date | string | null;
+  dasEnviadoEm: Date | string | null;
 };
 export type Aviso = { tipo: TipoAviso; competencia: string; dataRef: string };
 
 export const DIA_PEDIDO = { min: 1, max: 28 };
 export const LEMBRETE_EXTRATO = { min: 1, max: 27 };
 export const ANTES_DAS = { min: 0, max: 15 };
+export const APOS_ENVIO_DAS = { min: 1, max: 15 };
+
+const fmtDiaSP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
+/** Dia ("YYYY-MM-DD") em São Paulo de um instante. */
+const diaEmSP = (d: Date | string) => fmtDiaSP.format(new Date(d));
 
 const ultimoDiaDoMes = (d: string) => new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate();
 export const diasEntre = (de: string, ate: string) => Math.round((Date.parse(ate) - Date.parse(de)) / 86_400_000);
@@ -47,10 +55,13 @@ export function avisosDoDia({ hoje, config, ciclos, membrosAtivos }: {
     }
   }
 
+  // DAS em aberto: N dias depois do envio da guia e N dias antes do vencimento. Vencido não lembra; pago/encerrado para.
   for (const c of ciclos) {
     if (c.status !== "das_enviado" || !c.dasVencimento) continue;
     const faltam = diasEntre(hoje, c.dasVencimento);
-    if (config.diasAntesVencimentoDas.includes(faltam) || faltam === -1) {
+    const desdeEnvio = c.dasEnviadoEm ? diasEntre(diaEmSP(c.dasEnviadoEm), hoje) : null;
+    const aposEnvio = desdeEnvio !== null && faltam > 0 && config.lembretesDasAposEnvio.includes(desdeEnvio);
+    if (faltam >= 0 && (aposEnvio || config.diasAntesVencimentoDas.includes(faltam))) {
       avisos.push({ tipo: "lembrete_das", competencia: c.competencia, dataRef: hoje });
     }
   }
@@ -63,10 +74,12 @@ export const listaPtBR = (itens: (string | number)[]) =>
 
 const ordenar = (xs: number[]) => [...new Set(xs)].sort((a, b) => a - b);
 
-/** Padrão das colunas em empresas (schema): dia 1, lembretes +4 e +9, DAS 3 dias antes e no dia. */
-export const PADRAO_AVISOS: Omit<ConfigAvisos, "avisosAtivos"> = { diaPedidoExtrato: 1, lembretesExtratoDias: [4, 9], diasAntesVencimentoDas: [3, 0] };
+/** Padrão das colunas em empresas (schema): dia 1, lembretes +4 e +9; DAS 3 dias depois do envio e 3 dias antes do vencimento. */
+export const PADRAO_AVISOS: Omit<ConfigAvisos, "avisosAtivos"> = {
+  diaPedidoExtrato: 1, lembretesExtratoDias: [4, 9], lembretesDasAposEnvio: [3], diasAntesVencimentoDas: [3],
+};
 
-export type EtapaAviso = { quando: string; texto: string; tipo: TipoAviso };
+export type EtapaAviso = { quando: string; texto: string; tipo: TipoAviso | "das_disponivel" };
 
 /** Linha do tempo do mês em português, para o contador conferir antes de ligar. */
 export function etapasAvisos(config: Omit<ConfigAvisos, "avisosAtivos">, hoje: string): EtapaAviso[] {
@@ -77,14 +90,21 @@ export function etapasAvisos(config: Omit<ConfigAvisos, "avisosAtivos">, hoje: s
   if (lembretes.length) {
     etapas.push({ quando: `${lembretes.length === 1 ? "Dia" : "Dias"} ${listaPtBR(lembretes)}`, texto: "lembramos se ainda não enviou", tipo: "lembrete_extrato" });
   }
-  const antes = ordenar(config.diasAntesVencimentoDas)
-    .reverse()
-    .map((d) => (d === 0 ? "no dia do vencimento" : d === 1 ? "1 dia antes" : `${d} dias antes`));
-  etapas.push(
-    antes.length
-      ? { quando: listaPtBR(antes).replace(/^./, (l) => l.toUpperCase()), texto: "lembramos o DAS (e no dia seguinte, se não foi pago)", tipo: "lembrete_das" }
-      : { quando: "Dia seguinte ao vencimento", texto: "avisamos se o DAS não foi pago", tipo: "lembrete_das" },
-  );
+  etapas.push({ quando: "Ao anexar a guia", texto: "o cliente recebe o DAS por e-mail", tipo: "das_disponivel" });
+  const apos = ordenar(config.lembretesDasAposEnvio);
+  if (apos.length) {
+    etapas.push({ quando: `${listaPtBR(apos)} ${apos.at(-1) === 1 ? "dia" : "dias"} depois`, texto: "se não marcou como pago, lembramos", tipo: "lembrete_das" });
+  }
+  const antes = ordenar(config.diasAntesVencimentoDas).reverse();
+  if (antes.length) {
+    const quando = antes.map((d) => (d === 0 ? "no dia do vencimento" : d === 1 ? "1 dia antes" : `${d} dias antes`));
+    const ultimo = antes.length === 1 && antes[0] > 0;
+    etapas.push({
+      quando: `${listaPtBR(quando).replace(/^./, (l) => l.toUpperCase())}${antes.every((d) => d > 0) ? " do vencimento" : ""}`,
+      texto: ultimo ? "último lembrete, se ainda não pagou" : "lembramos, se ainda não pagou",
+      tipo: "lembrete_das",
+    });
+  }
   return etapas;
 }
 

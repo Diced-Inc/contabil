@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { avisosDoDia, etapasAvisos, listaPtBR, proximoPedido, type CicloAviso, type ConfigAvisos } from "./avisos";
 
-const config: ConfigAvisos = { avisosAtivos: true, diaPedidoExtrato: 1, lembretesExtratoDias: [4, 9], diasAntesVencimentoDas: [3, 0] };
+const config: ConfigAvisos = { avisosAtivos: true, diaPedidoExtrato: 1, lembretesExtratoDias: [4, 9], lembretesDasAposEnvio: [3], diasAntesVencimentoDas: [3] };
 const outubro = (c: Partial<CicloAviso> = {}): CicloAviso => ({
-  competencia: "2026-10-01", status: "aguardando_extrato", dasVencimento: null, extratoSolicitadoEm: null, ...c,
+  competencia: "2026-10-01", status: "aguardando_extrato", dasVencimento: null, extratoSolicitadoEm: null, dasEnviadoEm: null, ...c,
 });
 const pedido = new Date("2026-11-01T11:00:00Z");
 const rodar = (hoje: string, ciclos: CicloAviso[], cfg: Partial<ConfigAvisos> = {}, membrosAtivos = 1) =>
@@ -61,26 +61,41 @@ describe("avisosDoDia: lembretes de extrato", () => {
 });
 
 describe("avisosDoDia: DAS", () => {
+  // Guia enviada em 10/11 às 15h em São Paulo (18h UTC), vence 20/11.
+  const enviado = new Date("2026-11-10T18:00:00Z");
   const das = (vencimento: string, c: Partial<CicloAviso> = {}) =>
-    outubro({ status: "das_enviado", dasVencimento: vencimento, extratoSolicitadoEm: pedido, ...c });
-  it("3 dias antes e no dia do vencimento", () => {
-    expect(rodar("2026-11-17", [das("2026-11-20")])).toEqual(["lembrete_das 2026-10-01"]);
-    expect(rodar("2026-11-20", [das("2026-11-20")])).toEqual(["lembrete_das 2026-10-01"]);
-    expect(rodar("2026-11-18", [das("2026-11-20")])).toEqual([]);
+    outubro({ status: "das_enviado", dasVencimento: vencimento, extratoSolicitadoEm: pedido, dasEnviadoEm: enviado, ...c });
+  it("3 dias depois do envio e 3 dias antes do vencimento, nada mais", () => {
+    const dias = ["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22"];
+    expect(dias.filter((d) => rodar(d, [das("2026-11-20")]).length)).toEqual(["2026-11-13", "2026-11-17"]);
   });
-  it("um aviso de vencido no dia seguinte, e só um", () => {
-    expect(rodar("2026-11-21", [das("2026-11-20")])).toEqual(["lembrete_das 2026-10-01"]);
-    expect(rodar("2026-11-22", [das("2026-11-20")])).toEqual([]);
+  it("dias depois do envio contam no fuso de São Paulo", () => {
+    const tarde = das("2026-11-30", { dasEnviadoEm: new Date("2026-11-11T01:30:00Z") }); // 10/11 22h30 em SP
+    expect(rodar("2026-11-13", [tarde])).toEqual(["lembrete_das 2026-10-01"]);
+    expect(rodar("2026-11-14", [tarde])).toEqual([]);
+  });
+  it("lista configurável: 3 e 5 dias depois", () => {
+    expect(rodar("2026-11-15", [das("2026-11-30")], { lembretesDasAposEnvio: [3, 5] })).toEqual(["lembrete_das 2026-10-01"]);
+  });
+  it("mesmo dia nas duas regras: um aviso só", () => {
+    expect(rodar("2026-11-13", [das("2026-11-16")])).toEqual(["lembrete_das 2026-10-01"]);
+  });
+  it("sem lembrete no dia do vencimento nem depois de vencido", () => {
+    expect(rodar("2026-11-20", [das("2026-11-20")])).toEqual([]);
+    expect(rodar("2026-11-21", [das("2026-11-20")])).toEqual([]);
+    expect(rodar("2026-11-13", [das("2026-11-12")])).toEqual([]); // depois do envio, mas já vencido
   });
   it("vale para competências antigas e atravessa o mês", () => {
-    const set = das("2026-11-02", { competencia: "2026-09-01" });
+    const set = das("2026-11-02", { competencia: "2026-09-01", dasEnviadoEm: new Date("2026-10-20T12:00:00Z") });
     expect(rodar("2026-10-30", [set])).toEqual(["lembrete_das 2026-09-01"]);
   });
-  it("DAS pago não lembra", () => {
-    expect(rodar("2026-11-20", [das("2026-11-20", { status: "das_pago" })])).toEqual([]);
+  it("DAS pago ou mês encerrado não lembra", () => {
+    expect(rodar("2026-11-13", [das("2026-11-20", { status: "das_pago" })])).toEqual([]);
+    expect(rodar("2026-11-17", [das("2026-11-20", { status: "das_pago" })])).toEqual([]);
+    expect(rodar("2026-11-13", [das("2026-11-20", { status: "encerrado" })])).toEqual([]);
   });
   it("pedido do mês e DAS do mês anterior no mesmo dia", () => {
-    expect(rodar("2026-11-01", [das("2026-11-01", { competencia: "2026-09-01" })])).toEqual([
+    expect(rodar("2026-11-01", [das("2026-11-04", { competencia: "2026-09-01" })])).toEqual([
       "pedido_extrato 2026-10-01",
       "lembrete_das 2026-09-01",
     ]);
@@ -104,13 +119,12 @@ describe("textos", () => {
     expect(etapasAvisos(config, "2026-11-13").map((e) => `${e.quando}: ${e.texto}`)).toEqual([
       "Dia 1: pedimos os extratos de outubro",
       "Dias 5 e 10: lembramos se ainda não enviou",
-      "3 dias antes e no dia do vencimento: lembramos o DAS (e no dia seguinte, se não foi pago)",
+      "Ao anexar a guia: o cliente recebe o DAS por e-mail",
+      "3 dias depois: se não marcou como pago, lembramos",
+      "3 dias antes do vencimento: último lembrete, se ainda não pagou",
     ]);
-    expect(etapasAvisos({ diaPedidoExtrato: 25, lembretesExtratoDias: [9], diasAntesVencimentoDas: [] }, "2027-02-10").map((e) => e.quando)).toEqual([
-      "Dia 25",
-      "Dia 28",
-      "Dia seguinte ao vencimento",
-    ]);
+    const outra = etapasAvisos({ diaPedidoExtrato: 25, lembretesExtratoDias: [9], lembretesDasAposEnvio: [3, 5], diasAntesVencimentoDas: [] }, "2027-02-10");
+    expect(outra.map((e) => e.quando)).toEqual(["Dia 25", "Dia 28", "Ao anexar a guia", "3 e 5 dias depois"]);
   });
   it("proximoPedido", () => {
     expect(proximoPedido("2026-11-13", 1)).toBe("2026-12-01");
@@ -130,7 +144,8 @@ describe("avisosDoDia: mês encerrado sem DAS", () => {
     expect(rodar("2026-11-05", [encerrado({ extratoSolicitadoEm: pedido })])).toEqual([]);
   });
   it("não lembra o DAS, mesmo com guia enviada antes de encerrar", () => {
-    expect(rodar("2026-11-17", [encerrado({ dasVencimento: "2026-11-20" })])).toEqual([]);
-    expect(rodar("2026-11-21", [encerrado({ dasVencimento: "2026-11-20" })])).toEqual([]);
+    const enviado = new Date("2026-11-10T18:00:00Z");
+    expect(rodar("2026-11-13", [encerrado({ dasVencimento: "2026-11-20", dasEnviadoEm: enviado })])).toEqual([]);
+    expect(rodar("2026-11-17", [encerrado({ dasVencimento: "2026-11-20", dasEnviadoEm: enviado })])).toEqual([]);
   });
 });

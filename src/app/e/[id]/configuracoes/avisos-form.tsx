@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { CircleAlert, CircleCheck, FlaskConical, Info, Plus, RotateCcw, Save, Send, X } from "lucide-react";
+import { CircleAlert, CircleCheck, FlaskConical, Info, Plus, RotateCcw, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { salvarAvisos, type EstadoAvisos } from "@/actions/avisos";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ANTES_DAS, DIA_PEDIDO, etapasAvisos, LEMBRETE_EXTRATO, PADRAO_AVISOS, type ConfigAvisos, type TipoAviso } from "@/lib/avisos";
+import { ANTES_DAS, APOS_ENVIO_DAS, DIA_PEDIDO, etapasAvisos, LEMBRETE_EXTRATO, PADRAO_AVISOS, type ConfigAvisos, type TipoAviso } from "@/lib/avisos";
 import { nomeCompetencia } from "@/lib/ciclo";
 
 type Simulacao = { hoje?: string; avisos: { tipo: TipoAviso; competencia: string; para: string; status: string }[]; erro?: string };
@@ -96,6 +96,7 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
   const [ativo, setAtivo] = useState(config.avisosAtivos);
   const [dia, setDia] = useState(String(config.diaPedidoExtrato));
   const [lembretes, setLembretes] = useState(config.lembretesExtratoDias);
+  const [apos, setApos] = useState(config.lembretesDasAposEnvio);
   const [antes, setAntes] = useState(config.diasAntesVencimentoDas);
   const [estado, enviar, salvando] = useActionState<EstadoAvisos, FormData>(salvarAvisos.bind(null, empresaId), {});
   const [simulando, iniciar] = useTransition();
@@ -109,17 +110,25 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
   }, []);
 
   const diaNum = Math.min(Math.max(Number(dia) || DIA_PEDIDO.min, DIA_PEDIDO.min), DIA_PEDIDO.max);
-  const etapas = etapasAvisos({ diaPedidoExtrato: diaNum, lembretesExtratoDias: lembretes, diasAntesVencimentoDas: antes }, hoje);
+  const etapas = etapasAvisos({ diaPedidoExtrato: diaNum, lembretesExtratoDias: lembretes, lembretesDasAposEnvio: apos, diasAntesVencimentoDas: antes }, hoje);
   const padrao =
-    diaNum === PADRAO_AVISOS.diaPedidoExtrato && iguais(lembretes, PADRAO_AVISOS.lembretesExtratoDias) && iguais(antes, PADRAO_AVISOS.diasAntesVencimentoDas);
+    diaNum === PADRAO_AVISOS.diaPedidoExtrato &&
+    iguais(lembretes, PADRAO_AVISOS.lembretesExtratoDias) &&
+    iguais(apos, PADRAO_AVISOS.lembretesDasAposEnvio) &&
+    iguais(antes, PADRAO_AVISOS.diasAntesVencimentoDas);
   const alterado =
-    ativo !== config.avisosAtivos || diaNum !== config.diaPedidoExtrato || !iguais(lembretes, config.lembretesExtratoDias) || !iguais(antes, config.diasAntesVencimentoDas);
+    ativo !== config.avisosAtivos ||
+    diaNum !== config.diaPedidoExtrato ||
+    !iguais(lembretes, config.lembretesExtratoDias) ||
+    !iguais(apos, config.lembretesDasAposEnvio) ||
+    !iguais(antes, config.diasAntesVencimentoDas);
   // Sem cliente ativo não há para quem mandar: não deixa ligar (desligar continua possível).
   const bloqueado = clientesAtivos === 0 && !ativo;
 
   const restaurar = () => {
     setDia(String(PADRAO_AVISOS.diaPedidoExtrato));
     setLembretes(PADRAO_AVISOS.lembretesExtratoDias);
+    setApos(PADRAO_AVISOS.lembretesDasAposEnvio);
     setAntes(PADRAO_AVISOS.diasAntesVencimentoDas);
   };
 
@@ -161,7 +170,7 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
         <h3 id="linha-do-tempo" className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Como fica o mês do cliente</h3>
         <ol className="grid">
           {etapas.map((e, i) => (
-            <li key={e.tipo} className="relative flex gap-3 pb-4 last:pb-0">
+            <li key={`${e.tipo}-${i}`} className="relative flex gap-3 pb-4 last:pb-0">
               {i < etapas.length - 1 && <span aria-hidden className="absolute top-6 bottom-0 left-[11px] w-px bg-border" />}
               <span className="z-10 flex size-6 shrink-0 items-center justify-center rounded-full border bg-card text-xs font-semibold text-primary tabular-nums">
                 {i + 1}
@@ -175,16 +184,10 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
             </li>
           ))}
         </ol>
-        <div className="mt-4 flex items-start justify-between gap-4 border-t pt-3">
-          <p className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground">
-            <Send className="mt-0.5 size-4 shrink-0 text-primary" />
-            <span>
-              <b className="font-semibold text-foreground">Ao concluir o mês:</b> o cliente recebe a guia do DAS por e-mail. Esse sai sempre, mesmo com os
-              avisos desligados.
-            </span>
-          </p>
-          <VerEmail empresaId={empresaId} tipo="das_disponivel" className="shrink-0" />
-        </div>
+        <p className="mt-4 border-t pt-3 text-sm text-muted-foreground">
+          O e-mail com a guia sai sempre, mesmo com os avisos desligados. Os lembretes param quando o cliente clica em &ldquo;Já paguei&rdquo; ou o
+          mês é encerrado.
+        </p>
       </section>
 
       <fieldset className="grid gap-5">
@@ -232,6 +235,19 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
         </div>
 
         <div className="grid gap-2">
+          <Label htmlFor="apos-das">Lembrar do DAS quantos dias depois de enviar a guia</Label>
+          <Dias
+            id="apos-das"
+            name="lembretesDasAposEnvio"
+            valores={apos}
+            onChange={setApos}
+            faixa={APOS_ENVIO_DAS}
+            rotulo={(d) => `${d} ${d === 1 ? "dia" : "dias"} depois`}
+          />
+          <p className="text-sm text-muted-foreground">Só se o cliente ainda não marcou como pago. Padrão: 3 dias depois.</p>
+        </div>
+
+        <div className="grid gap-2">
           <Label htmlFor="antes-das">Lembrar do DAS quantos dias antes do vencimento</Label>
           <Dias
             id="antes-das"
@@ -242,7 +258,7 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
             rotulo={(d) => (d === 0 ? "No dia" : `${d} ${d === 1 ? "dia" : "dias"} antes`)}
           />
           <p className="text-sm text-muted-foreground">
-            Use 0 para o dia do vencimento. Param quando o DAS é marcado como pago. Padrão: 3 dias antes e no dia.
+            O último lembrete. Use 0 para o próprio dia do vencimento. Padrão: 3 dias antes.
           </p>
         </div>
       </fieldset>

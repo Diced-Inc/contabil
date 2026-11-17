@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { empresas } from "@/db/schema";
 import { getEmpresa } from "@/app/e/[id]/empresa";
-import { ANTES_DAS, DIA_PEDIDO, LEMBRETE_EXTRATO } from "@/lib/avisos";
+import { ANTES_DAS, APOS_ENVIO_DAS, DIA_PEDIDO, LEMBRETE_EXTRATO } from "@/lib/avisos";
 
 export type EstadoAvisos = { erro?: string; ok?: boolean };
 
@@ -20,7 +20,8 @@ const schema = z.object({
   avisosAtivos: z.boolean(),
   diaPedidoExtrato: z.coerce.number().int().min(DIA_PEDIDO.min, "Dia do pedido: use de 1 a 28.").max(DIA_PEDIDO.max, "Dia do pedido: use de 1 a 28."),
   lembretesExtratoDias: dias(LEMBRETE_EXTRATO, "Lembretes do extrato"),
-  diasAntesVencimentoDas: dias(ANTES_DAS, "Lembretes do DAS"),
+  lembretesDasAposEnvio: dias(APOS_ENVIO_DAS, "Lembretes depois da guia"),
+  diasAntesVencimentoDas: dias(ANTES_DAS, "Lembretes antes do vencimento"),
 });
 
 export async function salvarAvisos(empresaId: string, _prev: EstadoAvisos, form: FormData): Promise<EstadoAvisos> {
@@ -29,6 +30,7 @@ export async function salvarAvisos(empresaId: string, _prev: EstadoAvisos, form:
     avisosAtivos: form.get("avisosAtivos") === "on",
     diaPedidoExtrato: form.get("diaPedidoExtrato"),
     lembretesExtratoDias: form.getAll("lembretesExtratoDias"),
+    lembretesDasAposEnvio: form.getAll("lembretesDasAposEnvio"),
     diasAntesVencimentoDas: form.getAll("diasAntesVencimentoDas"),
   });
   if (!r.success) return { erro: r.error.issues[0].message };
