@@ -1,11 +1,12 @@
 import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { garantirCiclo, notificar } from "@/db/ciclos";
-import { ciclosMensais, empresas, membros, notificacoes, type CicloMensal } from "@/db/schema";
-import { avisosDoDia, diasEntre, type Aviso } from "@/lib/avisos";
+import { garantirCiclo, listarGuias, notificar } from "@/db/ciclos";
+import { ciclosMensais, empresas, membros, notificacoes, type CicloMensal, type Guia } from "@/db/schema";
+import { avisosDoDia, diasEntre, guiasDoLembrete, type Aviso } from "@/lib/avisos";
 import { competenciaAtual, nomeCompetencia } from "@/lib/ciclo";
-import { emailLembreteDas, emailPedidoExtrato } from "@/lib/email";
+import { emailLembreteGuias, emailPedidoExtrato } from "@/lib/email";
+import { rotuloGuia } from "@/lib/guias";
 import { hoje as hojeSP } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
 
@@ -20,11 +21,18 @@ const cronAutorizado = (request: Request) => {
   return !!segredo && request.headers.get("authorization") === `Bearer ${segredo}`;
 };
 
-function montarEmail(a: Aviso, ciclo: CicloMensal | undefined, empresa: string, link: string, hoje: string) {
+/** Lembrete das guias: só as em aberto (enviadas, não pagas, não vencidas); `dias` = até a que vence primeiro. */
+function montarEmail(a: Aviso, ciclo: (CicloMensal & { guias: Guia[] }) | undefined, empresa: string, link: string, hoje: string) {
   const competencia = nomeCompetencia(a.competencia);
   if (a.tipo !== "lembrete_das") return emailPedidoExtrato({ empresa, competencia, link, lembrete: a.tipo === "lembrete_extrato" });
-  const vencimento = ciclo!.dasVencimento!;
-  return emailLembreteDas({ empresa, competencia, valor: ciclo!.dasValor!, vencimento, dias: diasEntre(hoje, vencimento), link });
+  const abertas = guiasDoLembrete(ciclo!.guias, hoje);
+  return emailLembreteGuias({
+    empresa,
+    competencia,
+    guias: abertas.map((g) => ({ nome: rotuloGuia(g), valor: g.valor, vencimento: g.vencimento })),
+    dias: diasEntre(hoje, abertas[0].vencimento),
+    link,
+  });
 }
 
 async function rodar({ empresaId, simular, site }: { empresaId: string | null; simular: boolean; site: string }) {
@@ -56,6 +64,7 @@ async function rodar({ empresaId, simular, site }: { empresaId: string | null; s
       ),
   ]);
   // Já enviados: os de hoje (qualquer tipo) e o pedido da competência atual em qualquer dia.
+  const guiasDe = Map.groupBy(await listarGuias(ciclos.map((c) => c.id), { comRascunhos: false }), (g) => g.cicloId);
   const atuais = ciclos.filter((c) => c.competencia === competencia).map((c) => c.id);
   const enviados = new Set(
     (
@@ -78,11 +87,11 @@ async function rodar({ empresaId, simular, site }: { empresaId: string | null; s
     resumo.push(r);
     try {
       const para = clientes.filter((c) => c.empresaId === e.id).map((c) => c.email);
-      const cs = ciclos.filter((c) => c.empresaId === e.id);
+      const cs = ciclos.filter((c) => c.empresaId === e.id).map((c) => ({ ...c, guias: guiasDe.get(c.id) ?? [] }));
       const avisos = avisosDoDia({ hoje, config: { ...e, avisosAtivos: simular || e.avisosAtivos }, ciclos: cs, membrosAtivos: para.length });
       for (const a of avisos) {
         let ciclo = cs.find((c) => c.competencia === a.competencia);
-        if (!ciclo && !simular) ciclo = await garantirCiclo(e.id, a.competencia);
+        if (!ciclo && !simular) ciclo = { ...(await garantirCiclo(e.id, a.competencia)), guias: [] }; // só o pedido cria ciclo
         const email = montarEmail(a, ciclo, e.razaoSocial, `${site}/portal/${e.id}`, hoje);
         let algumEnviado = false;
         for (const p of para) {

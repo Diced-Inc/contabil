@@ -39,7 +39,7 @@ export function AvisosCard({ params }: { params: Promise<{ id: string }> }) {
     <Card id="avisos" className="mt-6 scroll-mt-6">
       <CardHeader className="border-b">
         <CardTitle>Avisos ao cliente</CardTitle>
-        <CardDescription>E-mails que o sistema manda sozinho para o cliente: pede os extratos todo mês, lembra quem esqueceu e lembra do DAS até ser pago.</CardDescription>
+        <CardDescription>E-mails que o sistema manda sozinho para o cliente: pede os extratos todo mês, lembra quem esqueceu e lembra das guias até serem pagas.</CardDescription>
       </CardHeader>
       <CardContent>
         <Suspense fallback={<div className="h-72 animate-pulse rounded-xl bg-muted" aria-busy="true" aria-label="Carregando" />}>

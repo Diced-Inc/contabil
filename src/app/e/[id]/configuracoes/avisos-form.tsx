@@ -21,7 +21,7 @@ type Simulacao = { hoje?: string; avisos: { tipo: TipoAviso; competencia: string
 const FRASE: Record<TipoAviso, (c: string) => string> = {
   pedido_extrato: (c) => `Pedido dos extratos de ${nomeCompetencia(c)}`,
   lembrete_extrato: (c) => `Lembrete dos extratos de ${nomeCompetencia(c)}`,
-  lembrete_das: (c) => `Lembrete do DAS de ${nomeCompetencia(c)}`,
+  lembrete_das: (c) => `Lembrete das guias de ${nomeCompetencia(c)}`,
 };
 
 /** Lista de dias editável em chips (valores enviados como campos repetidos `name`). */
@@ -235,7 +235,7 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
         </div>
 
         <div className="grid gap-2">
-          <Label htmlFor="apos-das">Lembrar do DAS quantos dias depois de enviar a guia</Label>
+          <Label htmlFor="apos-das">Lembrar das guias quantos dias depois de enviar</Label>
           <Dias
             id="apos-das"
             name="lembretesDasAposEnvio"
@@ -248,7 +248,7 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
         </div>
 
         <div className="grid gap-2">
-          <Label htmlFor="antes-das">Lembrar do DAS quantos dias antes do vencimento</Label>
+          <Label htmlFor="antes-das">Lembrar das guias quantos dias antes do vencimento</Label>
           <Dias
             id="antes-das"
             name="diasAntesVencimentoDas"
@@ -258,7 +258,7 @@ export function AvisosForm({ empresaId, config, hoje, emailOk, clientesAtivos }:
             rotulo={(d) => (d === 0 ? "No dia" : `${d} ${d === 1 ? "dia" : "dias"} antes`)}
           />
           <p className="text-sm text-muted-foreground">
-            O último lembrete. Use 0 para o próprio dia do vencimento. Padrão: 3 dias antes.
+            O último lembrete, contado da guia que vence primeiro. Use 0 para o próprio dia do vencimento. Padrão: 3 dias antes.
           </p>
         </div>
       </fieldset>

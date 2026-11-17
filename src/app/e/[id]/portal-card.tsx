@@ -1,13 +1,14 @@
 import Link from "next/link";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { Check, CircleCheck, MonitorSmartphone } from "lucide-react";
 import { cn } from "cn";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/db";
-import { contasBancarias, membros, type Empresa } from "@/db/schema";
+import { ciclosMensais, contasBancarias, guias, membros, type Empresa } from "@/db/schema";
 import { proximoPedido } from "@/lib/avisos";
 import { fmtData, hoje } from "@/lib/format";
+import { resumoGuias } from "@/lib/guias";
 
 type Passo = { titulo: string; dica: string; feito: boolean; href?: string; cta?: string };
 
@@ -16,14 +17,25 @@ const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um :
 /** Passo a passo do portal no Resumo; com tudo pronto vira uma linha de status. */
 export async function PortalCard({ empresa }: { empresa: Empresa }) {
   const id = empresa.id;
-  const [lista, [{ contas }]] = await Promise.all([
+  const [lista, [{ contas }], abertas] = await Promise.all([
     db
       .select({ email: membros.email, userId: membros.userId, aceitoEm: membros.aceitoEm })
       .from(membros)
       .where(eq(membros.empresaId, id))
       .orderBy(asc(membros.convidadoEm)),
     db.select({ contas: count() }).from(contasBancarias).where(and(eq(contasBancarias.empresaId, id), eq(contasBancarias.ativa, true))),
+    // Guias enviadas e não pagas de meses em aberto, uma a uma.
+    db
+      .select({ valor: guias.valor, vencimento: guias.vencimento, pagoEm: guias.pagoEm })
+      .from(guias)
+      .innerJoin(ciclosMensais, eq(ciclosMensais.id, guias.cicloId))
+      .where(and(eq(guias.empresaId, id), eq(ciclosMensais.status, "das_enviado"), isNotNull(guias.enviadoEm), isNull(guias.pagoEm))),
   ]);
+  const g = resumoGuias(abertas, hoje());
+  const situacaoGuias = [
+    g.abertas > 0 && plural(g.abertas, "guia em aberto", "guias em aberto"),
+    g.vencidas > 0 && plural(g.vencidas, "guia vencida", "guias vencidas"),
+  ].filter(Boolean).join(", ");
   const ativos = lista.filter((m) => m.userId && m.aceitoEm);
   const faltaDados = [
     !empresa.cidade && "cidade",
@@ -69,7 +81,7 @@ export async function PortalCard({ empresa }: { empresa: Empresa }) {
       ...(empresa.avisosAtivos
         ? { dica: `O pedido dos extratos sai todo dia ${empresa.diaPedidoExtrato}, com lembretes.` }
         : ativos.length
-          ? { dica: "Ligue os e-mails automáticos: pedido do extrato, lembretes e vencimento do DAS.", href: `/e/${id}/configuracoes#avisos`, cta: "Configurar avisos" }
+          ? { dica: "Ligue os e-mails automáticos: pedido do extrato, lembretes e vencimento das guias.", href: `/e/${id}/configuracoes#avisos`, cta: "Configurar avisos" }
           : { dica: "Dá para ligar depois que o cliente aceitar o convite.", href: `/e/${id}/configuracoes#avisos`, cta: "Ver avisos" }),
     },
     {
@@ -94,6 +106,14 @@ export async function PortalCard({ empresa }: { empresa: Empresa }) {
           {" · "}próximo pedido de extrato em {fmtData(proximoPedido(hoje(), empresa.diaPedidoExtrato)).slice(0, 5)}
           {" · "}
           {plural(ativos.length, "cliente com acesso", "clientes com acesso")}
+          {situacaoGuias && (
+            <>
+              {" · "}
+              <Link href={`/e/${id}/fechamento`} className={cn("font-medium hover:underline", g.vencidas ? "text-danger" : "text-warning")}>
+                {situacaoGuias}
+              </Link>
+            </>
+          )}
         </p>
         <span className="flex gap-1">
           <Link href={`/e/${id}/clientes`} className={buttonVariants({ variant: "ghost", size: "sm" })}>
@@ -117,7 +137,12 @@ export async function PortalCard({ empresa }: { empresa: Empresa }) {
           Portal do cliente
         </CardTitle>
         <CardDescription className="pl-10.5">
-          Configure uma vez e o cliente passa a mandar os extratos pelo portal e a receber o DAS por e-mail.
+          Configure uma vez e o cliente passa a mandar os extratos pelo portal e a receber as guias por e-mail.
+          {situacaoGuias && (
+            <Link href={`/e/${id}/fechamento`} className={cn("mt-1 block font-medium hover:underline", g.vencidas ? "text-danger" : "text-warning")}>
+              {situacaoGuias[0].toUpperCase() + situacaoGuias.slice(1)}
+            </Link>
+          )}
         </CardDescription>
         <CardAction className="flex items-center gap-3 pt-1.5">
           <span className="text-sm text-muted-foreground tabular-nums">

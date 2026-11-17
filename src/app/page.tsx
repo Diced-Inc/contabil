@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { asc, count, eq, isNull, or } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { Building2, ChevronRight, Gavel, Inbox, Mail } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
@@ -10,9 +10,10 @@ import { Topo } from "@/components/topo";
 import { NovaEmpresaDialog } from "@/components/empresa-form";
 import { Carregando, EmptyState, PageHeader } from "@/components/page-header";
 import { db } from "@/db";
-import { ciclosMensais, documentosRecebidos, empresas, membros, type CicloMensal } from "@/db/schema";
-import { competenciaAtual, nomeCompetencia, situacaoDas, STATUS_CICLO, textoSituacaoDas, type SituacaoDas, type StatusCiclo } from "@/lib/ciclo";
-import { fmtCnpj, hoje, PORTES, REGIMES } from "@/lib/format";
+import { ciclosMensais, documentosRecebidos, empresas, guias, membros } from "@/db/schema";
+import { competenciaAtual, nomeCompetencia, STATUS_CICLO, type StatusCiclo } from "@/lib/ciclo";
+import { resumoGuias } from "@/lib/guias";
+import { fmtCnpj, fmtData, hoje, PORTES, REGIMES } from "@/lib/format";
 import { logoDaEmpresa, requireUser } from "@/supabase/server";
 import { Avatar } from "@/components/avatar";
 
@@ -23,20 +24,24 @@ function iniciais(nome: string) {
   return ((p[0]?.[0] ?? nome[0] ?? "?") + (p[1]?.[0] ?? "")).toUpperCase();
 }
 
-/** portal: ninguém convidado, convite sem aceite ou cliente com acesso. */
-type Painel = { status: StatusCiclo | null; novos: number; das: SituacaoDas | null; portal: "sem" | "convidado" | "ativo" };
+/** portal: ninguém convidado, convite sem aceite ou cliente com acesso. guias: contagem por guia, de qualquer mês. */
+type Painel = {
+  status: StatusCiclo | null; novos: number; guias: { abertas: number; vencidas: number; proxima: string | null }; portal: "sem" | "convidado" | "ativo";
+};
 
 /**
  * Situação do ciclo por empresa na competência atual. Sem ciclo: "aguardando extrato" só se há cliente com acesso.
- * DAS: o mais antigo ainda em aberto (de qualquer mês); senão, o da competência atual se pago.
+ * Guias: as enviadas e não pagas de meses ainda em aberto (das_enviado), contadas uma a uma.
  */
 async function paineis(competencia: string, hj: string) {
-  const [ciclos, novos, clientes] = await Promise.all([
+  const [ciclos, abertas, novos, clientes] = await Promise.all([
+    db.select({ empresaId: ciclosMensais.empresaId, status: ciclosMensais.status }).from(ciclosMensais).where(eq(ciclosMensais.competencia, competencia)),
     db
-      .select()
-      .from(ciclosMensais)
-      .where(or(eq(ciclosMensais.competencia, competencia), eq(ciclosMensais.status, "das_enviado")))
-      .orderBy(asc(ciclosMensais.dasVencimento)),
+      .select({ empresaId: guias.empresaId, valor: guias.valor, vencimento: guias.vencimento, pagoEm: guias.pagoEm })
+      .from(guias)
+      .innerJoin(ciclosMensais, eq(ciclosMensais.id, guias.cicloId))
+      .where(and(eq(ciclosMensais.status, "das_enviado"), isNotNull(guias.enviadoEm), isNull(guias.pagoEm)))
+      .orderBy(asc(guias.vencimento)),
     db
       .select({ empresaId: documentosRecebidos.empresaId, n: count() })
       .from(documentosRecebidos)
@@ -46,29 +51,31 @@ async function paineis(competencia: string, hj: string) {
   ]);
   const comCliente = new Set(clientes.filter((c) => c.userId && c.aceitoEm).map((c) => c.empresaId));
   const convidadas = new Set(clientes.map((c) => c.empresaId));
-  const porEmpresa = Map.groupBy(ciclos, (c: CicloMensal) => c.empresaId);
+  const guiasDe = Map.groupBy(abertas, (g) => g.empresaId);
   return (empresaId: string): Painel => {
-    const cs = porEmpresa.get(empresaId) ?? [];
-    const atual = cs.find((c) => c.competencia === competencia);
-    const aberto = cs.find((c) => c.status === "das_enviado");
+    const gs = guiasDe.get(empresaId) ?? [];
+    const r = resumoGuias(gs, hj);
     return {
-      status: atual?.status ?? (comCliente.has(empresaId) ? "aguardando_extrato" : null),
+      status: ciclos.find((c) => c.empresaId === empresaId)?.status ?? (comCliente.has(empresaId) ? "aguardando_extrato" : null),
       novos: novos.find((n) => n.empresaId === empresaId)?.n ?? 0,
-      das: situacaoDas(aberto ?? atual ?? { status: "aguardando_extrato", dasVencimento: null }, hj),
+      guias: { abertas: r.abertas, vencidas: r.vencidas, proxima: gs.find((g) => g.vencimento >= hj)?.vencimento ?? null },
       portal: comCliente.has(empresaId) ? "ativo" : convidadas.has(empresaId) ? "convidado" : "sem",
     };
   };
 }
 
-const DAS_COR = { pago: "text-success", vencido: "text-danger font-semibold", aberto: "text-warning" } as const;
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
 function Resumo({ itens, competencia }: { itens: Painel[]; competencia: string }) {
   const contar = (f: (p: Painel) => boolean) => itens.filter(f).length;
+  const somar = (f: (p: Painel) => number) => itens.reduce((s, p) => s + f(p), 0);
+  const abertas = somar((p) => p.guias.abertas);
+  const vencidas = somar((p) => p.guias.vencidas);
   const partes: [number, string, string][] = [
     [contar((p) => p.status === "aguardando_extrato"), "aguardando extrato", "bg-warning"],
     [contar((p) => p.novos > 0), "com documentos novos", "bg-info"],
-    [contar((p) => p.das?.tipo === "aberto"), "DAS em aberto", "bg-primary"],
-    [contar((p) => p.das?.tipo === "vencido"), "DAS vencidos", "bg-danger"],
+    [abertas, abertas === 1 ? "guia em aberto" : "guias em aberto", "bg-primary"],
+    [vencidas, vencidas === 1 ? "guia vencida" : "guias vencidas", "bg-danger"],
     [contar((p) => p.portal !== "ativo"), "sem portal ativo", "bg-muted-foreground"],
   ];
   return (
@@ -136,11 +143,16 @@ async function ListaEmpresas() {
                     {itens[i].novos} {itens[i].novos === 1 ? "documento novo" : "documentos novos"}
                   </span>
                 )}
-                {itens[i].das && (
-                  <span className={DAS_COR[itens[i].das.tipo]}>
-                    {itens[i].das.tipo === "pago" ? "DAS pago" : `DAS ${textoSituacaoDas(itens[i].das).toLowerCase()}`}
+                {itens[i].guias.vencidas > 0 && (
+                  <span className="font-semibold text-danger">{plural(itens[i].guias.vencidas, "guia vencida", "guias vencidas")}</span>
+                )}
+                {itens[i].guias.abertas > 0 && (
+                  <span className="text-warning">
+                    {plural(itens[i].guias.abertas, "guia em aberto", "guias em aberto")}
+                    {itens[i].guias.proxima && <>, a próxima vence {fmtData(itens[i].guias.proxima!).slice(0, 5)}</>}
                   </span>
                 )}
+                {itens[i].status === "das_pago" && <span className="text-success">Guias do mês pagas</span>}
               </span>
             </span>
             <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />

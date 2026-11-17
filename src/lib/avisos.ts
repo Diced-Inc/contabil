@@ -7,16 +7,17 @@ export type ConfigAvisos = {
   avisosAtivos: boolean;
   diaPedidoExtrato: number;
   lembretesExtratoDias: number[];
-  /** Dias depois do envio da guia (das_enviado_em) para lembrar, se não foi paga. */
+  /** Dias depois do envio de cada guia (guias.enviado_em) para lembrar, se não foi paga. */
   lembretesDasAposEnvio: number[];
+  /** Dias antes do vencimento mais próximo entre as guias em aberto. */
   diasAntesVencimentoDas: number[];
 };
+export type GuiaAviso = { enviadoEm: Date | string | null; vencimento: string; pagoEm: Date | string | null };
 export type CicloAviso = {
   competencia: string;
   status: StatusCiclo;
-  dasVencimento: string | null;
   extratoSolicitadoEm: Date | string | null;
-  dasEnviadoEm: Date | string | null;
+  guias: GuiaAviso[];
 };
 export type Aviso = { tipo: TipoAviso; competencia: string; dataRef: string };
 
@@ -55,18 +56,28 @@ export function avisosDoDia({ hoje, config, ciclos, membrosAtivos }: {
     }
   }
 
-  // DAS em aberto: N dias depois do envio da guia e N dias antes do vencimento. Vencido não lembra; pago/encerrado para.
+  // Guias em aberto: N dias depois do envio de cada guia e N dias antes do vencimento mais próximo. Um e-mail por mês por dia,
+  // listando as guias em aberto. Vencida não lembra; todas pagas ou mês encerrado para.
   for (const c of ciclos) {
-    if (c.status !== "das_enviado" || !c.dasVencimento) continue;
-    const faltam = diasEntre(hoje, c.dasVencimento);
-    const desdeEnvio = c.dasEnviadoEm ? diasEntre(diaEmSP(c.dasEnviadoEm), hoje) : null;
-    const aposEnvio = desdeEnvio !== null && faltam > 0 && config.lembretesDasAposEnvio.includes(desdeEnvio);
-    if (faltam >= 0 && (aposEnvio || config.diasAntesVencimentoDas.includes(faltam))) {
+    if (c.status !== "das_enviado") continue;
+    const pendentes = guiasDoLembrete(c.guias, hoje);
+    if (pendentes.length === 0) continue;
+    const faltam = diasEntre(hoje, pendentes[0].vencimento);
+    const aposEnvio = pendentes.some(
+      (g) => diasEntre(hoje, g.vencimento) > 0 && config.lembretesDasAposEnvio.includes(diasEntre(diaEmSP(g.enviadoEm!), hoje)),
+    );
+    if (aposEnvio || config.diasAntesVencimentoDas.includes(faltam)) {
       avisos.push({ tipo: "lembrete_das", competencia: c.competencia, dataRef: hoje });
     }
   }
   return avisos;
 }
+
+/** Guias que entram no lembrete: enviadas, não pagas e não vencidas, da que vence antes à que vence depois. */
+export const guiasDoLembrete = <T extends GuiaAviso>(guias: T[], hoje: string) =>
+  guias
+    .filter((g) => g.enviadoEm && !g.pagoEm && diasEntre(hoje, g.vencimento) >= 0)
+    .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 
 /** "5", "5 e 10", "5, 10 e 15". */
 export const listaPtBR = (itens: (string | number)[]) =>
@@ -74,12 +85,12 @@ export const listaPtBR = (itens: (string | number)[]) =>
 
 const ordenar = (xs: number[]) => [...new Set(xs)].sort((a, b) => a - b);
 
-/** Padrão das colunas em empresas (schema): dia 1, lembretes +4 e +9; DAS 3 dias depois do envio e 3 dias antes do vencimento. */
+/** Padrão das colunas em empresas (schema): dia 1, lembretes +4 e +9; guias 3 dias depois do envio e 3 dias antes do vencimento. */
 export const PADRAO_AVISOS: Omit<ConfigAvisos, "avisosAtivos"> = {
   diaPedidoExtrato: 1, lembretesExtratoDias: [4, 9], lembretesDasAposEnvio: [3], diasAntesVencimentoDas: [3],
 };
 
-export type EtapaAviso = { quando: string; texto: string; tipo: TipoAviso | "das_disponivel" };
+export type EtapaAviso = { quando: string; texto: string; tipo: TipoAviso | "guias_disponiveis" };
 
 /** Linha do tempo do mês em português, para o contador conferir antes de ligar. */
 export function etapasAvisos(config: Omit<ConfigAvisos, "avisosAtivos">, hoje: string): EtapaAviso[] {
@@ -90,7 +101,7 @@ export function etapasAvisos(config: Omit<ConfigAvisos, "avisosAtivos">, hoje: s
   if (lembretes.length) {
     etapas.push({ quando: `${lembretes.length === 1 ? "Dia" : "Dias"} ${listaPtBR(lembretes)}`, texto: "lembramos se ainda não enviou", tipo: "lembrete_extrato" });
   }
-  etapas.push({ quando: "Ao anexar a guia", texto: "o cliente recebe o DAS por e-mail", tipo: "das_disponivel" });
+  etapas.push({ quando: "Ao enviar as guias", texto: "o cliente recebe as guias do mês por e-mail", tipo: "guias_disponiveis" });
   const apos = ordenar(config.lembretesDasAposEnvio);
   if (apos.length) {
     etapas.push({ quando: `${listaPtBR(apos)} ${apos.at(-1) === 1 ? "dia" : "dias"} depois`, texto: "se não marcou como pago, lembramos", tipo: "lembrete_das" });
@@ -122,8 +133,9 @@ export const ROTULO_NOTIFICACAO: Record<TipoNotificacao, string> = {
   lembrete_extrato: "Lembrete de extrato",
   extrato_recebido: "Extrato recebido",
   extrato_por_fora: "Extrato por outro canal",
-  das_disponivel: "DAS disponível",
-  lembrete_das: "Lembrete do DAS",
-  das_pago: "DAS pago pelo cliente",
+  das_disponivel: "DAS disponível", // legado: antes das várias guias por mês
+  guias_disponiveis: "Guias disponíveis",
+  lembrete_das: "Lembrete das guias",
+  das_pago: "Guia paga pelo cliente",
   recuperacao_senha: "Recuperação de senha",
 };
