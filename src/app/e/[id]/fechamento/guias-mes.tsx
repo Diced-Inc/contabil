@@ -199,7 +199,6 @@ function GuiaForm({ empresaId, competencia, hoje, slot, guia, vencimentoSugerido
         tipo, descricao, valor: valorOk, vencimento, codigoReceita: codigo,
       });
       if ("erro" in r) return setErro(r.erro);
-      onPath(null);
       toast.success(guia ? "Guia atualizada." : `${rotuloGuia({ tipo, descricao: descricao.trim() || null })} anexado.`);
       onSalvo();
     });
@@ -331,9 +330,10 @@ function GuiaDialog({ trigger, children, titulo, ...props }: Base & {
   const [aberta, setAberta] = useState(false);
   const [chave, setChave] = useState(0); // formulário limpo a cada abertura
   const solto = useRef<string | null>(null);
-  const fechar = () => {
-    if (solto.current) void descartarGuiaEnviada(props.empresaId, props.competencia, solto.current);
-    solto.current = null;
+  /** Troca o PDF solto; o anterior (arquivo trocado ou diálogo fechado) é apagado se nenhuma guia o usa. */
+  const soltar = (p: string | null) => {
+    if (solto.current && solto.current !== p) void descartarGuiaEnviada(props.empresaId, props.competencia, solto.current);
+    solto.current = p;
   };
   return (
     <Dialog
@@ -341,7 +341,7 @@ function GuiaDialog({ trigger, children, titulo, ...props }: Base & {
       onOpenChange={(a) => {
         setAberta(a);
         if (a) setChave((k) => k + 1);
-        else fechar();
+        else soltar(null);
       }}
     >
       <DialogTrigger render={trigger}>{children}</DialogTrigger>
@@ -357,7 +357,7 @@ function GuiaDialog({ trigger, children, titulo, ...props }: Base & {
         <GuiaForm
           key={chave}
           {...props}
-          onPath={(p) => (solto.current = p)}
+          onPath={soltar}
           onSalvo={() => {
             solto.current = null;
             setAberta(false);
