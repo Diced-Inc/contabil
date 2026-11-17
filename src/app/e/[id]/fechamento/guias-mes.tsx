@@ -500,10 +500,13 @@ function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, ex
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
+          {/* Depois do envio as props já vêm sem rascunhos: o cabeçalho passa a falar do resultado. */}
           <DialogTitle>
-            {soConcluir ? `Concluir ${nomeCompetencia(competencia)}` : extra ? "Enviar guia nova" : `Enviar as guias de ${nomeCompetencia(competencia)}`}
+            {resultado
+              ? `Guias de ${nomeCompetencia(competencia)}`
+              : soConcluir ? `Concluir ${nomeCompetencia(competencia)}` : extra ? "Enviar guia nova" : `Enviar as guias de ${nomeCompetencia(competencia)}`}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className={cn(resultado && "sr-only")}>
             {soConcluir
               ? "Não há guia nova: as guias já enviadas continuam como estão. Nenhum e-mail sai."
               : extra

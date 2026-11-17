@@ -152,7 +152,6 @@ async function ListaEmpresas() {
                     {itens[i].guias.proxima && <>, a próxima vence {fmtData(itens[i].guias.proxima!).slice(0, 5)}</>}
                   </span>
                 )}
-                {itens[i].status === "das_pago" && <span className="text-success">Guias do mês pagas</span>}
               </span>
             </span>
             <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />

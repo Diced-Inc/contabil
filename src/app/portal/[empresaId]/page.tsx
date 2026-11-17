@@ -122,12 +122,12 @@ function GuiasCard({ empresaId, titulo, guias, hj, pagavel }: { empresaId: strin
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Baixar empresaId={empresaId} guiaId={g.id} rotulo="Baixar" size="default" variant={g.pagoEm ? "outline" : "default"} />
+                <Baixar empresaId={empresaId} guiaId={g.id} rotulo="Baixar" size="default" />
                 {!g.pagoEm && pagavel && <JaPaguei empresaId={empresaId} guiaId={g.id} nome={rotuloGuia(g)} />}
                 {g.pagoEm && (
                   <span className="flex items-center gap-1.5 text-sm font-medium text-success">
                     <Check className="size-4" />
-                    Paga, informada em {diaSP(g.pagoEm)}
+                    Paga em {diaSP(g.pagoEm)}
                   </span>
                 )}
               </div>
