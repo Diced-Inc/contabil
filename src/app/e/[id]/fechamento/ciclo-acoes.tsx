@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { BadgeCheck, CalendarCheck2, CircleCheck, Mail, RotateCcw, Send, TriangleAlert } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { BadgeCheck, CalendarCheck2, CircleCheck, FileCheck2, FileQuestion, LoaderCircle, Mail, RotateCcw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { concluirCiclo, encerrarCiclo, marcarDasPago, prepararDas, reabrirCiclo } from "@/actions/ciclo";
+import { concluirCiclo, encerrarCiclo, lerGuiaEnviada, marcarDasPago, prepararDas, reabrirCiclo } from "@/actions/ciclo";
 import { Erro } from "@/app/login/senha-forms";
 import { VerEmail } from "@/components/ver-email";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MOTIVOS_ENCERRAMENTO, nomeCompetencia, tituloCompetencia, type MotivoEncerramento } from "@/lib/ciclo";
-import { fmtValor, parseValorBR } from "@/lib/format";
+import type { Guia } from "@/lib/das";
+import { fmtData, fmtValor, parseValorBR } from "@/lib/format";
 import { createClient } from "@/supabase/client";
 
 type Emails = { enviados: number; total: number; naoConfigurado: boolean };
@@ -79,40 +80,120 @@ type Props = {
   hoje: string;
 };
 
+type Leitura =
+  | { estado: "lendo" }
+  | { estado: "lida"; guia: Guia; fonte: "texto" | "ia" | null; avisos: string[] }
+  | { estado: "falhou"; erro: string };
+
+/** "2026-10" → "Outubro/2026" (como impresso no DAS). */
+const periodoGuia = (p: string) => tituloCompetencia(`${p}-01`).replace(" de ", "/");
+
+/** O que foi lido do PDF, logo abaixo do arquivo: resumo, avisos (amarelo) ou o pedido para digitar. */
+function ResumoLeitura({ leitura }: { leitura: Leitura }) {
+  if (leitura.estado === "lendo") {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+        <LoaderCircle className="size-4 animate-spin text-primary" />
+        Lendo a guia...
+      </p>
+    );
+  }
+  if (leitura.estado === "falhou") return <p className="text-sm text-danger">{leitura.erro}</p>;
+  const { guia, fonte, avisos } = leitura;
+  const partes = [
+    guia.valor && `R$ ${fmtValor(guia.valor)}`,
+    guia.vencimento && `vence ${fmtData(guia.vencimento)}`,
+    guia.periodo && periodoGuia(guia.periodo),
+  ].filter(Boolean);
+  return (
+    <div className="grid gap-2" role="status">
+      {partes.length ? (
+        <p className="flex gap-2.5 rounded-lg border border-success/20 bg-success-soft px-3 py-2.5 text-sm text-foreground">
+          <FileCheck2 className="mt-0.5 size-4 shrink-0 text-success" />
+          <span>
+            <span className="font-medium">Lemos o documento:</span> <span className="tabular-nums">{partes.join(" · ")}</span>
+            <span className="block text-muted-foreground">
+              {fonte === "ia" ? "Lido pela IA. " : ""}Confira os campos abaixo; dá para corrigir.
+            </span>
+          </span>
+        </p>
+      ) : (
+        <p className="flex gap-2.5 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
+          <FileQuestion className="mt-0.5 size-4 shrink-0" />
+          Não conseguimos ler o valor e o vencimento desta guia. Preencha abaixo.
+        </p>
+      )}
+      {avisos.map((a) => (
+        <Alert key={a} className="border-warning/25 bg-warning-soft text-warning *:data-[slot=alert-description]:text-warning/90">
+          <TriangleAlert />
+          <AlertDescription>{a}</AlertDescription>
+        </Alert>
+      ))}
+    </div>
+  );
+}
+
 function ConcluirForm({ empresaId, competencia, vencimentoSugerido, clientes, hoje, setPendente }: Props & { setPendente: (p: boolean) => void }) {
   const [erro, setErro] = useState<string>();
   const [erros, setErros] = useState<Erros>({});
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState(vencimentoSugerido);
   const [emails, setEmails] = useState<Emails | null>(null);
+  /** Guia já no Storage (enviada ao escolher o arquivo). */
+  const [guiaPath, setGuiaPath] = useState<string | null>(null);
+  const [leitura, setLeitura] = useState<Leitura | null>(null);
+  const escolha = useRef(0); // ignora a leitura de um arquivo que já foi trocado
   const [pendente, iniciar] = useTransition();
   const valorOk = lerValor(valor);
+  const lendo = leitura?.estado === "lendo";
+
+  /** Ao escolher o PDF: envia direto ao Storage e lê no servidor para preencher valor e vencimento. */
+  async function escolherGuia(pdf: File | undefined) {
+    const vez = ++escolha.current;
+    setGuiaPath(null);
+    setLeitura(null);
+    setErros((x) => ({ ...x, guia: undefined }));
+    if (!pdf) return;
+    if (!pdf.name.toLowerCase().endsWith(".pdf")) return setErros((x) => ({ ...x, guia: "A guia precisa ser um arquivo PDF." }));
+    if (pdf.size > 10 * 1024 * 1024) return setErros((x) => ({ ...x, guia: "O PDF passa de 10 MB." }));
+    setLeitura({ estado: "lendo" });
+    try {
+      const p = await prepararDas(empresaId, competencia);
+      if ("erro" in p) throw new Error(p.erro);
+      const [envio] = p.envios;
+      const up = await createClient()
+        .storage.from("documentos")
+        .uploadToSignedUrl(envio.path, envio.token, new File([pdf], pdf.name, { type: "application/pdf" }));
+      if (up.error) throw new Error(`Não foi possível enviar o PDF: ${up.error.message}`);
+      if (vez !== escolha.current) return;
+      setGuiaPath(envio.path);
+      const r = await lerGuiaEnviada(empresaId, competencia, envio.path);
+      if (vez !== escolha.current) return;
+      if ("erro" in r) return setLeitura({ estado: "lida", guia: { tipo: null }, fonte: null, avisos: [] });
+      setLeitura({ estado: "lida", guia: r.guia, fonte: r.fonte, avisos: r.avisos });
+      if (r.guia.valor) setValor(fmtValor(r.guia.valor));
+      if (r.guia.vencimento) setVencimento(r.guia.vencimento);
+      setErros((x) => ({ ...x, valor: r.guia.valor ? undefined : x.valor, vencimento: r.guia.vencimento ? undefined : x.vencimento }));
+    } catch (e) {
+      if (vez === escolha.current) setLeitura({ estado: "falhou", erro: e instanceof Error ? e.message : "Não foi possível enviar o PDF." });
+    }
+  }
 
   const enviar = (form: FormData) =>
     iniciar(async () => {
       setErro(undefined);
-      const pdf = form.get("guia");
       const e: Erros = {};
-      if (!(pdf instanceof File) || pdf.size === 0) e.guia = "Escolha o PDF da guia do DAS.";
-      else if (!pdf.name.toLowerCase().endsWith(".pdf")) e.guia = "A guia precisa ser um arquivo PDF.";
-      else if (pdf.size > 10 * 1024 * 1024) e.guia = "O PDF passa de 10 MB.";
+      if (!guiaPath) e.guia = erros.guia ?? (leitura?.estado === "falhou" ? "Escolha o PDF de novo." : "Escolha o PDF da guia do DAS.");
       if (!valor.trim()) e.valor = "Informe o valor do DAS.";
       else if (!valorOk) e.valor = "Valor inválido. Use o formato 1.234,56.";
       if (!vencimento) e.vencimento = "Informe a data de vencimento.";
       setErros(e);
-      if (Object.keys(e).length || !(pdf instanceof File) || !valorOk) return;
+      if (Object.keys(e).length || !guiaPath || !valorOk) return;
 
       setPendente(true);
       try {
-        const p = await prepararDas(empresaId, competencia);
-        if ("erro" in p) return setErro(p.erro);
-        const [envio] = p.envios;
-        const up = await createClient()
-          .storage.from("documentos")
-          .uploadToSignedUrl(envio.path, envio.token, new File([pdf], pdf.name, { type: "application/pdf" }));
-        if (up.error) return setErro(`Não foi possível enviar o PDF: ${up.error.message}`);
         const r = await concluirCiclo(empresaId, competencia, {
-          path: envio.path,
+          path: guiaPath,
           valor: valorOk,
           vencimento,
           observacao: String(form.get("observacao") ?? ""),
@@ -153,10 +234,19 @@ function ConcluirForm({ empresaId, competencia, vencimentoSugerido, clientes, ho
           type="file"
           accept=".pdf,application/pdf"
           aria-invalid={!!erros.guia}
-          aria-describedby={erros.guia ? "das-guia-erro" : undefined}
-          onChange={() => setErros((x) => ({ ...x, guia: undefined }))}
+          aria-describedby={erros.guia ? "das-guia-erro" : "das-guia-ajuda"}
+          disabled={pendente}
+          onChange={(e) => escolherGuia(e.target.files?.[0])}
         />
-        {erros.guia && <Ajuda id="das-guia-erro" erro={erros.guia} />}
+        {erros.guia ? (
+          <Ajuda id="das-guia-erro" erro={erros.guia} />
+        ) : leitura ? (
+          <div id="das-guia-ajuda">
+            <ResumoLeitura leitura={leitura} />
+          </div>
+        ) : (
+          <Ajuda id="das-guia-ajuda">Ao anexar, lemos o valor, o vencimento e o período da guia.</Ajuda>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="grid content-start gap-2">
@@ -217,9 +307,9 @@ function ConcluirForm({ empresaId, competencia, vencimentoSugerido, clientes, ho
           <DialogClose render={<Button variant="outline" type="button" />} disabled={pendente}>
             Cancelar
           </DialogClose>
-          <Button type="submit" disabled={pendente}>
+          <Button type="submit" disabled={pendente || lendo}>
             <Send />
-            {pendente ? "Enviando..." : clientes.length ? "Concluir e enviar" : "Concluir mês"}
+            {pendente ? "Enviando..." : lendo ? "Lendo a guia..." : clientes.length ? "Concluir e enviar" : "Concluir mês"}
           </Button>
         </div>
       </DialogFooter>

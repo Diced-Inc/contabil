@@ -15,7 +15,8 @@ import {
   type EventoCiclo, type MotivoEncerramento,
 } from "@/lib/ciclo";
 import { emailDasDisponivel, emailDasPago, emailExtratoPorFora, emailExtratoRecebido, type Email } from "@/lib/email";
-import { hoje, parseValorBR } from "@/lib/format";
+import { lerGuiaPdf, type Guia } from "@/lib/das";
+import { fmtCnpj, hoje, parseValorBR } from "@/lib/format";
 import { requireMembro, requireUser } from "@/supabase/server";
 import type { User } from "@supabase/supabase-js";
 
@@ -293,6 +294,37 @@ export async function prepararDas(empresaId: string, competencia: string): Promi
   return urlsDeEnvio([{ path: `${pasta(empresaId, competencia)}das-${randomUUID()}.pdf`, mime: "application/pdf" }]);
 }
 
+const pathDas = (empresaId: string, competencia: string, path: string) =>
+  path.startsWith(`${pasta(empresaId, competencia)}das-`) && !path.includes("..");
+
+/**
+ * Lê a guia que acabou de chegar ao Storage (o PDF não passa pela server action: limite de 4,5 MB da Vercel).
+ * Devolve o que deu para ler e avisos quando o CNPJ ou o período não batem com a empresa e a competência.
+ */
+export async function lerGuiaEnviada(
+  empresaId: string,
+  competencia: string,
+  path: string,
+): Promise<Resultado<{ guia: Guia; fonte: "texto" | "ia" | null; avisos: string[] }>> {
+  await requireUser();
+  if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
+  if (!pathDas(empresaId, competencia, path)) return { erro: "Guia inválida." };
+  const [{ data, error }, [empresa]] = await Promise.all([
+    (await bucketDocumentos()).download(path),
+    db.select({ cnpj: empresas.cnpj }).from(empresas).where(eq(empresas.id, empresaId)),
+  ]);
+  if (error || !data) return { erro: "Não foi possível abrir a guia enviada." };
+  const { guia, fonte } = await lerGuiaPdf(new Uint8Array(await data.arrayBuffer()));
+  const avisos: string[] = [];
+  if (guia.cnpj && empresa && guia.cnpj !== empresa.cnpj.replace(/D/g, "")) {
+    avisos.push(`O CNPJ da guia (${fmtCnpj(guia.cnpj)}) não é o desta empresa (${fmtCnpj(empresa.cnpj)}). Confira se anexou a guia certa.`);
+  }
+  if (guia.periodo && guia.periodo !== competencia.slice(0, 7)) {
+    avisos.push(`A guia é de ${nomeCompetencia(`${guia.periodo}-01`)}, mas você está concluindo ${nomeCompetencia(competencia)}.`);
+  }
+  return { ok: true, guia, fonte, avisos };
+}
+
 const conclusaoSchema = z.object({
   path: z.string().max(400),
   valor: z
@@ -314,7 +346,7 @@ export async function concluirCiclo(
   const r = conclusaoSchema.safeParse(dados);
   if (!r.success) return { erro: r.error.issues[0].message };
   const { path, valor, vencimento, observacao } = r.data;
-  if (!path.startsWith(`${pasta(empresaId, competencia)}das-`) || path.includes("..")) return { erro: "Guia inválida." };
+  if (!pathDas(empresaId, competencia, path)) return { erro: "Guia inválida." };
   const obj = (await objetosDocumentos([path])).get(path);
   if (!obj) return { erro: "A guia não chegou. Envie o PDF de novo." };
   if (obj.mime !== "application/pdf") return { erro: "A guia precisa ser um PDF." };
