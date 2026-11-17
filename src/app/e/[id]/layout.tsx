@@ -26,9 +26,9 @@ async function Shell({ params, children }: LayoutProps<"/e/[id]">) {
   ]);
 
   return (
-    <div className="flex min-h-svh flex-1">
+    <div className="flex min-h-svh flex-1 flex-col lg:flex-row">
       <AppSidebar empresaId={id} empresaNome={empresa.razaoSocial} logoUrl={logoUrl} pendentes={pendentes} documentosNovos={documentosNovos} email={user.email ?? ""} {...perfil} />
-      <main className="min-w-0 flex-1 px-6 py-7 xl:px-8">
+      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:py-7 xl:px-8">
         <div className="mx-auto w-full max-w-[1280px]">{children}</div>
       </main>
     </div>

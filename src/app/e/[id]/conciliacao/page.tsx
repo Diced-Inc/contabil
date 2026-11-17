@@ -81,7 +81,7 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
   return (
     <>
       <PageHeader title="Conciliação" description={DESCRICAO} actions={importar} />
-      <nav className="mb-4 inline-flex rounded-lg border bg-muted p-[3px]">
+      <nav className="mb-4 inline-flex max-w-full overflow-x-auto rounded-lg border bg-muted p-[3px]">
         {aba("pendentes", "Pendentes", pendentes.length)}
         {aba("conciliadas", "Conciliadas", nConciliadas)}
         {aba("ignoradas", "Ignoradas", ignoradas.length)}

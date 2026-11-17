@@ -82,7 +82,7 @@ export default function EmailsEscritorio() {
   return (
     <div className="flex min-h-svh flex-1 flex-col">
       <Topo />
-      <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <Link href="/" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft className="size-4" />
           Empresas

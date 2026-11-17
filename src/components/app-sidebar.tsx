@@ -5,12 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen, ChevronDown, ChevronsUpDown, FileText, Gavel, Inbox, Landmark, LayoutDashboard, ListChecks,
-  ListTree, Lock, LogOut, Mail, Receipt, Settings, ShieldCheck, Users, Wand2, type LucideIcon,
+  ListTree, Lock, LogOut, Mail, Menu, Receipt, Settings, ShieldCheck, Users, Wand2, type LucideIcon,
 } from "lucide-react";
 import { cn } from "cn";
 import { sair } from "@/app/login/actions";
 import { Avatar } from "@/components/avatar";
-import { LogoWordmark } from "@/components/logo";
+import { Logo, LogoWordmark } from "@/components/logo";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 const RELATORIOS = [
   ["balancete", "Balancete"],
@@ -68,6 +69,13 @@ export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, documen
     setEmRelatorioAntes(emRelatorio);
     if (emRelatorio) setAberto(true);
   }
+  // Gaveta do celular: fecha sozinha quando a navegação muda de página.
+  const [gaveta, setGaveta] = useState(false);
+  const [rotaAntes, setRotaAntes] = useState(pathname);
+  if (pathname !== rotaAntes) {
+    setRotaAntes(pathname);
+    setGaveta(false);
+  }
 
   const link = ([path, label, Icon]: Item) => {
     const href = base + path;
@@ -90,8 +98,8 @@ export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, documen
     );
   };
 
-  return (
-    <aside className="sticky top-0 flex h-svh w-56 shrink-0 xl:w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
+  const painel = (
+    <>
       <div className="px-4 pt-4 pb-3">
         <Link href="/" className="block px-1">
           <LogoWordmark />
@@ -169,6 +177,33 @@ export function AppSidebar({ empresaId, empresaNome, logoUrl, pendentes, documen
           </button>
         </form>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      <aside className="sticky top-0 hidden h-svh w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:flex xl:w-64">
+        {painel}
+      </aside>
+      {/* Celular e tablet: barra compacta no topo; o menu abre numa gaveta à esquerda. */}
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-sidebar px-3 lg:hidden">
+        <Sheet open={gaveta} onOpenChange={setGaveta}>
+          <SheetTrigger
+            aria-label="Abrir menu"
+            className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-foreground transition-colors hover:bg-muted"
+          >
+            <Menu className="size-5" />
+          </SheetTrigger>
+          <SheetContent side="left" className="w-72 gap-0 bg-sidebar p-0 text-sidebar-foreground data-[side=left]:w-72">
+            <SheetTitle className="sr-only">Menu</SheetTitle>
+            {painel}
+          </SheetContent>
+        </Sheet>
+        <Link href="/" aria-label="DB Contador: empresas" className="shrink-0">
+          <Logo size={28} />
+        </Link>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{empresaNome}</span>
+      </header>
+    </>
   );
 }

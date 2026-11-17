@@ -10,7 +10,7 @@ export function Topo({ empresa, usuario }: {
 }) {
   return (
     <header className="sticky top-0 z-30 border-b bg-card/90 backdrop-blur supports-backdrop-filter:bg-card/75">
-      <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-4 px-6">
+      <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-4 px-4 sm:px-6">
         <Link href="/portal" className="shrink-0">
           <LogoWordmark />
         </Link>
@@ -33,7 +33,7 @@ export function Topo({ empresa, usuario }: {
 
 export function Rodape() {
   return (
-    <footer className="mx-auto w-full max-w-5xl px-6 pt-4 pb-8 text-xs text-muted-foreground">
+    <footer className="mx-auto w-full max-w-5xl px-4 pt-4 pb-8 sm:px-6 text-xs text-muted-foreground">
       Portal do cliente · DB Contador. Dúvidas? Fale com seu contador.
     </footer>
   );

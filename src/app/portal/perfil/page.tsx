@@ -27,7 +27,7 @@ export default function PerfilPage() {
       <Suspense fallback={<div className="h-16 border-b bg-card" />}>
         <Barra />
       </Suspense>
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-8">
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <Link href="/portal" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" />
           Voltar

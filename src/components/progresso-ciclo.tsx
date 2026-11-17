@@ -27,7 +27,8 @@ export function ProgressoCiclo({ status }: { status: StatusCiclo }) {
                 {feito ? <Check className="size-4" /> : i + 1}
               </span>
             </div>
-            <span className={cn("text-xs leading-tight", agora ? "font-semibold text-foreground" : "text-muted-foreground")}>{rotulo}</span>
+            {/* Celular: só o rótulo do passo atual, para não encavalar (os outros ficam para leitor de tela). */}
+            <span className={cn("text-xs leading-tight", agora ? "font-semibold text-foreground" : "text-muted-foreground max-sm:sr-only")}>{rotulo}</span>
           </li>
         );
       })}

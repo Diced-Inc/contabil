@@ -33,7 +33,7 @@ async function Usuario() {
 export function Topo({ children }: { children?: ReactNode }) {
   return (
     <header className="border-b bg-card">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-6">
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         <Link href="/">
           <LogoWordmark />
         </Link>

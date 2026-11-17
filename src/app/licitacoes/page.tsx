@@ -220,7 +220,7 @@ async function Abertas({ sp }: { sp: Record<string, string | string[] | undefine
           hint={filtrado ? "Tente menos palavras, outro município ou tire o filtro de valor." : "Clique em Atualizar agora para buscar no PNCP."}
         />
       ) : (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {itens.map(({ l, salvaId }) => <CartaoLicitacao key={l.id} l={l} salva={!!salvaId} />)}
         </div>
       )}
@@ -275,7 +275,7 @@ async function Salvas() {
               {c.titulo}
               <span className="rounded-full bg-card px-2 py-px text-xs font-medium text-muted-foreground ring-1 ring-border tabular-nums">{itens.length}</span>
             </h2>
-            <div className="grid gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {itens.length === 0 && <p className="px-1 pb-2 text-xs text-muted-foreground">Nada nesta etapa.</p>}
               {itens.map(({ s, l, empresa }) => (
                 <article key={s.id} className="min-w-0 rounded-lg border bg-card p-3 shadow-xs">
@@ -447,7 +447,7 @@ export default function LicitacoesPage({ searchParams }: PageProps<"/licitacoes"
   return (
     <div className="flex min-h-svh flex-1 flex-col">
       <Topo />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <Link href="/" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft className="size-4" />
           Empresas
