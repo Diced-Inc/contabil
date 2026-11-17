@@ -11,12 +11,13 @@ import {
   ciclosMensais, contadores, contasBancarias, documentosRecebidos, empresas, importacoes, membros, type CicloMensal,
 } from "@/db/schema";
 import {
-  competenciaAtual, MAX_DOCUMENTO, mimeDocumento, nomeCompetencia, nomeParaPath, proximoStatus, TransicaoInvalida,
-  type EventoCiclo,
+  competenciaAtual, MAX_DOCUMENTO, mimeDocumento, MOTIVOS_ENCERRAMENTO, nomeCompetencia, nomeParaPath, proximoStatus, TransicaoInvalida,
+  type EventoCiclo, type MotivoEncerramento,
 } from "@/lib/ciclo";
-import { emailDasDisponivel, emailExtratoRecebido } from "@/lib/email";
+import { emailDasDisponivel, emailDasPago, emailExtratoPorFora, emailExtratoRecebido, type Email } from "@/lib/email";
 import { hoje, parseValorBR } from "@/lib/format";
 import { requireMembro, requireUser } from "@/supabase/server";
+import type { User } from "@supabase/supabase-js";
 
 export type Resultado<T = object> = { erro: string } | ({ ok: true } & T);
 type Envio = { path: string; token: string; mime: string };
@@ -27,6 +28,16 @@ const pasta = (empresaId: string, competencia: string) => `${empresaId}/${compet
 
 async function siteUrl() {
   return process.env.NEXT_PUBLIC_SITE_URL || (await headers()).get("origin") || "";
+}
+
+const nomeDe = (user: User) => (user.user_metadata?.display_name as string | undefined) || user.email || "O cliente";
+const linkFechamento = (site: string, empresaId: string, competencia: string) =>
+  `${site}/e/${empresaId}/fechamento?ciclo=${competencia.slice(0, 7)}`;
+
+/** E-mail para todos os contadores, registrado em notificacoes. */
+async function avisarContadores(base: { empresaId: string; cicloId: string; tipo: "extrato_recebido" | "extrato_por_fora" | "das_pago" }, email: Omit<Email, "para">) {
+  const lista = await db.select({ email: contadores.email }).from(contadores);
+  await Promise.all(lista.map((c) => notificar(base, c.email, email)));
 }
 
 async function nomeEmpresa(empresaId: string) {
@@ -162,22 +173,41 @@ export async function registrarEnvio(empresaId: string, dados: z.input<typeof re
     )
     .onConflictDoNothing();
 
-  const [empresa, site, lista] = await Promise.all([
-    nomeEmpresa(empresaId),
-    siteUrl(),
-    db.select({ email: contadores.email }).from(contadores),
-  ]);
+  const [empresa, site] = await Promise.all([nomeEmpresa(empresaId), siteUrl()]);
   const email = emailExtratoRecebido({
     empresa,
     competencia: nomeCompetencia(competencia),
     arquivos: arquivos.map((a) => a.nome),
-    quem: (user.user_metadata?.display_name as string | undefined) || user.email || "O cliente",
+    quem: nomeDe(user),
     observacao,
     link: `${site}/e/${empresaId}/documentos`,
   });
-  await Promise.all(lista.map((c) => notificar({ empresaId, cicloId: m.ciclo.id, tipo: "extrato_recebido" }, c.email, email)));
+  await avisarContadores({ empresaId, cicloId: m.ciclo.id, tipo: "extrato_recebido" }, email);
   revalidar(empresaId);
   return { ok: true, qtd: arquivos.length };
+}
+
+const notaSchema = z.string().trim().max(500).transform((s) => s || null);
+
+/** "Já enviei por outro canal": o mês sai de aguardando extrato, guarda a nota e avisa os contadores. */
+export async function avisarExtratoPorFora(empresaId: string, nota: string): Promise<Resultado> {
+  const { user } = await requireMembro(empresaId);
+  const r = notaSchema.safeParse(nota);
+  if (!r.success) return { erro: "A nota passa de 500 caracteres." };
+  const competencia = competenciaAtual(hoje());
+  const m = await mudarCiclo(empresaId, competencia, "extrato_por_fora", () => ({ extratoRecebidoEm: new Date(), clienteObs: r.data }));
+  if ("erro" in m) return m;
+  const [empresa, site] = await Promise.all([nomeEmpresa(empresaId), siteUrl()]);
+  const email = emailExtratoPorFora({
+    empresa,
+    mes: nomeCompetencia(competencia),
+    quem: nomeDe(user),
+    nota: r.data,
+    link: linkFechamento(site, empresaId, competencia),
+  });
+  await avisarContadores({ empresaId, cicloId: m.ciclo.id, tipo: "extrato_por_fora" }, email);
+  revalidar(empresaId);
+  return { ok: true };
 }
 
 /** Download de um documento recebido (cliente da empresa ou contador). */
@@ -204,12 +234,24 @@ export async function baixarDas(empresaId: string, competencia: string): Promise
   return urlDeDownload(c.path, `DAS-${competencia.slice(0, 7)}.pdf`);
 }
 
-/** "Já paguei" (cliente) ou "Marcar DAS como pago" (contador). */
+/** "Já paguei" (cliente, avisa os contadores por e-mail) ou "Marcar DAS como pago" (contador). */
 export async function marcarDasPago(empresaId: string, competencia: string): Promise<Resultado> {
-  const { user } = await requireMembro(empresaId);
+  const { user, papel } = await requireMembro(empresaId);
   if (!competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
   const m = await mudarCiclo(empresaId, competencia, "pagar", () => ({ dasPagoEm: new Date(), dasPagoPor: user.id }));
   if ("erro" in m) return m;
+  if (papel === "cliente") {
+    const [empresa, site] = await Promise.all([nomeEmpresa(empresaId), siteUrl()]);
+    const email = emailDasPago({
+      empresa,
+      competencia: nomeCompetencia(competencia),
+      valor: m.ciclo.dasValor,
+      quem: nomeDe(user),
+      quando: m.ciclo.dasPagoEm!.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }),
+      link: linkFechamento(site, empresaId, competencia),
+    });
+    await avisarContadores({ empresaId, cicloId: m.ciclo.id, tipo: "das_pago" }, email);
+  }
   revalidar(empresaId);
   return { ok: true };
 }
@@ -306,11 +348,32 @@ export async function concluirCiclo(
   };
 }
 
-/** Volta o ciclo para processamento (corrigir a guia, por exemplo). A guia atual continua até a próxima conclusão. */
+const encerramentoSchema = z.object({
+  motivo: z.enum(Object.keys(MOTIVOS_ENCERRAMENTO) as [MotivoEncerramento, ...MotivoEncerramento[]], "Escolha o motivo."),
+  observacao: z.string().trim().max(1000).transform((s) => s || null),
+});
+
+/** "Encerrar mês sem DAS": tira o mês das pendências e para os lembretes. Nenhum e-mail sai. */
+export async function encerrarCiclo(empresaId: string, competencia: string, dados: z.input<typeof encerramentoSchema>): Promise<Resultado> {
+  await requireUser();
+  if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
+  const r = encerramentoSchema.safeParse(dados);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  const m = await mudarCiclo(empresaId, competencia, "encerrar", () => ({
+    encerradoEm: new Date(), encerradoMotivo: r.data.motivo, encerradoObs: r.data.observacao,
+  }));
+  if ("erro" in m) return m;
+  revalidar(empresaId);
+  return { ok: true };
+}
+
+/** Volta o ciclo para processamento (corrigir a guia ou desfazer o encerramento). A guia atual continua até a próxima conclusão. */
 export async function reabrirCiclo(empresaId: string, competencia: string): Promise<Resultado> {
   await requireUser();
   if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
-  const m = await mudarCiclo(empresaId, competencia, "reabrir", () => ({ concluidoEm: null, dasPagoEm: null, dasPagoPor: null }));
+  const m = await mudarCiclo(empresaId, competencia, "reabrir", () => ({
+    concluidoEm: null, dasPagoEm: null, dasPagoPor: null, encerradoEm: null, encerradoMotivo: null, encerradoObs: null,
+  }));
   if ("erro" in m) return m;
   revalidar(empresaId);
   return { ok: true };

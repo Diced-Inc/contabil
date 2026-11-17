@@ -1,16 +1,30 @@
 /** Regras puras do ciclo mensal com o cliente (competência, transições de status, situação do DAS). */
-export type StatusCiclo = "aguardando_extrato" | "extrato_recebido" | "em_processamento" | "das_enviado" | "das_pago";
-export type EventoCiclo = "extrato_enviado" | "processar" | "concluir" | "pagar" | "reabrir";
+export type StatusCiclo = "aguardando_extrato" | "extrato_recebido" | "em_processamento" | "das_enviado" | "das_pago" | "encerrado";
+export type EventoCiclo = "extrato_enviado" | "extrato_por_fora" | "processar" | "concluir" | "pagar" | "encerrar" | "reabrir";
 
-export const ORDEM_STATUS: StatusCiclo[] = ["aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago"];
+/** encerrado fica no fim: conta como "passou de tudo" (progresso completo, sem envio nem DAS em aberto). */
+export const ORDEM_STATUS: StatusCiclo[] = ["aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago", "encerrado"];
 
 /** Texto para o cliente (portal) e rótulo curto para o contador. */
-export const STATUS_CICLO: Record<StatusCiclo, { cliente: string; rotulo: string; badge: "warning" | "info" | "violet" | "brand" | "success" }> = {
+export const STATUS_CICLO: Record<
+  StatusCiclo,
+  { cliente: string; rotulo: string; badge: "warning" | "info" | "violet" | "brand" | "success" | "muted" }
+> = {
   aguardando_extrato: { cliente: "Estamos esperando os extratos do mês.", rotulo: "Aguardando extrato", badge: "warning" },
   extrato_recebido: { cliente: "Recebemos seus arquivos. Em breve o contador começa o fechamento.", rotulo: "Extrato recebido", badge: "info" },
   em_processamento: { cliente: "O contador está fechando o mês.", rotulo: "Em processamento", badge: "violet" },
   das_enviado: { cliente: "O mês foi concluído e a guia do DAS está disponível.", rotulo: "DAS enviado", badge: "brand" },
   das_pago: { cliente: "Tudo certo: o DAS do mês está pago.", rotulo: "DAS pago", badge: "success" },
+  encerrado: { cliente: "Mês encerrado pelo contador. Não há nada pendente.", rotulo: "Encerrado", badge: "muted" },
+};
+
+export type MotivoEncerramento = "resolvido_fora" | "sem_movimento" | "sem_imposto" | "outro";
+/** Rótulo no formulário do contador e frase para o cliente no portal. */
+export const MOTIVOS_ENCERRAMENTO: Record<MotivoEncerramento, { rotulo: string; cliente: string }> = {
+  resolvido_fora: { rotulo: "Resolvido por fora (WhatsApp, e-mail…)", cliente: "Já foi resolvido com o contador por outro canal." },
+  sem_movimento: { rotulo: "Sem movimento no mês", cliente: "A empresa não teve movimento neste mês." },
+  sem_imposto: { rotulo: "Sem imposto a pagar", cliente: "Não há imposto a pagar neste mês." },
+  outro: { rotulo: "Outro", cliente: "O contador encerrou o mês sem guia do DAS." },
 };
 
 /** Para cada evento, de onde pode partir e para onde vai (ausente = transição inválida). */
@@ -21,6 +35,8 @@ const TRANSICOES: Record<EventoCiclo, Partial<Record<StatusCiclo, StatusCiclo>>>
     extrato_recebido: "extrato_recebido",
     em_processamento: "em_processamento",
   },
+  // Cliente avisa que mandou os extratos por WhatsApp/e-mail: só enquanto o mês espera os extratos.
+  extrato_por_fora: { aguardando_extrato: "extrato_recebido" },
   // Contador importa/marca um documento: inicia o processamento; depois do DAS não mexe no status.
   processar: {
     aguardando_extrato: "em_processamento",
@@ -28,6 +44,7 @@ const TRANSICOES: Record<EventoCiclo, Partial<Record<StatusCiclo, StatusCiclo>>>
     em_processamento: "em_processamento",
     das_enviado: "das_enviado",
     das_pago: "das_pago",
+    encerrado: "encerrado",
   },
   concluir: {
     aguardando_extrato: "das_enviado",
@@ -35,14 +52,23 @@ const TRANSICOES: Record<EventoCiclo, Partial<Record<StatusCiclo, StatusCiclo>>>
     em_processamento: "das_enviado",
   },
   pagar: { das_enviado: "das_pago" },
-  reabrir: { das_enviado: "em_processamento", das_pago: "em_processamento" },
+  // Encerrar sem DAS: de qualquer ponto antes do pagamento.
+  encerrar: {
+    aguardando_extrato: "encerrado",
+    extrato_recebido: "encerrado",
+    em_processamento: "encerrado",
+    das_enviado: "encerrado",
+  },
+  reabrir: { das_enviado: "em_processamento", das_pago: "em_processamento", encerrado: "em_processamento" },
 };
 
 const MOTIVO: Record<EventoCiclo, string> = {
   extrato_enviado: "O mês já foi concluído. Fale com o contador para enviar mais arquivos.",
+  extrato_por_fora: "O contador já está com os extratos deste mês.",
   processar: "Status do ciclo inválido.",
   concluir: "O mês já foi concluído. Reabra o ciclo para enviar outra guia.",
   pagar: "Não há DAS em aberto neste mês.",
+  encerrar: "Este mês já foi pago ou encerrado.",
   reabrir: "O ciclo ainda não foi concluído.",
 };
 

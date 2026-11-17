@@ -2,10 +2,10 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, CloudUpload, FileText, Send, X } from "lucide-react";
+import { CheckCircle2, CloudUpload, FileText, MessageCircle, Send, X } from "lucide-react";
 import { cn } from "cn";
 import { toast } from "sonner";
-import { marcarDasPago, prepararEnvio, registrarEnvio } from "@/actions/ciclo";
+import { avisarExtratoPorFora, marcarDasPago, prepararEnvio, registrarEnvio } from "@/actions/ciclo";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -183,6 +183,57 @@ export function JaPaguei({ empresaId, competencia }: { empresaId: string; compet
           <Button onClick={confirmar} disabled={pendente}>
             <CheckCircle2 />
             {pendente ? "Registrando..." : "Sim, já paguei"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** "Já enviei por outro canal": o cliente mandou por WhatsApp/e-mail; avisa o contador e para os lembretes do extrato. */
+export function JaEnviei({ empresaId }: { empresaId: string }) {
+  const [aberta, setAberta] = useState(false);
+  const [nota, setNota] = useState("");
+  const [pendente, iniciar] = useTransition();
+  const confirmar = () =>
+    iniciar(async () => {
+      const r = await avisarExtratoPorFora(empresaId, nota);
+      if ("erro" in r) return void toast.error(r.erro);
+      toast.success("Pronto. O contador já foi avisado.");
+      setAberta(false);
+    });
+  return (
+    <Dialog open={aberta} onOpenChange={(a) => !pendente && (setAberta(a), a && setNota(""))}>
+      <DialogTrigger render={<Button variant="outline" size="sm" className="justify-self-start" />}>
+        <MessageCircle />
+        Já enviei por outro canal
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Enviou os extratos por outro canal?</DialogTitle>
+          <DialogDescription>
+            Se você já mandou os extratos pelo WhatsApp ou por e-mail, avise aqui. O contador recebe o aviso e você para de receber lembretes.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          <Label htmlFor="por-fora-nota">Recado para o contador (opcional)</Label>
+          <Textarea
+            id="por-fora-nota"
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            maxLength={500}
+            rows={2}
+            placeholder="Ex.: Mandei pelo WhatsApp dia 05."
+            disabled={pendente}
+          />
+        </div>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />} disabled={pendente}>
+            Cancelar
+          </DialogClose>
+          <Button onClick={confirmar} disabled={pendente}>
+            <Send />
+            {pendente ? "Avisando..." : "Avisar o contador"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -78,6 +78,13 @@
       "when": 1794668018954,
       "tag": "0010_enderecos_pendentes",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794873603850,
+      "tag": "0011_ciclo_encerrado",
+      "breakpoints": true
     }
   ]
 }

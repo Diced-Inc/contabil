@@ -101,7 +101,9 @@ export const ROTULO_NOTIFICACAO: Record<TipoNotificacao, string> = {
   pedido_extrato: "Pedido de extrato",
   lembrete_extrato: "Lembrete de extrato",
   extrato_recebido: "Extrato recebido",
+  extrato_por_fora: "Extrato por outro canal",
   das_disponivel: "DAS disponível",
   lembrete_das: "Lembrete do DAS",
+  das_pago: "DAS pago pelo cliente",
   recuperacao_senha: "Recuperação de senha",
 };

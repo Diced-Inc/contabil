@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
-import { CalendarClock, Check, FileText, MessageSquareText, Receipt } from "lucide-react";
+import { CalendarClock, Check, FileText, MessageCircle, MessageSquareText, Receipt } from "lucide-react";
 import { cn } from "cn";
 import { Avatar } from "@/components/avatar";
 import { Baixar } from "@/components/baixar";
@@ -12,14 +12,14 @@ import { db } from "@/db";
 import { garantirCiclo } from "@/db/ciclos";
 import { ciclosMensais, contasBancarias, documentosRecebidos } from "@/db/schema";
 import {
-  competenciaAtual, fmtTamanho, nomeCompetencia, ORDEM_STATUS, tituloCompetencia, passou, situacaoDas, STATUS_CICLO, textoSituacaoDas,
-  type StatusCiclo,
+  competenciaAtual, fmtTamanho, MOTIVOS_ENCERRAMENTO, nomeCompetencia, ORDEM_STATUS, tituloCompetencia, passou, situacaoDas, STATUS_CICLO,
+  textoSituacaoDas, type StatusCiclo,
 } from "@/lib/ciclo";
 import { fmtCnpj, fmtData, fmtValor, hoje, PORTES, REGIMES } from "@/lib/format";
 import { logoDaEmpresa, perfilDoUsuario } from "@/supabase/server";
 import { getEmpresaPortal } from "../dados";
 import { Rodape, Topo } from "../topo";
-import { EnvioExtratos, JaPaguei } from "./ciclo-cliente";
+import { EnvioExtratos, JaEnviei, JaPaguei } from "./ciclo-cliente";
 
 const TZ = "America/Sao_Paulo";
 const PASSOS = ["Enviar extratos", "Recebido", "Em processamento", "DAS disponível", "Pago"];
@@ -35,7 +35,7 @@ function Dado({ rotulo, children }: { rotulo: string; children: React.ReactNode 
   );
 }
 
-/** Os 5 passos do mês; o atual em destaque. das_pago completa todos. */
+/** Os 5 passos do mês; o atual em destaque. das_pago e encerrado (último em ORDEM_STATUS) completam todos. */
 function Progresso({ status }: { status: StatusCiclo }) {
   const atual = ORDEM_STATUS.indexOf(status);
   return (
@@ -104,7 +104,9 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
   const primeiroNome = perfil.nome.split(/\s+/)[0];
   const local = [empresa.cidade, empresa.uf].filter(Boolean).join("/");
   const mes = nomeCompetencia(competencia);
-  const temDas = passou(ciclo.status, "das_enviado") && ciclo.dasValor && ciclo.dasVencimento;
+  const temDas = passou(ciclo.status, "das_enviado") && ciclo.status !== "encerrado" && ciclo.dasValor && ciclo.dasVencimento;
+  // Data de recebimento sem arquivo = avisou que mandou por outro canal (só avisarExtratoPorFora grava assim).
+  const porFora = ciclo.extratoRecebidoEm && (docs.length === 0 || ciclo.clienteObs) ? ciclo.extratoRecebidoEm : null;
   const situacao = situacaoDas(ciclo, hj);
 
   return (
@@ -145,8 +147,23 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
                 </CardAction>
               </CardHeader>
               <CardContent className="grid gap-5">
-                <p className="text-sm text-foreground">{STATUS_CICLO[ciclo.status].cliente}</p>
+                <div className="grid gap-1">
+                  <p className="text-sm text-foreground">{STATUS_CICLO[ciclo.status].cliente}</p>
+                  {ciclo.status === "encerrado" && ciclo.encerradoMotivo && (
+                    <p className="text-sm text-muted-foreground">{MOTIVOS_ENCERRAMENTO[ciclo.encerradoMotivo].cliente}</p>
+                  )}
+                </div>
                 <Progresso status={ciclo.status} />
+                {porFora && (
+                  <p className="flex gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
+                    <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <span>
+                      Você avisou em {diaSP(porFora).slice(0, 5)} que enviou por outro canal.
+                      {ciclo.clienteObs && <span className="block text-muted-foreground">&ldquo;{ciclo.clienteObs}&rdquo;</span>}
+                    </span>
+                  </p>
+                )}
+                {ciclo.status === "aguardando_extrato" && <JaEnviei empresaId={empresaId} />}
               </CardContent>
             </Card>
 

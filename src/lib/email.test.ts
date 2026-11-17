@@ -34,3 +34,43 @@ describe("templates do ciclo", () => {
     expect(e.html).not.toContain("liberou seu acesso");
   });
 });
+
+describe("reply-to", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+  const corpoEnviado = async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ id: "r1" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubEnv("RESEND_API_KEY", "k");
+    vi.stubEnv("EMAIL_FROM", "A <a@b.com>");
+    expect(await enviarEmail({ para: "c@d.com", assunto: "x", html: "x", texto: "x" })).toEqual({ status: "enviado", id: "r1" });
+    return JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+  };
+  it("usa EMAIL_REPLY_TO quando configurado", async () => {
+    vi.stubEnv("EMAIL_REPLY_TO", "contato@x.com");
+    expect((await corpoEnviado()).reply_to).toBe("contato@x.com");
+  });
+  it("sem EMAIL_REPLY_TO não manda o campo", async () => {
+    vi.stubEnv("EMAIL_REPLY_TO", "");
+    expect(await corpoEnviado()).not.toHaveProperty("reply_to");
+  });
+});
+
+describe("templates para o contador", () => {
+  it("extrato_por_fora com e sem nota", async () => {
+    const { emailExtratoPorFora } = await import("./email");
+    const e = emailExtratoPorFora({ empresa: "Diced", mes: "outubro de 2026", quem: "Marcelo", nota: "Mandei pelo <WhatsApp>", link: "https://x.dev/f" });
+    expect(e.texto).toContain("Marcelo avisou que enviou os extratos de outubro de 2026 da Diced por outro canal: Mandei pelo <WhatsApp>");
+    expect(e.html).toContain("Mandei pelo &lt;WhatsApp&gt;");
+    const s = emailExtratoPorFora({ empresa: "Diced", mes: "outubro de 2026", quem: "Marcelo", nota: null, link: "https://x.dev/f" });
+    expect(s.texto).toContain("por outro canal.");
+  });
+  it("das_pago traz valor e quando", async () => {
+    const { emailDasPago } = await import("./email");
+    const e = emailDasPago({ empresa: "Diced", competencia: "outubro de 2026", valor: "99.9", quem: "Ana", quando: "16/11/2026 10:00", link: "https://x.dev/f" });
+    expect(e.assunto).toMatch(/^Diced: DAS de outubro de 2026 pago \(R\$\s99,90\)$/);
+    expect(e.texto).toContain("Informado em: 16/11/2026 10:00");
+  });
+});

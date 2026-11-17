@@ -84,6 +84,7 @@ Variáveis (Vercel → Settings → Environment Variables):
 | --- | --- |
 | `RESEND_API_KEY` | Envio pelo [Resend](https://resend.com). Sem ela, os avisos ficam registrados como "Não configurado". |
 | `EMAIL_FROM` | Remetente, ex.: `Bruno Contábil <avisos@seudominio.com.br>`. O domínio precisa estar verificado no Resend (Domains → Add domain, registros SPF/DKIM no DNS). |
+| `EMAIL_REPLY_TO` | Endereço de resposta (Reply-To), ex.: `contato@dbcontador.com.br`. Quando o cliente responde um aviso, a resposta vai para cá. Vazio = sem Reply-To. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Convites e links de recuperação de senha gerados pelo servidor. |
 | `CRON_SECRET` | A Vercel envia `Authorization: Bearer <CRON_SECRET>`; sem ela a rota recusa. |
 

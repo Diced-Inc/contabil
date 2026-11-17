@@ -40,6 +40,25 @@ describe("proximoStatus", () => {
     expect(proximoStatus("das_enviado", "reabrir")).toBe("em_processamento");
     expect(proximoStatus("das_pago", "reabrir")).toBe("em_processamento");
   });
+  it("encerrar sem DAS de qualquer ponto antes do pagamento", () => {
+    for (const s of ["aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado"] as const) {
+      expect(proximoStatus(s, "encerrar")).toBe("encerrado");
+    }
+    expect(() => proximoStatus("das_pago", "encerrar")).toThrow(TransicaoInvalida);
+    expect(() => proximoStatus("encerrado", "encerrar")).toThrow(TransicaoInvalida);
+  });
+  it("encerrado: reabre para processamento; cliente não envia nem paga; processar não mexe", () => {
+    expect(proximoStatus("encerrado", "reabrir")).toBe("em_processamento");
+    expect(proximoStatus("encerrado", "processar")).toBe("encerrado");
+    expect(() => proximoStatus("encerrado", "extrato_enviado")).toThrow(TransicaoInvalida);
+    expect(() => proximoStatus("encerrado", "pagar")).toThrow(TransicaoInvalida);
+    expect(() => proximoStatus("encerrado", "concluir")).toThrow(TransicaoInvalida);
+  });
+  it("extrato por outro canal só enquanto aguarda o extrato", () => {
+    expect(proximoStatus("aguardando_extrato", "extrato_por_fora")).toBe("extrato_recebido");
+    expect(() => proximoStatus("extrato_recebido", "extrato_por_fora")).toThrow(TransicaoInvalida);
+    expect(() => proximoStatus("encerrado", "extrato_por_fora")).toThrow(TransicaoInvalida);
+  });
   it("transições inválidas lançam", () => {
     expect(() => proximoStatus("das_enviado", "extrato_enviado")).toThrow(TransicaoInvalida);
     expect(() => proximoStatus("em_processamento", "pagar")).toThrow(TransicaoInvalida);

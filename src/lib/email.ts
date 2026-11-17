@@ -12,7 +12,7 @@ export async function enviarEmail({ para, assunto, html, texto }: Email): Promis
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [para], subject: assunto, html, text: texto }),
+      body: JSON.stringify({ from, to: [para], subject: assunto, html, text: texto, reply_to: process.env.EMAIL_REPLY_TO || undefined }),
     });
     const corpo = (await r.json().catch(() => ({}))) as { id?: string; message?: string };
     if (!r.ok) return { status: "erro", erro: corpo.message ?? `HTTP ${r.status}` };
@@ -90,6 +90,48 @@ export function emailExtratoRecebido({ empresa, competencia, arquivos, quem, obs
   const texto = `${quem} enviou ${qtd} da ${empresa}, competência ${competencia}:\n${arquivos.map((a) => `- ${a}`).join("\n")}\n${
     observacao ? `\nObservação do cliente: ${observacao}\n` : ""
   }\nAbrir documentos: ${link}`;
+  return { assunto, html, texto };
+}
+
+const RODAPE_CONTADOR = "Aviso automático do portal do cliente.";
+
+/** Para o contador: o cliente avisou que mandou os extratos por WhatsApp/e-mail (sem arquivo no portal). */
+export function emailExtratoPorFora({ empresa, mes, quem, nota, link }: {
+  empresa: string; mes: string; quem: string; nota: string | null; link: string;
+}) {
+  const assunto = `${empresa}: extratos de ${mes} enviados por outro canal`;
+  const frase = `${quem} avisou que enviou os extratos de ${mes} da ${empresa} por outro canal`;
+  const html = layout({
+    titulo: "Extratos por outro canal",
+    paragrafos: [
+      `<b>${esc(quem)}</b> avisou que enviou os extratos de ${esc(mes)} da <b>${esc(empresa)}</b> por outro canal${nota ? ":" : "."}`,
+      ...(nota ? [`<i>${esc(nota)}</i>`] : []),
+      "Nenhum arquivo foi anexado no portal. Confira no WhatsApp ou no e-mail.",
+    ],
+    botao: "Abrir o fechamento",
+    link,
+    rodape: RODAPE_CONTADOR,
+  });
+  const texto = `${frase}${nota ? `: ${nota}` : "."}\n\nNenhum arquivo foi anexado no portal. Confira no WhatsApp ou no e-mail.\n\nAbrir o fechamento: ${link}`;
+  return { assunto, html, texto };
+}
+
+/** Para o contador: o cliente clicou em "Já paguei". */
+export function emailDasPago({ empresa, competencia, valor, quem, quando, link }: {
+  empresa: string; competencia: string; valor: string | null; quem: string; quando: string; link: string;
+}) {
+  const assunto = `${empresa}: DAS de ${competencia} pago${valor ? ` (${brl(valor)})` : ""}`;
+  const html = layout({
+    titulo: "DAS pago pelo cliente",
+    paragrafos: [
+      `<b>${esc(quem)}</b> marcou como pago o DAS de <b>${esc(competencia)}</b> da <b>${esc(empresa)}</b>.`,
+      `${valor ? `Valor: <b>${brl(valor)}</b><br>` : ""}Informado em: <b>${esc(quando)}</b>`,
+    ],
+    botao: "Abrir o fechamento",
+    link,
+    rodape: RODAPE_CONTADOR,
+  });
+  const texto = `${quem} marcou como pago o DAS de ${competencia} da ${empresa}.\n\n${valor ? `Valor: ${brl(valor)}\n` : ""}Informado em: ${quando}\n\nAbrir o fechamento: ${link}`;
   return { assunto, html, texto };
 }
 

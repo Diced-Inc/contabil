@@ -2,6 +2,7 @@ import {
   pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
+import type { MotivoEncerramento } from "@/lib/ciclo";
 
 export const regimeEnum = pgEnum("regime_tributario", ["simples", "presumido", "real", "mei"]);
 export const porteEnum = pgEnum("porte_empresa", ["mei", "me", "epp", "demais"]);
@@ -23,7 +24,7 @@ export const statusTituloEnum = pgEnum("status_titulo", ["aberto", "baixado", "c
 export const acaoLogEnum = pgEnum("acao_log", ["criado", "alterado", "estornado", "fechamento", "reabertura", "apuracao"]);
 export const papelMembroEnum = pgEnum("papel_membro", ["cliente"]);
 export const statusCicloEnum = pgEnum("status_ciclo", [
-  "aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago",
+  "aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago", "encerrado",
 ]);
 export const statusNotificacaoEnum = pgEnum("status_notificacao", ["enviado", "erro", "nao_configurado"]);
 
@@ -241,6 +242,12 @@ export const ciclosMensais = pgTable("ciclos_mensais", {
   dasPagoEm: timestamp("das_pago_em", { withTimezone: true }),
   dasPagoPor: uuid("das_pago_por"),
   observacao: text("observacao"),
+  /** Encerrado sem DAS pelo contador; a observação é interna (o cliente não vê). */
+  encerradoEm: timestamp("encerrado_em", { withTimezone: true }),
+  encerradoMotivo: text("encerrado_motivo").$type<MotivoEncerramento>(),
+  encerradoObs: text("encerrado_obs"),
+  /** Nota do cliente ao avisar que enviou os extratos por outro canal. */
+  clienteObs: text("cliente_obs"),
   createdAt: createdAt(),
 }, (t) => [unique().on(t.empresaId, t.competencia)]);
 
@@ -262,7 +269,8 @@ export const documentosRecebidos = pgTable("documentos_recebidos", {
 });
 
 export type TipoNotificacao =
-  | "convite" | "pedido_extrato" | "lembrete_extrato" | "extrato_recebido" | "das_disponivel" | "lembrete_das" | "recuperacao_senha";
+  | "convite" | "pedido_extrato" | "lembrete_extrato" | "extrato_recebido" | "extrato_por_fora" | "das_disponivel" | "lembrete_das"
+  | "das_pago" | "recuperacao_senha";
 
 /** Histórico e idempotência dos e-mails: um por (ciclo, tipo, destinatário, dia). */
 export const notificacoes = pgTable("notificacoes", {

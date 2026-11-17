@@ -119,3 +119,18 @@ describe("textos", () => {
     expect(proximoPedido("2026-12-05", 1)).toBe("2027-01-01");
   });
 });
+
+describe("avisosDoDia: mês encerrado sem DAS", () => {
+  const encerrado = (c: Partial<CicloAviso> = {}) => outubro({ status: "encerrado", ...c });
+  it("não pede o extrato, nem no dia nem depois", () => {
+    expect(rodar("2026-11-01", [encerrado()])).toEqual([]);
+    expect(rodar("2026-11-03", [encerrado()])).toEqual([]);
+  });
+  it("não lembra o extrato", () => {
+    expect(rodar("2026-11-05", [encerrado({ extratoSolicitadoEm: pedido })])).toEqual([]);
+  });
+  it("não lembra o DAS, mesmo com guia enviada antes de encerrar", () => {
+    expect(rodar("2026-11-17", [encerrado({ dasVencimento: "2026-11-20" })])).toEqual([]);
+    expect(rodar("2026-11-21", [encerrado({ dasVencimento: "2026-11-20" })])).toEqual([]);
+  });
+});

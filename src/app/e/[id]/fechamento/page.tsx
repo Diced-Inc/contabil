@@ -11,10 +11,12 @@ import { Carregando, PageHeader } from "@/components/page-header";
 import { Baixar } from "@/components/baixar";
 import { db } from "@/db";
 import { ciclosMensais, documentosRecebidos, membros } from "@/db/schema";
-import { competenciaAtual, passou, tituloCompetencia, situacaoDas, somarMeses, STATUS_CICLO, textoSituacaoDas } from "@/lib/ciclo";
+import {
+  competenciaAtual, MOTIVOS_ENCERRAMENTO, passou, tituloCompetencia, situacaoDas, somarMeses, STATUS_CICLO, textoSituacaoDas,
+} from "@/lib/ciclo";
 import { fmtData, fmtValor, hoje, lerAno } from "@/lib/format";
 import { getEmpresa } from "../empresa";
-import { CicloBotao, ConcluirDasDialog } from "./ciclo-acoes";
+import { CicloBotao, ConcluirDasDialog, EncerrarDialog } from "./ciclo-acoes";
 import { ApuracaoBotao, MesBotao } from "./fechamento-botoes";
 import { painelFechamento } from "./queries";
 
@@ -47,6 +49,9 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
   const st = STATUS_CICLO[status];
   const situacao = ciclo ? situacaoDas(ciclo, hoje()) : null;
   const link = (n: number) => `/e/${empresaId}/fechamento?ano=${ano}&ciclo=${somarMeses(competencia, n).slice(0, 7)}`;
+  // Sem arquivo mas com data de recebimento = o cliente avisou que mandou por WhatsApp/e-mail (só avisarExtratoPorFora faz isso).
+  const porFora = ciclo?.extratoRecebidoEm && (docs.total === 0 || ciclo.clienteObs);
+  const encerrar = status !== "das_pago" && status !== "encerrado" && <EncerrarDialog empresaId={empresaId} competencia={competencia} />;
 
   return (
     <Card className="mb-6">
@@ -79,7 +84,20 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
               </Link>
             </>
           )}
-          {ciclo?.dasValor && ciclo.dasVencimento && (
+          {porFora && (
+            <span className="mt-1 block text-foreground">
+              O cliente avisou em {dataHoraSP(ciclo.extratoRecebidoEm!)} que enviou os extratos por outro canal
+              {ciclo.clienteObs ? <>: <i>&ldquo;{ciclo.clienteObs}&rdquo;</i></> : "."}
+            </span>
+          )}
+          {ciclo?.status === "encerrado" && (
+            <span className="mt-1 block text-foreground">
+              Encerrado sem DAS{ciclo.encerradoEm && <> em {dataHoraSP(ciclo.encerradoEm)}</>}
+              {ciclo.encerradoMotivo && <>: <b className="font-semibold">{MOTIVOS_ENCERRAMENTO[ciclo.encerradoMotivo].rotulo}</b></>}
+              {ciclo.encerradoObs && <> · <i>{ciclo.encerradoObs}</i></>}. O cliente não recebe mais lembretes deste mês.
+            </span>
+          )}
+          {ciclo?.dasValor && ciclo.dasVencimento && ciclo.status !== "encerrado" && (
             <span className="mt-1 block">
               DAS de <b className="font-semibold text-foreground">R$ {fmtValor(ciclo.dasValor)}</b>, vencimento {fmtData(ciclo.dasVencimento)}
               {situacao && (
@@ -97,16 +115,20 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
             {passou(status, "das_enviado") ? (
               <>
                 {status === "das_enviado" && <CicloBotao empresaId={empresaId} competencia={competencia} acao="pago" />}
+                {encerrar}
                 <CicloBotao empresaId={empresaId} competencia={competencia} acao="reabrir" />
               </>
             ) : (
-              <ConcluirDasDialog
-                empresaId={empresaId}
-                competencia={competencia}
-                vencimentoSugerido={`${somarMeses(competencia, 1).slice(0, 8)}20`}
-                clientes={clientes.map((c) => c.email)}
-                hoje={hoje()}
-              />
+              <>
+                {encerrar}
+                <ConcluirDasDialog
+                  empresaId={empresaId}
+                  competencia={competencia}
+                  vencimentoSugerido={`${somarMeses(competencia, 1).slice(0, 8)}20`}
+                  clientes={clientes.map((c) => c.email)}
+                  hoje={hoje()}
+                />
+              </>
             )}
           </div>
         </CardAction>
