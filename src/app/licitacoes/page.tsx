@@ -14,13 +14,17 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { estadoSync } from "@/db/licitacoes";
 import type { Licitacao } from "@/db/schema";
-import { fmtValor, valorParaInput } from "@/lib/format";
+import { fmtValor } from "@/lib/format";
 import { fmtDataHoraSP, MODALIDADES, prazoEncerramento, STATUS_SALVA, type StatusSalva } from "@/lib/licitacoes";
 import { requireUser } from "@/supabase/server";
 import {
   contarSalvas, lerFiltros, listarAbertas, listarBuscas, listarEmpresas, listarSalvas, opcoesFiltros, POR_PAGINA, type Filtros,
 } from "./dados";
-import { ArquivosBotao, AtualizarAgora, BuscaAcoes, BuscaDialog, RemoverSalva, SalvaControles, SalvarBotao, selectCls } from "./licitacoes-ui";
+import { ArquivosBotao, AtualizarAgora, BuscaAcoes, BuscaDialog, RemoverSalva, SalvaControles, SalvarBotao } from "./licitacoes-ui";
+
+// local: constante exportada de módulo "use client" chega no servidor como referência, não como string
+const selectCls =
+  "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 export const metadata: Metadata = { title: "Licitações | DB Contador" };
 // "Atualizar agora" roda a sincronização em after(), dentro do limite da página
@@ -125,8 +129,8 @@ async function Abertas({ sp }: { sp: Record<string, string | string[] | undefine
   const modalidadeAtual = f.modalidades[0];
   const filtrado = !!(f.q || f.ufs.length || f.municipios.length || f.modalidades.length || f.valorMin !== null || f.valorMax !== null || f.prazoDias !== null);
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
-  const minTxt = f.valorMin !== null ? valorParaInput(f.valorMin) : "";
-  const maxTxt = f.valorMax !== null ? valorParaInput(f.valorMax) : "";
+  const minTxt = f.valorMin !== null ? fmtValor(f.valorMin) : "";
+  const maxTxt = f.valorMax !== null ? fmtValor(f.valorMax) : "";
 
   return (
     <>
@@ -267,7 +271,7 @@ async function Salvas() {
       {COLUNAS.map((c) => {
         const itens = salvas.filter((x) => c.status.includes(x.s.status));
         return (
-          <section key={c.titulo} className="flex flex-col rounded-xl border bg-muted/40 p-3">
+          <section key={c.titulo} className="flex min-w-0 flex-col rounded-xl border bg-muted/40 p-3">
             <h2 className="mb-3 flex items-center justify-between px-1 text-sm font-semibold text-foreground">
               {c.titulo}
               <span className="rounded-full bg-card px-2 py-px text-xs font-medium text-muted-foreground ring-1 ring-border tabular-nums">{itens.length}</span>
@@ -275,9 +279,10 @@ async function Salvas() {
             <div className="grid gap-3">
               {itens.length === 0 && <p className="px-1 pb-2 text-xs text-muted-foreground">Nada nesta etapa.</p>}
               {itens.map(({ s, l, empresa }) => (
-                <article key={s.id} className="rounded-lg border bg-card p-3 shadow-xs">
+                <article key={s.id} className="min-w-0 rounded-lg border bg-card p-3 shadow-xs">
                   <div className="mb-1.5 flex items-start justify-between gap-2">
                     <div className="flex flex-wrap gap-1">
+                      <Badge variant="muted">{l.modalidadeNome}</Badge>
                       {c.status.length > 1 && <Badge variant={STATUS_SALVA[s.status].badge}>{STATUS_SALVA[s.status].rotulo}</Badge>}
                       {l.situacaoId !== 1 && <Badge variant="warning">{l.situacaoNome}</Badge>}
                     </div>
@@ -285,7 +290,7 @@ async function Salvas() {
                   </div>
                   <h3 className="line-clamp-3 text-sm font-medium leading-snug text-foreground" title={l.objeto}>{l.objeto}</h3>
                   <p className="mt-1 truncate text-xs text-muted-foreground" title={l.orgaoNome}>{l.orgaoNome} · {l.municipio}/{l.uf}</p>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
                     <Prazo l={l} className="text-xs" />
                     {l.valorEstimado && <span className="shrink-0 font-semibold tabular-nums">{fmtBRL(l.valorEstimado)}</span>}
                   </div>
@@ -294,7 +299,7 @@ async function Salvas() {
                     <SalvaControles id={s.id} status={s.status} empresaId={s.empresaId} nota={s.nota} empresas={empresas} />
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    <a href={l.linkPncp} target="_blank" rel="noreferrer" className={buttonVariants({ size: "xs", variant: "outline" })}>
+                    <a href={l.linkPncp} target="_blank" rel="noreferrer" className={buttonVariants({ size: "sm", variant: "outline" })}>
                       <ExternalLink />
                       PNCP
                     </a>
@@ -373,8 +378,8 @@ async function Alertas() {
                     uf: b.ufs[0],
                     municipio: b.municipios[0],
                     modalidade: b.modalidades[0],
-                    min: b.valorMin ? valorParaInput(b.valorMin) : "",
-                    max: b.valorMax ? valorParaInput(b.valorMax) : "",
+                    min: b.valorMin ? fmtValor(b.valorMin) : "",
+                    max: b.valorMax ? fmtValor(b.valorMax) : "",
                     empresaId: b.empresaId,
                   }}
                 />

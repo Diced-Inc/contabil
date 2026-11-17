@@ -7,7 +7,7 @@ import type { PaginaPncp } from "./licitacoes";
  * - limita por IP (429 sem Retry-After depois de ~20 páginas seguidas) e às vezes derruba a conexão (ECONNRESET) ou dá 5xx.
  */
 const BASE = "https://pncp.gov.br/api";
-const TIMEOUT_MS = 20_000;
+const TIMEOUT_MS = 15_000;
 const ESPERAS_MS = [3_000, 10_000, 30_000];
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -8,8 +8,8 @@ export async function GET(request: Request) {
   const segredo = process.env.CRON_SECRET;
   if (!segredo || request.headers.get("authorization") !== `Bearer ${segredo}`) return new Response("Unauthorized", { status: 401 });
   const ufs = await ufsParaSincronizar();
-  // folga para uma página lenta com novas tentativas (até ~2 min) e os e-mails, dentro dos 300 s
-  const sync = await sincronizarLicitacoes({ ufs, prazoMs: 150_000 });
+  // CE (~26 páginas) leva 2 a 4 min; 180 s + uma página lenta com novas tentativas (até ~105 s) cabem nos 300 s
+  const sync = await sincronizarLicitacoes({ ufs, prazoMs: 180_000 });
   const site = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
   const alertas = await enviarAlertasLicitacoes(site);
   return Response.json({ ok: sync.every((s) => s.status !== "erro"), sync, alertas });

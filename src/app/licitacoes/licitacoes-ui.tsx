@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MODALIDADES, STATUS_SALVA, UFS, type StatusSalva } from "@/lib/licitacoes";
 import type { ArquivoPncp } from "@/lib/pncp";
 
-export const selectCls =
+const selectCls =
   "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 type Empresa = { id: string; nome: string };
@@ -151,25 +151,41 @@ export function ArquivosBotao({ licitacaoId }: { licitacaoId: string }) {
   );
 }
 
-/** Etapa, empresa e nota de uma licitação salva; salva ao mudar (nota: ao sair do campo). */
+/** Etapa, empresa e nota de uma licitação salva; salva ao mudar (nota: 1 s depois de parar de digitar ou ao sair do campo). */
 export function SalvaControles({ id, status, empresaId, nota, empresas }: {
   id: string; status: StatusSalva; empresaId: string | null; nota: string | null; empresas: Empresa[];
 }) {
   const [pendente, iniciar] = useTransition();
   const [texto, setTexto] = useState(nota ?? "");
+  const [salvo, setSalvo] = useState(nota ?? "");
   const salvar = (dados: Parameters<typeof atualizarSalva>[1]) =>
     iniciar(async () => {
       const r = await atualizarSalva(id, dados);
       if (r.erro) toast.error(r.erro);
     });
+  const salvarNota = () => {
+    if (texto === salvo) return;
+    setSalvo(texto);
+    salvar({ nota: texto });
+  };
+  // a nota vai junto antes de mudar etapa/empresa: a mudança remonta o cartão em outra coluna
+  const mudar = (dados: Parameters<typeof atualizarSalva>[1]) => {
+    if (texto !== salvo) setSalvo(texto);
+    salvar(texto !== salvo ? { ...dados, nota: texto } : dados);
+  };
+  useEffect(() => {
+    if (texto === salvo) return;
+    const t = setTimeout(salvarNota, 1000);
+    return () => clearTimeout(t);
+  });
   return (
     <div className={cn("grid gap-2 transition-opacity", pendente && "opacity-70")}>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid gap-2">
         <select
           aria-label="Etapa"
-          className={cn(selectCls, "h-8 text-xs")}
+          className={cn(selectCls, "h-8 min-w-0 text-xs")}
           defaultValue={status}
-          onChange={(e) => salvar({ status: e.target.value as StatusSalva })}
+          onChange={(e) => mudar({ status: e.target.value as StatusSalva })}
         >
           {Object.entries(STATUS_SALVA).map(([k, v]) => (
             <option key={k} value={k}>{v.rotulo}</option>
@@ -177,9 +193,9 @@ export function SalvaControles({ id, status, empresaId, nota, empresas }: {
         </select>
         <select
           aria-label="Empresa cliente"
-          className={cn(selectCls, "h-8 text-xs")}
+          className={cn(selectCls, "h-8 min-w-0 text-xs")}
           defaultValue={empresaId ?? ""}
-          onChange={(e) => salvar({ empresaId: e.target.value })}
+          onChange={(e) => mudar({ empresaId: e.target.value })}
         >
           <option value="">Sem empresa</option>
           {empresas.map((e) => (
@@ -194,7 +210,7 @@ export function SalvaControles({ id, status, empresaId, nota, empresas }: {
         value={texto}
         maxLength={4000}
         onChange={(e) => setTexto(e.target.value)}
-        onBlur={() => texto !== (nota ?? "") && salvar({ nota: texto })}
+        onBlur={salvarNota}
       />
     </div>
   );

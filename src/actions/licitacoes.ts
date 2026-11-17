@@ -24,8 +24,8 @@ export async function atualizarAgora(): Promise<{ ok: boolean; mensagem: string 
   if (espera > 0) return { ok: false, mensagem: `Atualizado há pouco. Tente de novo em ${espera} min.` };
   const ufs = await ufsParaSincronizar();
   // a tela (dinâmica) acompanha com router.refresh enquanto o estado diz "rodando"
-  after(() => sincronizarLicitacoes({ ufs, prazoMs: 150_000 }));
-  return { ok: true, mensagem: "Buscando licitações no PNCP. Leva 1 a 2 minutos." };
+  after(() => sincronizarLicitacoes({ ufs, prazoMs: 180_000 }));
+  return { ok: true, mensagem: "Buscando licitações no PNCP. Leva de 2 a 4 minutos; a lista se renova sozinha." };
 }
 
 /** Salva para acompanhar (ou tira dos acompanhamentos). */
