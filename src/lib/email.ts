@@ -370,3 +370,42 @@ export function emailRecuperacaoSenha({ link }: { link: string }) {
     ),
   };
 }
+
+export type LicitacaoEmail = { objeto: string; orgao: string; local: string; modalidade: string; valor: string | null; encerramento: string };
+
+/** Para o contador: licitações novas de uma busca salva (encerramento já formatado, "dd/mm/aaaa hh:mm"). */
+export function emailLicitacoesNovas({ busca, empresa, itens, link }: {
+  busca: string; empresa: string | null; itens: LicitacaoEmail[]; link: string;
+}) {
+  const MAX = 10;
+  const n = itens.length;
+  const qtd = n === 1 ? "1 licitação nova" : `${n} licitações novas`;
+  const corta = (s: string) => (s.length > 180 ? s.slice(0, 177).trimEnd() + "..." : s);
+  const detalhe = (l: LicitacaoEmail) => [l.modalidade, l.valor ? brl(l.valor) : "valor não informado", `propostas até ${l.encerramento}`].join(" · ");
+  const html = layout({
+    empresa,
+    previa: `${qtd} com propostas abertas na busca "${busca}".`,
+    titulo: n === 1 ? "Licitação nova para acompanhar" : "Licitações novas para acompanhar",
+    antes: [`A busca <b>${esc(busca)}</b> encontrou ${qtd} no PNCP com propostas abertas.`],
+    destaque: {
+      linhas: itens.slice(0, MAX).map((l) => [
+        `${l.orgao} · ${l.local}`,
+        `${esc(corta(l.objeto))}<br><span style="font-weight:400;font-size:13px">${esc(detalhe(l))}</span>`,
+      ]),
+    },
+    depois: n > MAX ? [`E mais ${n - MAX} no painel.`] : [],
+    botao: "Abrir licitações",
+    link,
+    rodape: "Alerta das buscas salvas no painel de licitações, enviado aos contadores do escritório.",
+  });
+  return {
+    assunto: comMarca(`${qtd}: ${busca}`),
+    html,
+    texto: corpoTexto(
+      `A busca "${busca}" encontrou ${qtd} no PNCP com propostas abertas${empresa ? ` (${empresa})` : ""}:`,
+      itens.slice(0, MAX).map((l) => `- ${corta(l.objeto)}\n  ${l.orgao} · ${l.local}\n  ${detalhe(l)}`).join("\n\n"),
+      n > MAX && `E mais ${n - MAX} no painel.`,
+      `Abrir licitações: ${link}`,
+    ),
+  };
+}

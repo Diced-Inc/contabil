@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
 import { asc, count, eq, isNull, or } from "drizzle-orm";
-import { Building2, ChevronRight, Inbox, Mail } from "lucide-react";
+import { Building2, ChevronRight, Gavel, Inbox, Mail } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -155,6 +155,10 @@ export default function Home() {
   return (
     <div className="flex min-h-svh flex-1 flex-col">
       <Topo>
+        <Link href="/licitacoes" title="Licitações abertas" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <Gavel />
+          <span className="hidden md:inline">Licitações</span>
+        </Link>
         <Link href="/configuracoes-gerais/emails" title="E-mails do escritório" className={buttonVariants({ variant: "outline", size: "sm" })}>
           <Mail />
           <span className="hidden md:inline">E-mails do escritório</span>

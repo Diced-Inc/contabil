@@ -313,3 +313,81 @@ export const enderecosPendentes = pgTable("enderecos_pendentes", {
   nome: text("nome"),
   createdAt: createdAt(),
 });
+
+// Licitações (PNCP): cache das contratações com propostas abertas, acompanhamento e buscas com alerta por e-mail.
+export const statusLicitacaoSalvaEnum = pgEnum("status_licitacao_salva", [
+  "interesse", "analisando", "proposta_enviada", "descartada", "ganha", "perdida",
+]);
+
+/** Contratação do PNCP; created_at = primeira vez que a sincronização viu (base dos alertas de "novas"). */
+export const licitacoes = pgTable("licitacoes", {
+  id: id(),
+  numeroControle: text("numero_controle").notNull().unique(),
+  orgaoCnpj: text("orgao_cnpj").notNull(),
+  orgaoNome: text("orgao_nome").notNull(),
+  unidadeNome: text("unidade_nome").notNull(),
+  municipio: text("municipio").notNull(),
+  uf: text("uf").notNull(),
+  modalidadeId: integer("modalidade_id").notNull(),
+  modalidadeNome: text("modalidade_nome").notNull(),
+  objeto: text("objeto").notNull(),
+  valorEstimado: money("valor_estimado"),
+  aberturaPropostas: timestamp("abertura_propostas", { withTimezone: true }),
+  encerramentoPropostas: timestamp("encerramento_propostas", { withTimezone: true }),
+  situacaoId: integer("situacao_id").notNull(),
+  situacaoNome: text("situacao_nome").notNull(),
+  ano: integer("ano").notNull(),
+  sequencial: integer("sequencial").notNull(),
+  numeroCompra: text("numero_compra"),
+  processo: text("processo"),
+  linkPncp: text("link_pncp").notNull(),
+  linkSistemaOrigem: text("link_sistema_origem"),
+  /** objeto + órgão + unidade + município + processo, minúsculo e sem acento (busca por trecho). */
+  textoBusca: text("texto_busca").notNull(),
+  raw: jsonb("raw").notNull(),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Uma por licitação: etapa, empresa cliente que pode participar e anotações. */
+export const licitacoesSalvas = pgTable("licitacoes_salvas", {
+  id: id(),
+  licitacaoId: uuid("licitacao_id").notNull().unique().references(() => licitacoes.id, { onDelete: "cascade" }),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  status: statusLicitacaoSalvaEnum("status").notNull().default("interesse"),
+  nota: text("nota"),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Busca salva; ativa = entra no e-mail diário das novas. As UFs das buscas ativas também entram na sincronização. */
+export const buscasLicitacao = pgTable("buscas_licitacao", {
+  id: id(),
+  nome: text("nome").notNull(),
+  termos: text("termos").array().notNull().default(sql`'{}'`),
+  ufs: text("ufs").array().notNull().default(sql`'{}'`),
+  municipios: text("municipios").array().notNull().default(sql`'{}'`),
+  modalidades: integer("modalidades").array().notNull().default(sql`'{}'`),
+  valorMin: money("valor_min"),
+  valorMax: money("valor_max"),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  ativa: boolean("ativa").notNull().default(true),
+  ultimoEnvio: timestamp("ultimo_envio", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** Progresso da sincronização por UF: retoma da próxima página se a execução anterior parou no limite de tempo. */
+export const licitacoesSync = pgTable("licitacoes_sync", {
+  uf: text("uf").primaryKey(),
+  proximaPagina: integer("proxima_pagina").notNull().default(1),
+  totalPaginas: integer("total_paginas"),
+  iniciadoEm: timestamp("iniciado_em", { withTimezone: true }),
+  /** Fim da última execução (completa, parcial ou com erro). */
+  finalizadoEm: timestamp("finalizado_em", { withTimezone: true }),
+  /** Fim da última passada completa por todas as páginas. */
+  concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+  erro: text("erro"),
+});
+
+export type Licitacao = typeof licitacoes.$inferSelect;
+export type BuscaLicitacao = typeof buscasLicitacao.$inferSelect;
