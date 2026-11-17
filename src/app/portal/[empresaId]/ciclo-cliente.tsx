@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, CloudUpload, FileText, MessageCircle, Send, X } from "lucide-react";
+import { CheckCircle2, CloudUpload, FilePlus2, FileText, MessageCircle, Send, X } from "lucide-react";
 import { cn } from "cn";
 import { toast } from "sonner";
 import { avisarExtratoPorFora, marcarDasPago, prepararEnvio, registrarEnvio } from "@/actions/ciclo";
@@ -25,8 +25,10 @@ function problema(f: File) {
   return null;
 }
 
+type PropsEnvio = { empresaId: string; contas: { id: string; nome: string }[] };
+
 /** Área de envio: arrastar ou escolher arquivos, banco (quando há mais de um) e observação. */
-export function EnvioExtratos({ empresaId, contas }: { empresaId: string; contas: { id: string; nome: string }[] }) {
+export function EnvioExtratos({ empresaId, contas, onEnviado }: PropsEnvio & { onEnviado?: () => void }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [arquivos, setArquivos] = useState<File[]>([]);
@@ -64,6 +66,7 @@ export function EnvioExtratos({ empresaId, contas }: { empresaId: string; contas
         toast.success(r.qtd === 1 ? "Arquivo enviado. O contador já foi avisado." : `${r.qtd} arquivos enviados. O contador já foi avisado.`);
         setArquivos([]);
         setObservacao("");
+        onEnviado?.();
         router.refresh();
       } finally {
         setEtapa(null);
@@ -238,5 +241,29 @@ export function JaEnviei({ empresaId }: { empresaId: string }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Depois que os arquivos chegaram: o envio fica recolhido atrás de "Enviar mais arquivos" (avisa o contador de novo). */
+export function EnviarMais(props: PropsEnvio) {
+  const [aberto, setAberto] = useState(false);
+  if (!aberto) {
+    return (
+      <Button variant="outline" onClick={() => setAberto(true)} className="justify-self-start">
+        <FilePlus2 />
+        Enviar mais arquivos
+      </Button>
+    );
+  }
+  return (
+    <div className="grid gap-3 border-t pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-foreground">Enviar mais arquivos</p>
+        <Button variant="ghost" size="sm" onClick={() => setAberto(false)}>
+          Cancelar
+        </Button>
+      </div>
+      <EnvioExtratos {...props} onEnviado={() => setAberto(false)} />
+    </div>
   );
 }

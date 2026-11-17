@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
-import { CalendarClock, Check, FileText, MessageCircle, MessageSquareText, Receipt } from "lucide-react";
+import { CalendarClock, Check, CheckCircle2, FileText, MessageCircle, MessageSquareText, Receipt } from "lucide-react";
 import { cn } from "cn";
 import { Avatar } from "@/components/avatar";
 import { Baixar } from "@/components/baixar";
@@ -19,12 +19,52 @@ import { fmtCnpj, fmtData, fmtValor, hoje, PORTES, REGIMES } from "@/lib/format"
 import { logoDaEmpresa, perfilDoUsuario } from "@/supabase/server";
 import { avatarDoCliente, getEmpresaPortal } from "../dados";
 import { Rodape, Topo } from "../topo";
-import { EnvioExtratos, JaEnviei, JaPaguei } from "./ciclo-cliente";
+import { EnviarMais, EnvioExtratos, JaEnviei, JaPaguei } from "./ciclo-cliente";
 
 const TZ = "America/Sao_Paulo";
 const PASSOS = ["Enviar extratos", "Recebido", "Em processamento", "DAS disponível", "Pago"];
 const quando = (d: Date) => d.toLocaleString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const diaSP = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: TZ });
+
+type Doc = { id: string; nome: string; tamanho: number; createdAt: Date; observacao: string | null; conta: string | null };
+
+function ListaArquivos({ empresaId, docs }: { empresaId: string; docs: Doc[] }) {
+  return (
+    <ul className="grid gap-2">
+      {docs.map((d) => (
+        <li key={d.id} className="flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm">
+          <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{d.nome}</p>
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {quando(d.createdAt)} · {fmtTamanho(d.tamanho)}
+              {d.conta && <> · {d.conta}</>}
+            </p>
+            {d.observacao && (
+              <p className="mt-1 flex gap-1.5 text-xs text-foreground/80">
+                <MessageSquareText className="mt-px size-3.5 shrink-0 text-muted-foreground" />
+                {d.observacao}
+              </p>
+            )}
+          </div>
+          <Baixar empresaId={empresaId} documentoId={d.id} size="icon-sm" variant="ghost" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function NotaPorFora({ em, obs }: { em: Date; obs: string | null }) {
+  return (
+    <p className="flex gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
+      <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+      <span>
+        Você avisou em {diaSP(em).slice(0, 5)} que enviou por outro canal.
+        {obs && <span className="block text-muted-foreground">&ldquo;{obs}&rdquo;</span>}
+      </span>
+    </p>
+  );
+}
 
 function Dado({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
@@ -108,6 +148,8 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
   // Data de recebimento sem arquivo = avisou que mandou por outro canal (só avisarExtratoPorFora grava assim).
   const porFora = ciclo.extratoRecebidoEm && (docs.length === 0 || ciclo.clienteObs) ? ciclo.extratoRecebidoEm : null;
   const situacao = situacaoDas(ciclo, hj);
+  // Arquivos já chegaram (ou o cliente avisou), mas o mês ainda não foi concluído: o envio fica recolhido.
+  const recebido = ciclo.status !== "aguardando_extrato" && !passou(ciclo.status, "das_enviado");
 
   return (
     <>
@@ -154,15 +196,7 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
                   )}
                 </div>
                 <Progresso status={ciclo.status} />
-                {porFora && (
-                  <p className="flex gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
-                    <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
-                    <span>
-                      Você avisou em {diaSP(porFora).slice(0, 5)} que enviou por outro canal.
-                      {ciclo.clienteObs && <span className="block text-muted-foreground">&ldquo;{ciclo.clienteObs}&rdquo;</span>}
-                    </span>
-                  </p>
-                )}
+                {porFora && !recebido && <NotaPorFora em={porFora} obs={ciclo.clienteObs} />}
                 {ciclo.status === "aguardando_extrato" && <JaEnviei empresaId={empresaId} />}
               </CardContent>
             </Card>
@@ -217,7 +251,7 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
               </Card>
             )}
 
-            {!passou(ciclo.status, "das_enviado") && (
+            {ciclo.status === "aguardando_extrato" && (
               <Card>
                 <CardHeader className="border-b">
                   <CardTitle>Enviar extratos de {mes}</CardTitle>
@@ -229,7 +263,30 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
               </Card>
             )}
 
-            {docs.length > 0 && (
+            {recebido && (
+              <Card>
+                <CardHeader className="border-b">
+                  <CardTitle className="flex items-center gap-2.5">
+                    <span className="flex size-8 items-center justify-center rounded-full bg-success-soft text-success">
+                      <CheckCircle2 className="size-4" />
+                    </span>
+                    {docs.length ? "Recebemos seus arquivos" : porFora ? "Recebemos seu aviso" : "O contador já está com os extratos"}
+                  </CardTitle>
+                  <CardDescription>
+                    {docs.length
+                      ? `${docs.length} ${docs.length === 1 ? "arquivo" : "arquivos"} de ${mes}. O contador já foi avisado; não precisa fazer mais nada.`
+                      : `Não precisa enviar nada pelo portal. Se faltou algum extrato de ${mes}, envie abaixo.`}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  {porFora && <NotaPorFora em={porFora} obs={ciclo.clienteObs} />}
+                  {docs.length > 0 && <ListaArquivos empresaId={empresaId} docs={docs} />}
+                  <EnviarMais empresaId={empresaId} contas={contas} />
+                </CardContent>
+              </Card>
+            )}
+
+            {docs.length > 0 && !recebido && (
               <Card>
                 <CardHeader className="border-b">
                   <CardTitle>Arquivos enviados</CardTitle>
@@ -238,27 +295,7 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ul className="grid gap-2">
-                    {docs.map((d) => (
-                      <li key={d.id} className="flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm">
-                        <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{d.nome}</p>
-                          <p className="text-xs text-muted-foreground tabular-nums">
-                            {quando(d.createdAt)} · {fmtTamanho(d.tamanho)}
-                            {d.conta && <> · {d.conta}</>}
-                          </p>
-                          {d.observacao && (
-                            <p className="mt-1 flex gap-1.5 text-xs text-foreground/80">
-                              <MessageSquareText className="mt-px size-3.5 shrink-0 text-muted-foreground" />
-                              {d.observacao}
-                            </p>
-                          )}
-                        </div>
-                        <Baixar empresaId={empresaId} documentoId={d.id} size="icon-sm" variant="ghost" />
-                      </li>
-                    ))}
-                  </ul>
+                  <ListaArquivos empresaId={empresaId} docs={docs} />
                 </CardContent>
               </Card>
             )}
