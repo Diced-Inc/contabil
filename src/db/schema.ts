@@ -3,6 +3,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { MotivoEncerramento } from "@/lib/ciclo";
+import { TIPOS_GUIA } from "../lib/guias"; // relativo: também carregado pelo drizzle-kit
 
 export const regimeEnum = pgEnum("regime_tributario", ["simples", "presumido", "real", "mei"]);
 export const porteEnum = pgEnum("porte_empresa", ["mei", "me", "epp", "demais"]);
@@ -27,6 +28,7 @@ export const statusCicloEnum = pgEnum("status_ciclo", [
   "aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago", "encerrado",
 ]);
 export const statusNotificacaoEnum = pgEnum("status_notificacao", ["enviado", "erro", "nao_configurado"]);
+export const tipoGuiaEnum = pgEnum("tipo_guia", TIPOS_GUIA);
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -53,6 +55,8 @@ export const empresas = pgTable("empresas", {
   lembretesExtratoDias: integer("lembretes_extrato_dias").array().notNull().default(sql`'{4,9}'`),
   lembretesDasAposEnvio: integer("lembretes_das_apos_envio").array().notNull().default(sql`'{3}'`),
   diasAntesVencimentoDas: integer("dias_antes_vencimento_das").array().notNull().default(sql`'{3}'`),
+  /** Pró-labore: além do DAS/DARF de impostos, todo mês tem o DARF previdenciário (DCTFWeb: INSS/IRRF). */
+  temProLabore: boolean("tem_pro_labore").notNull().default(false),
   createdAt: createdAt(),
 });
 
@@ -237,6 +241,7 @@ export const ciclosMensais = pgTable("ciclos_mensais", {
   extratoSolicitadoEm: timestamp("extrato_solicitado_em", { withTimezone: true }),
   extratoRecebidoEm: timestamp("extrato_recebido_em", { withTimezone: true }),
   concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+  // Legado (uma guia por mês): migrado para a tabela guias e não é mais lido nem gravado. Remover numa limpeza futura.
   dasValor: money("das_valor"),
   dasVencimento: date("das_vencimento"),
   dasPath: text("das_path"),
@@ -252,6 +257,23 @@ export const ciclosMensais = pgTable("ciclos_mensais", {
   clienteObs: text("cliente_obs"),
   createdAt: createdAt(),
 }, (t) => [unique().on(t.empresaId, t.competencia)]);
+
+/** Guias de imposto do mês (DAS, DARF...). enviado_em null = rascunho do contador; o cliente ainda não vê. */
+export const guias = pgTable("guias", {
+  id: id(),
+  cicloId: uuid("ciclo_id").notNull().references(() => ciclosMensais.id, { onDelete: "cascade" }),
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  tipo: tipoGuiaEnum("tipo").notNull(),
+  descricao: text("descricao"),
+  valor: money("valor").notNull(),
+  vencimento: date("vencimento").notNull(),
+  path: text("path").notNull().unique(),
+  codigoReceita: text("codigo_receita"),
+  enviadoEm: timestamp("enviado_em", { withTimezone: true }),
+  pagoEm: timestamp("pago_em", { withTimezone: true }),
+  pagoPor: uuid("pago_por"),
+  createdAt: createdAt(),
+});
 
 /** Arquivo enviado pelo cliente (bucket documentos), até o contador importar ou marcar como processado. */
 export const documentosRecebidos = pgTable("documentos_recebidos", {
@@ -291,6 +313,7 @@ export const notificacoes = pgTable("notificacoes", {
 
 export type CicloMensal = typeof ciclosMensais.$inferSelect;
 export type StatusCiclo = CicloMensal["status"];
+export type Guia = typeof guias.$inferSelect;
 export type Empresa = typeof empresas.$inferSelect;
 export type Conta = typeof planoContas.$inferSelect;
 export type ContaBancaria = typeof contasBancarias.$inferSelect;

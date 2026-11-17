@@ -1,8 +1,9 @@
-/** Regras puras do ciclo mensal com o cliente (competência, transições de status, situação do DAS). */
+/** Regras puras do ciclo mensal com o cliente (competência, transições de status, guias). */
+// das_enviado = guias enviadas ao cliente; das_pago = todas as guias enviadas pagas (nomes antigos do enum, de quando era um DAS só).
 export type StatusCiclo = "aguardando_extrato" | "extrato_recebido" | "em_processamento" | "das_enviado" | "das_pago" | "encerrado";
 export type EventoCiclo = "extrato_enviado" | "extrato_por_fora" | "processar" | "concluir" | "pagar" | "encerrar" | "reabrir";
 
-/** encerrado fica no fim: conta como "passou de tudo" (progresso completo, sem envio nem DAS em aberto). */
+/** encerrado fica no fim: conta como "passou de tudo" (progresso completo, sem envio nem guia em aberto). */
 export const ORDEM_STATUS: StatusCiclo[] = ["aguardando_extrato", "extrato_recebido", "em_processamento", "das_enviado", "das_pago", "encerrado"];
 
 /** Texto para o cliente (portal) e rótulo curto para o contador. */
@@ -13,8 +14,8 @@ export const STATUS_CICLO: Record<
   aguardando_extrato: { cliente: "Estamos esperando os extratos do mês.", rotulo: "Aguardando extrato", badge: "warning" },
   extrato_recebido: { cliente: "Recebemos seus arquivos. Em breve o contador começa o fechamento.", rotulo: "Extrato recebido", badge: "info" },
   em_processamento: { cliente: "O contador está fechando o mês.", rotulo: "Em processamento", badge: "violet" },
-  das_enviado: { cliente: "O mês foi concluído e a guia do DAS está disponível.", rotulo: "DAS enviado", badge: "brand" },
-  das_pago: { cliente: "Tudo certo: o DAS do mês está pago.", rotulo: "DAS pago", badge: "success" },
+  das_enviado: { cliente: "O mês foi concluído e as guias estão disponíveis.", rotulo: "Guias enviadas", badge: "brand" },
+  das_pago: { cliente: "Tudo certo: as guias do mês estão pagas.", rotulo: "Guias pagas", badge: "success" },
   encerrado: { cliente: "Mês encerrado pelo contador. Não há nada pendente.", rotulo: "Encerrado", badge: "muted" },
 };
 
@@ -24,7 +25,7 @@ export const MOTIVOS_ENCERRAMENTO: Record<MotivoEncerramento, { rotulo: string; 
   resolvido_fora: { rotulo: "Resolvido por fora (WhatsApp, e-mail…)", cliente: "Já foi resolvido com o contador por outro canal." },
   sem_movimento: { rotulo: "Sem movimento no mês", cliente: "A empresa não teve movimento neste mês." },
   sem_imposto: { rotulo: "Sem imposto a pagar", cliente: "Não há imposto a pagar neste mês." },
-  outro: { rotulo: "Outro", cliente: "O contador encerrou o mês sem guia do DAS." },
+  outro: { rotulo: "Outro", cliente: "O contador encerrou o mês sem guias." },
 };
 
 /** Para cada evento, de onde pode partir e para onde vai (ausente = transição inválida). */
@@ -37,7 +38,7 @@ const TRANSICOES: Record<EventoCiclo, Partial<Record<StatusCiclo, StatusCiclo>>>
   },
   // Cliente avisa que mandou os extratos por WhatsApp/e-mail: só enquanto o mês espera os extratos.
   extrato_por_fora: { aguardando_extrato: "extrato_recebido" },
-  // Contador importa/marca um documento: inicia o processamento; depois do DAS não mexe no status.
+  // Contador importa/marca um documento: inicia o processamento; depois das guias não mexe no status.
   processar: {
     aguardando_extrato: "em_processamento",
     extrato_recebido: "em_processamento",
@@ -46,13 +47,17 @@ const TRANSICOES: Record<EventoCiclo, Partial<Record<StatusCiclo, StatusCiclo>>>
     das_pago: "das_pago",
     encerrado: "encerrado",
   },
+  // Enviar guias ao cliente. Depois do envio, uma guia nova também sai por aqui (e o mês volta a ter guia em aberto).
   concluir: {
     aguardando_extrato: "das_enviado",
     extrato_recebido: "das_enviado",
     em_processamento: "das_enviado",
+    das_enviado: "das_enviado",
+    das_pago: "das_enviado",
   },
-  pagar: { das_enviado: "das_pago" },
-  // Encerrar sem DAS: de qualquer ponto antes do pagamento.
+  // Pagar uma guia; statusPelasGuias decide se o mês fica pago.
+  pagar: { das_enviado: "das_enviado" },
+  // Encerrar sem guias: de qualquer ponto antes do pagamento.
   encerrar: {
     aguardando_extrato: "encerrado",
     extrato_recebido: "encerrado",
@@ -66,8 +71,8 @@ const MOTIVO: Record<EventoCiclo, string> = {
   extrato_enviado: "O mês já foi concluído. Fale com o contador para enviar mais arquivos.",
   extrato_por_fora: "O contador já está com os extratos deste mês.",
   processar: "Status do ciclo inválido.",
-  concluir: "O mês já foi concluído. Reabra o ciclo para enviar outra guia.",
-  pagar: "Não há DAS em aberto neste mês.",
+  concluir: "O mês foi encerrado. Reabra o ciclo para enviar guias.",
+  pagar: "Não há guia em aberto neste mês.",
   encerrar: "Este mês já foi pago ou encerrado.",
   reabrir: "O ciclo ainda não foi concluído.",
 };
@@ -82,6 +87,16 @@ export function proximoStatus(atual: StatusCiclo, evento: EventoCiclo): StatusCi
 }
 
 export const passou = (s: StatusCiclo, ref: StatusCiclo) => ORDEM_STATUS.indexOf(s) >= ORDEM_STATUS.indexOf(ref);
+
+/**
+ * Status depois de mexer nas guias de um mês já enviado: das_pago quando todas as guias enviadas estão pagas, senão das_enviado.
+ * Rascunhos (sem enviado_em) não contam: o cliente ainda não os vê. Outros status não mudam por aqui.
+ */
+export function statusPelasGuias(status: StatusCiclo, guias: { enviadoEm: Date | string | null; pagoEm: Date | string | null }[]): StatusCiclo {
+  if (status !== "das_enviado" && status !== "das_pago") return status;
+  const enviadas = guias.filter((g) => g.enviadoEm);
+  return enviadas.length > 0 && enviadas.every((g) => g.pagoEm) ? "das_pago" : "das_enviado";
+}
 
 /** Competência que o cliente deve enviar: o mês anterior a hoje ("YYYY-MM-DD" em São Paulo) → "YYYY-MM-01". */
 export function competenciaAtual(hoje: string) {
@@ -99,22 +114,6 @@ export function somarMeses(competencia: string, n: number) {
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 /** "2026-10-01" → "outubro de 2026". */
 export const nomeCompetencia = (c: string) => `${MESES[Number(c.slice(5, 7)) - 1]} de ${c.slice(0, 4)}`;
-
-export type SituacaoDas = { tipo: "pago" } | { tipo: "vencido"; dias: number } | { tipo: "aberto"; dias: number };
-
-/** Situação do DAS em relação a hoje ("YYYY-MM-DD"); null quando não há DAS. Vence hoje = aberto com 0 dias. */
-export function situacaoDas(c: { status: StatusCiclo; dasVencimento: string | null }, hoje: string): SituacaoDas | null {
-  if (c.status === "das_pago") return { tipo: "pago" };
-  if (c.status !== "das_enviado" || !c.dasVencimento) return null;
-  const dias = Math.round((Date.parse(c.dasVencimento) - Date.parse(hoje)) / 86_400_000);
-  return dias < 0 ? { tipo: "vencido", dias: -dias } : { tipo: "aberto", dias };
-}
-
-export function textoSituacaoDas(s: SituacaoDas) {
-  if (s.tipo === "pago") return "DAS pago";
-  if (s.tipo === "vencido") return s.dias === 1 ? "Vencido há 1 dia" : `Vencido há ${s.dias} dias`;
-  return s.dias === 0 ? "Vence hoje" : s.dias === 1 ? "Vence amanhã" : `Vence em ${s.dias} dias`;
-}
 
 /** Extensões aceitas no envio do cliente e o tipo MIME gravado no Storage. */
 export const TIPOS_DOCUMENTO: Record<string, string> = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  competenciaAtual, mimeDocumento, nomeParaPath, proximoStatus, situacaoDas, somarMeses, textoSituacaoDas, TransicaoInvalida,
+  competenciaAtual, mimeDocumento, nomeParaPath, proximoStatus, somarMeses, statusPelasGuias, TransicaoInvalida,
 } from "./ciclo";
 
 describe("competenciaAtual", () => {
@@ -27,7 +27,7 @@ describe("proximoStatus", () => {
     expect(s).toBe("em_processamento");
     s = proximoStatus(s, "concluir");
     expect(s).toBe("das_enviado");
-    expect(proximoStatus(s, "pagar")).toBe("das_pago");
+    expect(proximoStatus(s, "pagar")).toBe("das_enviado"); // statusPelasGuias decide se o mês fica pago
   });
   it("envio extra não regride o status", () => {
     expect(proximoStatus("em_processamento", "extrato_enviado")).toBe("em_processamento");
@@ -59,27 +59,32 @@ describe("proximoStatus", () => {
     expect(() => proximoStatus("extrato_recebido", "extrato_por_fora")).toThrow(TransicaoInvalida);
     expect(() => proximoStatus("encerrado", "extrato_por_fora")).toThrow(TransicaoInvalida);
   });
+  it("guia nova depois do envio: segue enviado, e um mês pago volta a ter guia em aberto", () => {
+    expect(proximoStatus("das_enviado", "concluir")).toBe("das_enviado");
+    expect(proximoStatus("das_pago", "concluir")).toBe("das_enviado");
+  });
   it("transições inválidas lançam", () => {
     expect(() => proximoStatus("das_enviado", "extrato_enviado")).toThrow(TransicaoInvalida);
     expect(() => proximoStatus("em_processamento", "pagar")).toThrow(TransicaoInvalida);
     expect(() => proximoStatus("das_pago", "pagar")).toThrow(TransicaoInvalida);
-    expect(() => proximoStatus("das_enviado", "concluir")).toThrow(TransicaoInvalida);
     expect(() => proximoStatus("extrato_recebido", "reabrir")).toThrow(TransicaoInvalida);
   });
 });
 
-describe("situacaoDas", () => {
-  const das = (dasVencimento: string) => ({ status: "das_enviado" as const, dasVencimento });
-  it("sem DAS é null", () => {
-    expect(situacaoDas({ status: "em_processamento", dasVencimento: null }, "2026-11-13")).toBeNull();
+describe("statusPelasGuias", () => {
+  const g = (enviadoEm: string | null, pagoEm: string | null = null) => ({ enviadoEm, pagoEm });
+  it("pago só quando todas as enviadas estão pagas", () => {
+    expect(statusPelasGuias("das_enviado", [g("2026-11-10", "2026-11-12"), g("2026-11-10")])).toBe("das_enviado");
+    expect(statusPelasGuias("das_enviado", [g("2026-11-10", "2026-11-12"), g("2026-11-10", "2026-11-13")])).toBe("das_pago");
   });
-  it("aberto, hoje e vencido", () => {
-    expect(situacaoDas(das("2026-11-20"), "2026-11-13")).toEqual({ tipo: "aberto", dias: 7 });
-    expect(textoSituacaoDas(situacaoDas(das("2026-11-13"), "2026-11-13")!)).toBe("Vence hoje");
-    expect(situacaoDas(das("2026-11-10"), "2026-11-13")).toEqual({ tipo: "vencido", dias: 3 });
+  it("rascunho não segura o pagamento; guia nova enviada tira do pago", () => {
+    expect(statusPelasGuias("das_enviado", [g("2026-11-10", "2026-11-12"), g(null)])).toBe("das_pago");
+    expect(statusPelasGuias("das_pago", [g("2026-11-10", "2026-11-12"), g("2026-11-15")])).toBe("das_enviado");
   });
-  it("pago ignora vencimento", () => {
-    expect(situacaoDas({ status: "das_pago", dasVencimento: "2026-01-01" }, "2026-11-13")).toEqual({ tipo: "pago" });
+  it("sem guia enviada não fica pago; outros status não mudam", () => {
+    expect(statusPelasGuias("das_enviado", [])).toBe("das_enviado");
+    expect(statusPelasGuias("em_processamento", [g("2026-11-10", "2026-11-12")])).toBe("em_processamento");
+    expect(statusPelasGuias("encerrado", [g("2026-11-10")])).toBe("encerrado");
   });
 });
 
