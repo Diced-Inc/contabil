@@ -2,20 +2,21 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
 import { and, count, eq, isNotNull, sql } from "drizzle-orm";
-import { Calculator, ChevronLeft, ChevronRight, Handshake, Lock, LockOpen, ShieldCheck } from "lucide-react";
+import { ArrowRight, Calculator, ChevronLeft, ChevronRight, CircleCheck, FileText, Handshake, Lock, LockOpen, Paperclip, ShieldCheck } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Carregando, PageHeader } from "@/components/page-header";
+import { ProgressoCiclo } from "@/components/progresso-ciclo";
 import { db } from "@/db";
 import { listarGuias } from "@/db/ciclos";
 import { ciclosMensais, documentosRecebidos, membros } from "@/db/schema";
-import { competenciaAtual, MOTIVOS_ENCERRAMENTO, passou, tituloCompetencia, somarMeses, STATUS_CICLO } from "@/lib/ciclo";
+import { competenciaAtual, MOTIVOS_ENCERRAMENTO, passou, tituloCompetencia, somarMeses, STATUS_CICLO, type StatusCiclo } from "@/lib/ciclo";
 import { fmtData, fmtValor, hoje, lerAno } from "@/lib/format";
-import { guiasEsperadas } from "@/lib/guias";
+import { guiasEsperadas, resumoGuias } from "@/lib/guias";
 import { getEmpresa } from "../empresa";
-import { EncerrarDialog, ReabrirBotao } from "./ciclo-acoes";
+import { EncerrarDialog, ProcessarBotao, ReabrirBotao } from "./ciclo-acoes";
 import { ApuracaoBotao, MesBotao } from "./fechamento-botoes";
 import { GuiasDoMes } from "./guias-mes";
 import { painelFechamento } from "./queries";
@@ -27,6 +28,82 @@ const DESCRICAO =
 
 const dataHoraSP = (d: Date) =>
   d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+const arquivos = (n: number, novo = false) => `${n} ${n === 1 ? "arquivo" : "arquivos"}${novo ? (n === 1 ? " novo" : " novos") : ""}`;
+const guiasTxt = (n: number) => `${n} ${n === 1 ? "guia" : "guias"}`;
+
+/** "Próximo passo": o que o contador faz agora para o mês andar, com a ação principal do status. */
+function ProximoPasso({ empresaId, competencia, status, novos, totalDocs, porFora, rascunhos, abertas }: {
+  empresaId: string; competencia: string; status: StatusCiclo; novos: number; totalDocs: number; porFora: boolean; rascunhos: number;
+  abertas: { qtd: number; vencidas: number; emAberto: number };
+}) {
+  const verArquivos = totalDocs > 0 && (
+    <Link href={`/e/${empresaId}/documentos`} className={buttonVariants({ variant: "outline" })}>
+      <FileText />
+      Ver arquivos
+    </Link>
+  );
+  const irParaGuias = (
+    <a href="#guias-do-mes" className={buttonVariants({ variant: "outline" })}>
+      <Paperclip />
+      Ir para as guias
+    </a>
+  );
+  const passo: { titulo: string; texto: string; acoes?: React.ReactNode } = {
+    aguardando_extrato: {
+      titulo: "Esperando o cliente enviar os extratos",
+      texto: "O cliente recebe lembretes por e-mail. Se ele mandou por outro canal, comece o processamento ou encerre o mês sem guias.",
+      acoes: <ProcessarBotao empresaId={empresaId} competencia={competencia} variant="outline" />,
+    },
+    extrato_recebido: {
+      titulo: novos > 0 ? `${arquivos(novos, true)} do cliente` : porFora ? "O cliente enviou os extratos por outro canal" : "Extratos recebidos",
+      texto: "Importe os extratos em Documentos (importar já começa o processamento) ou comece agora. O cliente passa a ver “Em processamento” no portal.",
+      acoes: <>{verArquivos}<ProcessarBotao empresaId={empresaId} competencia={competencia} /></>,
+    },
+    em_processamento: {
+      titulo: "Anexe as guias do mês e envie ao cliente",
+      texto:
+        (rascunhos > 0
+          ? "Quando terminar, clique em “Concluir mês e enviar guias”: o cliente recebe o e-mail e as guias aparecem no portal."
+          : "Anexe as guias em Guias do mês, logo abaixo, e clique em “Concluir mês e enviar guias”. Sem guias no mês? Encerre o mês sem guias.") +
+        (novos > 0 ? ` Ainda há ${arquivos(novos)} do cliente sem processar.` : ""),
+      acoes: <>{novos > 0 && verArquivos}{irParaGuias}</>,
+    },
+    das_enviado: {
+      titulo: "Aguardando o cliente pagar",
+      texto:
+        `${guiasTxt(abertas.qtd)} em aberto, R$ ${fmtValor(abertas.emAberto)}` +
+        (abertas.vencidas > 0 ? ` (${abertas.vencidas} ${abertas.vencidas === 1 ? "vencida" : "vencidas"})` : "") +
+        ". Quando o cliente clica em “Já paguei”, a guia fica paga; dá para marcar como paga aqui também.",
+    },
+    das_pago: { titulo: "Mês concluído", texto: "Todas as guias enviadas estão pagas. Nada pendente." },
+    encerrado: { titulo: "Mês encerrado", texto: "Encerrado sem guias. Nada pendente." },
+  }[status];
+  const feito = status === "das_pago" || status === "encerrado";
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border px-4 py-3",
+        feito ? "border-success/25 bg-success-soft/40" : "border-primary/20 bg-accent/50",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-full",
+          feito ? "bg-success-soft text-success" : "bg-primary text-primary-foreground",
+        )}
+      >
+        {feito ? <CircleCheck className="size-4" /> : <ArrowRight className="size-4" />}
+      </span>
+      <div className="min-w-0 flex-1 basis-64">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{feito ? "Tudo certo" : "Próximo passo"}</p>
+        <p className="text-sm font-semibold text-foreground">{passo.titulo}</p>
+        <p className="text-sm text-muted-foreground">{passo.texto}</p>
+      </div>
+      {passo.acoes && <div className="flex flex-wrap items-center gap-2">{passo.acoes}</div>}
+    </div>
+  );
+}
 
 /** Ciclo com o cliente da competência escolhida (?ciclo=AAAA-MM; padrão: a que o cliente está enviando agora). */
 async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; competencia: string; ano: number }) {
@@ -109,6 +186,19 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
           </div>
         </CardAction>
       </CardHeader>
+      <div className="grid gap-5 border-t px-6 pt-5">
+        <ProgressoCiclo status={status} />
+        <ProximoPasso
+          empresaId={empresaId}
+          competencia={competencia}
+          status={status}
+          novos={docs.novos}
+          totalDocs={docs.total}
+          porFora={!!porFora}
+          rascunhos={guias.filter((g) => !g.enviadoEm).length}
+          abertas={resumoGuias(guias.filter((g) => g.enviadoEm && !g.pagoEm), hoje())}
+        />
+      </div>
       <GuiasDoMes
         empresaId={empresaId}
         competencia={competencia}

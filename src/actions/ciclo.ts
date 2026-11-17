@@ -322,6 +322,16 @@ export async function marcarProcessado(empresaId: string, documentoId: string, i
   return { ok: true };
 }
 
+/** "Começar processamento" no fechamento: põe o ciclo em processamento sem precisar marcar um documento. */
+export async function iniciarProcessamento(empresaId: string, competencia: string): Promise<Resultado> {
+  await requireUser();
+  if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
+  const m = await mudarCiclo(empresaId, competencia, "processar");
+  if ("erro" in m) return m;
+  revalidar(empresaId);
+  return { ok: true };
+}
+
 const prefixoGuia = (empresaId: string, competencia: string) => `${pasta(empresaId, competencia)}guia-`;
 
 /** URL de upload de uma guia ({empresaId}/{AAAA-MM}/guia-{uuid}.pdf). */
@@ -394,7 +404,7 @@ const guiaSchema = z.object({
 export type DadosGuia = z.input<typeof guiaSchema>;
 
 /**
- * Anexa (com `path` do upload) ou edita (com `guiaId`) uma guia do mês. Anexada fica como rascunho até "Enviar guias ao cliente".
+ * Anexa (com `path` do upload) ou edita (com `guiaId`) uma guia do mês. Anexada fica como rascunho até "Concluir mês e enviar guias".
  * Guia paga não muda; mês encerrado não aceita mudanças.
  */
 export async function salvarGuia(
@@ -452,7 +462,7 @@ export async function removerGuia(empresaId: string, guiaId: string): Promise<Re
 export type ResultadoEnvio = { qtd: number; emails: { enviados: number; total: number; naoConfigurado: boolean } };
 
 /**
- * "Enviar guias ao cliente": marca as guias ainda não enviadas, conclui o mês (das_enviado) e manda UM e-mail com elas.
+ * "Concluir mês e enviar guias": marca as guias ainda não enviadas, conclui o mês (das_enviado) e manda UM e-mail com elas.
  * Depois do primeiro envio, uma guia nova sai pelo mesmo caminho, num e-mail só com ela.
  */
 export async function enviarGuias(empresaId: string, competencia: string): Promise<Resultado<ResultadoEnvio>> {

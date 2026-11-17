@@ -460,7 +460,7 @@ function Resultado({ r, clientes, competencia }: { r: ResultadoEnvio; clientes: 
   );
 }
 
-/** "Enviar guias ao cliente": confirma (listando o que falta, se faltar), envia e mostra para quem o e-mail foi. */
+/** "Concluir mês e enviar guias": confirma (listando o que falta, se faltar), envia e mostra para quem o e-mail foi. */
 function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, extra, mostrar }: {
   empresaId: string; competencia: string; rascunhos: GuiaView[]; faltando: TipoGuia[]; clientes: string[]; extra: boolean;
   /** Botão visível. O componente fica montado enquanto o diálogo está aberto, para mostrar o resultado depois do envio. */
@@ -480,7 +480,7 @@ function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, ex
   const n = rascunhos.length;
   // Mês reaberto sem guia nova (as enviadas estão todas pagas): só conclui de novo, sem e-mail.
   const soConcluir = n === 0;
-  const rotulo = soConcluir ? "Concluir mês" : extra ? (n === 1 ? "Enviar a guia nova" : `Enviar as ${n} guias novas`) : "Enviar guias ao cliente";
+  const rotulo = soConcluir ? "Concluir mês" : extra ? (n === 1 ? "Enviar a guia nova" : `Enviar as ${n} guias novas`) : "Concluir mês e enviar guias";
   if (!mostrar && !aberta) return null;
   return (
     <Dialog
@@ -494,7 +494,7 @@ function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, ex
         }
       }}
     >
-      <DialogTrigger render={<Button />}>
+      <DialogTrigger render={<Button title={extra ? "O cliente recebe um e-mail só com a guia nova." : "Conclui o mês: o cliente recebe o e-mail com as guias e passa a vê-las no portal."} />}>
         <Send />
         {rotulo}
       </DialogTrigger>
@@ -504,7 +504,7 @@ function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, ex
           <DialogTitle>
             {resultado
               ? `Guias de ${nomeCompetencia(competencia)}`
-              : soConcluir ? `Concluir ${nomeCompetencia(competencia)}` : extra ? "Enviar guia nova" : `Enviar as guias de ${nomeCompetencia(competencia)}`}
+              : soConcluir ? `Concluir ${nomeCompetencia(competencia)}` : extra ? "Enviar guia nova" : `Concluir ${nomeCompetencia(competencia)} e enviar as guias`}
           </DialogTitle>
           <DialogDescription className={cn(resultado && "sr-only")}>
             {soConcluir
@@ -633,7 +633,7 @@ export function GuiasDoMes({ empresaId, competencia, hoje, status, esperadas, gu
   return (
     <section aria-labelledby="guias-do-mes" className="grid gap-3 border-t px-6 pt-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 id="guias-do-mes" className="text-sm font-semibold">Guias do mês</h3>
+        <h3 id="guias-do-mes" className="scroll-mt-24 text-sm font-semibold">Guias do mês</h3>
         <span className="text-sm text-muted-foreground tabular-nums">
           {esperadas.length > 0 && <>{anexadas} de {esperadas.length} esperadas anexadas</>}
           {guias.length > 0 && <> · total R$ {fmtValor(total)}</>}

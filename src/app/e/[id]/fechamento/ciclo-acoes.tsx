@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CalendarCheck2, RotateCcw } from "lucide-react";
+import { CalendarCheck2, Play, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { encerrarCiclo, reabrirCiclo } from "@/actions/ciclo";
+import { encerrarCiclo, iniciarProcessamento, reabrirCiclo } from "@/actions/ciclo";
 import { Erro } from "@/app/login/senha-forms";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,25 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MOTIVOS_ENCERRAMENTO, nomeCompetencia, tituloCompetencia, type MotivoEncerramento } from "@/lib/ciclo";
+
+/** "Começar processamento": o cliente vê "Em processamento" no portal. Não manda e-mail. */
+export function ProcessarBotao({ empresaId, competencia, variant = "default" }: {
+  empresaId: string; competencia: string; variant?: "default" | "outline";
+}) {
+  const [pendente, iniciar] = useTransition();
+  const executar = () =>
+    iniciar(async () => {
+      const r = await iniciarProcessamento(empresaId, competencia);
+      if ("erro" in r) toast.error(r.erro);
+      else toast.success("Mês em processamento. O cliente já vê isso no portal.");
+    });
+  return (
+    <Button variant={variant} onClick={executar} disabled={pendente} title="O cliente passa a ver “Em processamento” no portal. Nenhum e-mail sai.">
+      <Play />
+      {pendente ? "Começando..." : "Começar processamento"}
+    </Button>
+  );
+}
 
 export function ReabrirBotao({ empresaId, competencia }: { empresaId: string; competencia: string }) {
   const [pendente, iniciar] = useTransition();

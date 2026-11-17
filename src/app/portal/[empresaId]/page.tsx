@@ -5,6 +5,7 @@ import { CalendarClock, Check, CheckCircle2, FileText, MessageCircle, MessageSqu
 import { cn } from "cn";
 import { Avatar } from "@/components/avatar";
 import { Baixar } from "@/components/baixar";
+import { ProgressoCiclo } from "@/components/progresso-ciclo";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,8 +13,7 @@ import { db } from "@/db";
 import { garantirCiclo, listarGuias } from "@/db/ciclos";
 import { ciclosMensais, contasBancarias, documentosRecebidos, type Guia } from "@/db/schema";
 import {
-  competenciaAtual, fmtTamanho, MOTIVOS_ENCERRAMENTO, nomeCompetencia, ORDEM_STATUS, tituloCompetencia, passou, STATUS_CICLO,
-  type StatusCiclo,
+  competenciaAtual, fmtTamanho, MOTIVOS_ENCERRAMENTO, nomeCompetencia, tituloCompetencia, passou, STATUS_CICLO,
 } from "@/lib/ciclo";
 import { fmtCnpj, fmtData, fmtValor, hoje, PORTES, REGIMES } from "@/lib/format";
 import { guiasEsperadas, listaTipos, resumoGuias, rotuloGuia, situacaoGuia, textoSituacao } from "@/lib/guias";
@@ -23,7 +23,6 @@ import { Rodape, Topo } from "../topo";
 import { EnviarMais, EnvioExtratos, JaEnviei, JaPaguei } from "./ciclo-cliente";
 
 const TZ = "America/Sao_Paulo";
-const PASSOS = ["Enviar extratos", "Recebido", "Em processamento", "Guias disponíveis", "Pagas"];
 const quando = (d: Date) => d.toLocaleString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const diaSP = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: TZ });
 
@@ -147,37 +146,6 @@ function GuiasCard({ empresaId, titulo, guias, hj, pagavel }: { empresaId: strin
   );
 }
 
-/** Os 5 passos do mês; o atual em destaque. das_pago e encerrado (último em ORDEM_STATUS) completam todos. */
-function Progresso({ status }: { status: StatusCiclo }) {
-  const atual = ORDEM_STATUS.indexOf(status);
-  return (
-    <ol className="grid grid-cols-5 gap-1">
-      {PASSOS.map((rotulo, i) => {
-        const feito = i < atual || status === "das_pago";
-        const agora = i === atual && !feito;
-        return (
-          <li key={rotulo} className="grid justify-items-center gap-2 text-center">
-            <div className="relative flex w-full items-center justify-center">
-              {i > 0 && <span aria-hidden className={cn("absolute right-1/2 h-0.5 w-full", i <= atual ? "bg-primary" : "bg-border")} />}
-              <span
-                className={cn(
-                  "relative z-10 flex size-8 items-center justify-center rounded-full text-xs font-semibold tabular-nums",
-                  feito && "bg-primary text-primary-foreground",
-                  agora && "bg-card text-primary ring-2 ring-primary ring-offset-2 ring-offset-card",
-                  !feito && !agora && "bg-muted text-muted-foreground",
-                )}
-              >
-                {feito ? <Check className="size-4" /> : i + 1}
-              </span>
-            </div>
-            <span className={cn("text-xs leading-tight", agora ? "font-semibold text-foreground" : "text-muted-foreground")}>{rotulo}</span>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
 async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
   await connection();
   const { empresaId } = await params;
@@ -272,7 +240,7 @@ async function Conteudo({ params }: PageProps<"/portal/[empresaId]">) {
                     <p className="text-sm text-muted-foreground">{MOTIVOS_ENCERRAMENTO[ciclo.encerradoMotivo].cliente}</p>
                   )}
                 </div>
-                <Progresso status={ciclo.status} />
+                <ProgressoCiclo status={ciclo.status} />
                 {porFora && !recebido && <NotaPorFora em={porFora} obs={ciclo.clienteObs} />}
                 {ciclo.status === "aguardando_extrato" && <JaEnviei empresaId={empresaId} />}
                 {!passou(ciclo.status, "das_enviado") && esperadas.length > 0 && (
