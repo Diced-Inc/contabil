@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { buscasLicitacao, empresas, licitacoes, licitacoesSalvas } from "@/db/schema";
 import { escapeLike, parseValorBR } from "@/lib/format";
-import { limitePrazo, normalizar, separarTermos, SITUACAO_DIVULGADA, type CriteriosBusca } from "@/lib/licitacoes";
+import { CHAVES_CATEGORIAS, limitePrazo, normalizar, separarTermos, SITUACAO_DIVULGADA, type CriteriosBusca } from "@/lib/licitacoes";
 
 export const POR_PAGINA = 30;
 
@@ -73,7 +73,9 @@ export function condicoes(c: CriteriosBusca): (SQL | undefined)[] {
   ];
 }
 
-const abertas = () => and(eq(licitacoes.situacaoId, SITUACAO_DIVULGADA), gt(licitacoes.encerramentoPropostas, sql`now()`));
+/** Abertas e numa categoria de interesse (as ainda não classificadas ficam de fora até a IA passar). */
+const abertas = () =>
+  and(eq(licitacoes.situacaoId, SITUACAO_DIVULGADA), gt(licitacoes.encerramentoPropostas, sql`now()`), inArray(licitacoes.categoria, CHAVES_CATEGORIAS));
 
 export async function listarAbertas(f: Filtros) {
   const where = and(abertas(), ...condicoes(f), f.prazoDias !== null ? lt(licitacoes.encerramentoPropostas, limitePrazo(f.prazoDias)) : undefined);

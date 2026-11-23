@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { estadoSync } from "@/db/licitacoes";
 import type { Licitacao } from "@/db/schema";
 import { fmtValor } from "@/lib/format";
-import { fmtDataHoraSP, MODALIDADES, prazoEncerramento, STATUS_SALVA, type StatusSalva } from "@/lib/licitacoes";
+import { CATEGORIAS, ehCategoria, fmtDataHoraSP, MODALIDADES, prazoEncerramento, STATUS_SALVA, type StatusSalva } from "@/lib/licitacoes";
 import { requireUser } from "@/supabase/server";
 import {
   contarSalvas, lerFiltros, listarAbertas, listarBuscas, listarEmpresas, listarSalvas, opcoesFiltros, ORDENS, POR_PAGINA, type Filtros,
@@ -30,7 +30,8 @@ export const metadata: Metadata = { title: "Licitações | DB Contador" };
 // "Atualizar agora" roda a sincronização em after(), dentro do limite da página
 export const maxDuration = 300;
 
-const INTRO = "Contratações públicas com propostas abertas, direto do PNCP. A lista se atualiza todo dia às 7h30.";
+const INTRO =
+  "Contratações públicas com propostas abertas, direto do PNCP, só nas categorias de interesse: sites, sistemas web, programação e suporte remoto. A lista se atualiza todo dia às 7h30.";
 const ABAS = [
   ["abertas", "Abertas"],
   ["salvas", "Acompanhamento"],
@@ -78,6 +79,7 @@ function CartaoLicitacao({ l, salva }: { l: Licitacao; salva: boolean }) {
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge variant="brand">{l.modalidadeNome}</Badge>
+            {ehCategoria(l.categoria) && <Badge variant="info">{CATEGORIAS[l.categoria]}</Badge>}
             {l.numeroCompra && <span className="text-xs text-muted-foreground tabular-nums">Nº {l.numeroCompra}</span>}
           </div>
           <h3 className="line-clamp-2 font-medium leading-snug text-foreground" title={l.objeto}>{l.objeto}</h3>
@@ -137,7 +139,7 @@ async function Abertas({ sp }: { sp: Record<string, string | string[] | undefine
       <Toolbar>
         <form className="contents">
           <FilterField label="Buscar" className="min-w-64 flex-[2]">
-            <Input name="q" defaultValue={f.q} placeholder="Palavras no objeto ou no órgão. Ex.: limpeza, merenda" />
+            <Input name="q" defaultValue={f.q} placeholder="Palavras no objeto ou no órgão. Ex.: portal, manutenção" />
           </FilterField>
           <FilterField label="Estado">
             <select name="uf" defaultValue={ufAtual} className={cn(selectCls, "w-24")}>
@@ -216,8 +218,12 @@ async function Abertas({ sp }: { sp: Record<string, string | string[] | undefine
       {itens.length === 0 ? (
         <EmptyState
           icon={SearchX}
-          title={filtrado ? "Nenhuma licitação aberta com esses filtros" : "Nenhuma licitação baixada ainda"}
-          hint={filtrado ? "Tente menos palavras, outro município ou tire o filtro de valor." : "Clique em Atualizar agora para buscar no PNCP."}
+          title={filtrado ? "Nenhuma licitação aberta com esses filtros" : "Nenhuma licitação aberta nas categorias de interesse"}
+          hint={
+            filtrado
+              ? "Tente menos palavras, outro município ou tire o filtro de valor."
+              : "Quando surgir contratação de site, sistema web, programação ou suporte remoto, ela aparece aqui. Atualizar agora busca de novo no PNCP."
+          }
         />
       ) : (
         <div className="grid grid-cols-1 gap-3">
