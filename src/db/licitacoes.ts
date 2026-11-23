@@ -1,6 +1,9 @@
-import { and, asc, eq, getTableColumns, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { enviarEmail, emailLicitacoesNovas } from "@/lib/email";
-import { casaBusca, fmtDataHoraSP, mapearContratacao, SITUACAO_DIVULGADA, UFS, type LicitacaoNova } from "@/lib/licitacoes";
+import {
+  candidataTI, CHAVES_CATEGORIAS, fmtDataHoraSP, mapearContratacao, NENHUMA, novaParaBusca, SITUACAO_DIVULGADA, UFS, type LicitacaoNova,
+} from "@/lib/licitacoes";
+import { classificarObjetos, type ClassificacaoIA } from "@/lib/licitacoes-ia";
 import { paginaPropostas } from "@/lib/pncp";
 import { db } from ".";
 import { buscasLicitacao, contadores, empresas, licitacoes, licitacoesSync } from "./schema";
@@ -24,9 +27,15 @@ export async function ufsParaSincronizar() {
 const colunas = getTableColumns(licitacoes);
 const atualizaveis = Object.fromEntries(
   (Object.keys(colunas) as (keyof typeof colunas)[])
-    .filter((k) => !["id", "numeroControle", "createdAt", "updatedAt"].includes(k))
+    .filter((k) => !["id", "numeroControle", "createdAt", "updatedAt", "categoria", "classificadoEm"].includes(k))
     .map((k) => [k, sql.raw(`excluded."${colunas[k].name}"`)]),
 );
+// a classificação sobrevive à re-sincronização; só volta a pendente se o órgão mudar o objeto
+const objetoMudou = sql`${licitacoes.objeto} is distinct from excluded."objeto"`;
+const classificacaoPreservada = {
+  categoria: sql`case when ${objetoMudou} then null else ${licitacoes.categoria} end`,
+  classificadoEm: sql`case when ${objetoMudou} then null else ${licitacoes.classificadoEm} end`,
+};
 
 async function gravar(itens: LicitacaoNova[]) {
   // o PNCP pode repetir um item na mesma página; o upsert não aceita a mesma chave duas vezes
@@ -35,7 +44,7 @@ async function gravar(itens: LicitacaoNova[]) {
   await db
     .insert(licitacoes)
     .values(unicos)
-    .onConflictDoUpdate({ target: licitacoes.numeroControle, set: { ...atualizaveis, updatedAt: sql`now()` } });
+    .onConflictDoUpdate({ target: licitacoes.numeroControle, set: { ...atualizaveis, ...classificacaoPreservada, updatedAt: sql`now()` } });
   return unicos.length;
 }
 
@@ -95,6 +104,74 @@ export async function sincronizarLicitacoes({ ufs, prazoMs }: { ufs: string[]; p
   return resultados;
 }
 
+const LOTE_IA = 35;
+
+export type ResultadoClassificacao = { semIA: number; classificadas: number; relevantes: number; pendentes: number; erros: string[] };
+
+/**
+ * Classifica as licitações ainda sem categoria (abertas primeiro). Pré-filtro descarta o que não tem cara de TI sem chamar a IA;
+ * o resto vai em lotes para a IA. Erro num lote deixa o lote pendente (próxima rodada tenta de novo); nunca lança.
+ * `aoClassificar` recebe cada decisão da IA (usado no backfill para conferir os motivos).
+ */
+export async function classificarPendentes({
+  prazoMs,
+  aoClassificar,
+}: {
+  prazoMs: number;
+  aoClassificar?: (l: { id: string; objeto: string } & ClassificacaoIA) => void;
+}): Promise<ResultadoClassificacao> {
+  const inicio = Date.now();
+  const r: ResultadoClassificacao = { semIA: 0, classificadas: 0, relevantes: 0, pendentes: 0, erros: [] };
+  try {
+    const pendentes = await db
+      .select({ id: licitacoes.id, objeto: licitacoes.objeto })
+      .from(licitacoes)
+      .where(isNull(licitacoes.classificadoEm))
+      .orderBy(
+        desc(sql`${licitacoes.situacaoId} = ${SITUACAO_DIVULGADA} and ${licitacoes.encerramentoPropostas} > now()`),
+        asc(licitacoes.encerramentoPropostas),
+      );
+    const descartadas = pendentes.filter((l) => !candidataTI(l.objeto)).map((l) => l.id);
+    for (let i = 0; i < descartadas.length; i += 500) {
+      await db
+        .update(licitacoes)
+        .set({ categoria: NENHUMA, classificadoEm: sql`now()` })
+        .where(inArray(licitacoes.id, descartadas.slice(i, i + 500)));
+    }
+    r.semIA = descartadas.length;
+    const candidatas = pendentes.filter((l) => candidataTI(l.objeto));
+    for (let i = 0; i < candidatas.length; i += LOTE_IA) {
+      if (Date.now() - inicio >= prazoMs) {
+        r.pendentes = candidatas.length - i;
+        break;
+      }
+      const lote = candidatas.slice(i, i + LOTE_IA);
+      try {
+        const res = await classificarObjetos(lote.map((l) => l.objeto));
+        const porCategoria = new Map<string, string[]>();
+        for (const [j, c] of res) {
+          porCategoria.set(c.categoria, [...(porCategoria.get(c.categoria) ?? []), lote[j].id]);
+          aoClassificar?.({ ...lote[j], ...c });
+        }
+        for (const [categoria, ids] of porCategoria) {
+          await db.update(licitacoes).set({ categoria, classificadoEm: sql`now()` }).where(inArray(licitacoes.id, ids));
+        }
+        r.classificadas += res.size;
+        r.relevantes += [...res.values()].filter((c) => c.categoria !== NENHUMA).length;
+        r.pendentes += lote.length - res.size;
+      } catch (e) {
+        r.pendentes += lote.length;
+        r.erros.push(e instanceof Error ? e.message : String(e));
+        console.error("[licitacoes] classificação (lote fica pendente):", e);
+      }
+    }
+  } catch (e) {
+    r.erros.push(e instanceof Error ? e.message : String(e));
+    console.error("[licitacoes] classificação:", e);
+  }
+  return r;
+}
+
 /**
  * E-mail diário por busca ativa com as licitações vistas pela primeira vez depois do último envio
  * (ou da criação da busca). Sem novas, nada sai. Não grava em `notificacoes`: lá empresa_id é obrigatório.
@@ -113,12 +190,20 @@ export async function enviarAlertasLicitacoes(site: string) {
   const candidatas = await db
     .select()
     .from(licitacoes)
-    .where(and(gt(licitacoes.createdAt, corte), eq(licitacoes.situacaoId, SITUACAO_DIVULGADA), gt(licitacoes.encerramentoPropostas, agora)))
+    .where(
+      and(
+        // "nova" = classificada depois do corte: a que entrou antes do último envio mas só foi classificada agora ainda sai
+        gt(licitacoes.classificadoEm, corte),
+        inArray(licitacoes.categoria, CHAVES_CATEGORIAS),
+        eq(licitacoes.situacaoId, SITUACAO_DIVULGADA),
+        gt(licitacoes.encerramentoPropostas, agora),
+      ),
+    )
     .orderBy(asc(licitacoes.encerramentoPropostas));
 
   const resumo: { busca: string; novas: number; enviados: number; erros: number }[] = [];
   for (const { busca, empresa } of buscas) {
-    const novas = candidatas.filter((l) => l.createdAt > desde(busca) && casaBusca(l, busca));
+    const novas = candidatas.filter((l) => novaParaBusca(l, busca, desde(busca)));
     if (!novas.length || !para.length) {
       resumo.push({ busca: busca.nome, novas: novas.length, enviados: 0, erros: 0 });
       continue;

@@ -77,6 +77,45 @@ export const STATUS_SALVA = {
 } as const;
 export type StatusSalva = keyof typeof STATUS_SALVA;
 
+/** As únicas categorias que interessam ao escritório; a aba Abertas e os alertas mostram só estas. */
+export const CATEGORIAS = {
+  site_manutencao: "Manutenção de site institucional",
+  site_criacao: "Criação de site institucional",
+  website_desenvolvimento: "Desenvolvimento de website",
+  site_conteudo: "Atualização de conteúdo de site",
+  suporte_remoto: "Suporte técnico remoto em informática",
+  sistema_web_manutencao: "Manutenção de sistema web",
+  sistema_web_desenvolvimento: "Desenvolvimento de sistema web sob demanda",
+  site_hospedagem: "Hospedagem e manutenção de site",
+  formulario_eletronico: "Desenvolvimento de formulário eletrônico",
+  programacao: "Serviços de programação de computadores",
+} as const;
+export type Categoria = keyof typeof CATEGORIAS;
+export const CHAVES_CATEGORIAS = Object.keys(CATEGORIAS) as Categoria[];
+/** Classificada e fora das categorias de interesse. */
+export const NENHUMA = "nenhuma";
+
+export const ehCategoria = (c: string | null | undefined): c is Categoria => !!c && Object.hasOwn(CATEGORIAS, c);
+
+/** Prefixo de plataforma que alguns órgãos põem no objeto: "[Portal de Compras Públicas] - ", "[LICITANET] - ". */
+const PREFIXO_PLATAFORMA = /^\s*\[[^\]]*\]\s*-?\s*/;
+
+/**
+ * Pré-filtro amplo (prioriza não perder nada) só no objeto, sem prefixo de plataforma: o órgão e o município ficam de fora
+ * ("Secretaria de Tecnologia da Informação", "Sítio Cajueiro"). Quem passa vai para a IA; quem não passa vira `nenhuma`.
+ */
+const SINAIS_TI = new RegExp(
+  "\\b(" +
+    [
+      "sites?", "websites?", "homepage", "sitio (eletronico|oficial|institucional|web)", "paginas? (web|eletronicas?|na internet|institucionais?)",
+      "portal", "portais", "internet", "web", "online", "on-line", "sistemas?", "softwares?", "aplicativos?", "apps?", "plataformas?",
+      "programacao", "desenvolvimento", "hospedagem", "informatica", "tecnologia", "ti", "tic", "suporte tecnico", "formularios?",
+      "digita(l|is)", "dominios?", "transparencia", "ouvidoria", "nuvem", "cloud", "data ?center",
+    ].join("|") +
+    ")\\b",
+);
+export const candidataTI = (objeto: string) => SINAIS_TI.test(normalizar(objeto).replace(PREFIXO_PLATAFORMA, ""));
+
 /** Situação 1 = "Divulgada no PNCP" (as outras: revogada, anulada, suspensa). */
 export const SITUACAO_DIVULGADA = 1;
 
@@ -165,6 +204,13 @@ export function casaBusca(l: LicitacaoComparavel, b: CriteriosBusca) {
   }
   return true;
 }
+
+/** Entra no e-mail de uma busca: classificada (numa categoria de interesse) depois de `desde` e batendo com os critérios. */
+export const novaParaBusca = (
+  l: LicitacaoComparavel & { categoria: string | null; classificadoEm: Date | null },
+  b: CriteriosBusca,
+  desde: Date,
+) => !!l.classificadoEm && l.classificadoEm > desde && ehCategoria(l.categoria) && casaBusca(l, b);
 
 const diaSP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
 const horaSP = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });

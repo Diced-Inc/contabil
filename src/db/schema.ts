@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique,
+  pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique, index,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { MotivoEncerramento } from "@/lib/ciclo";
@@ -368,9 +368,12 @@ export const licitacoes = pgTable("licitacoes", {
   /** objeto + órgão + unidade + município + processo, minúsculo e sem acento (busca por trecho). */
   textoBusca: text("texto_busca").notNull(),
   raw: jsonb("raw").notNull(),
+  /** Chave de CATEGORIAS (lib/licitacoes) ou "nenhuma"; null = ainda não classificada (fica fora da aba Abertas). */
+  categoria: text("categoria"),
+  classificadoEm: timestamp("classificado_em", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("licitacoes_categoria_encerramento_idx").on(t.categoria, t.encerramentoPropostas)]);
 
 /** Uma por licitação: etapa, empresa cliente que pode participar e anotações. */
 export const licitacoesSalvas = pgTable("licitacoes_salvas", {

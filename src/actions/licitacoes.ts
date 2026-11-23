@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { estadoSync, sincronizarLicitacoes, ufsParaSincronizar } from "@/db/licitacoes";
+import { classificarPendentes, estadoSync, sincronizarLicitacoes, ufsParaSincronizar } from "@/db/licitacoes";
 import { buscasLicitacao, licitacoes, licitacoesSalvas } from "@/db/schema";
 import { parseValorBR } from "@/lib/format";
 import { separarTermos, STATUS_SALVA, UFS, type StatusSalva } from "@/lib/licitacoes";
@@ -24,7 +24,11 @@ export async function atualizarAgora(): Promise<{ ok: boolean; mensagem: string 
   if (espera > 0) return { ok: false, mensagem: `Atualizado há pouco. Tente de novo em ${espera} min.` };
   const ufs = await ufsParaSincronizar();
   // a tela (dinâmica) acompanha com router.refresh enquanto o estado diz "rodando"
-  after(() => sincronizarLicitacoes({ ufs, prazoMs: 180_000 }));
+  after(async () => {
+    await sincronizarLicitacoes({ ufs, prazoMs: 180_000 });
+    // só as classificadas aparecem na aba Abertas; o que não couber fica para a próxima rodada
+    await classificarPendentes({ prazoMs: 60_000 });
+  });
   return { ok: true, mensagem: "Buscando licitações no PNCP. Leva de 2 a 4 minutos; a lista se renova sozinha." };
 }
 

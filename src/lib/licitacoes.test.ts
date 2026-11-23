@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  casaBusca, dataPncp, diasParaEncerrar, limitePrazo, mapearContratacao, normalizar, prazoEncerramento, separarTermos,
+  candidataTI, casaBusca, dataPncp, diasParaEncerrar, limitePrazo, mapearContratacao, normalizar, novaParaBusca, prazoEncerramento,
+  separarTermos,
   type CriteriosBusca, type PaginaPncp,
 } from "./licitacoes";
 
@@ -113,5 +114,60 @@ describe("prazo das propostas (America/Sao_Paulo)", () => {
   it("limite de 'encerra em até N dias' é o fim do dia N em SP", () => {
     expect(limitePrazo(0, agora).toISOString()).toBe("2026-11-17T03:00:00.000Z");
     expect(limitePrazo(7, agora).toISOString()).toBe("2026-11-24T03:00:00.000Z");
+  });
+});
+
+describe("candidataTI (pré-filtro da IA)", () => {
+  it.each([
+    "CONTRATAÇÃO DE EMPRESA PARA MANUTENÇÃO DO SITE INSTITUCIONAL DA CÂMARA MUNICIPAL",
+    "Desenvolvimento de website para a Secretaria de Turismo",
+    "Atualização de conteúdo do sítio eletrônico oficial",
+    "SERVIÇOS DE SUPORTE TÉCNICO REMOTO EM INFORMÁTICA",
+    "Desenvolvimento de sistema web sob demanda",
+    "Hospedagem e manutenção do portal da transparência",
+    "Criação de formulário eletrônico de inscrição",
+    "SERVIÇOS DE PROGRAMAÇÃO DE COMPUTADORES",
+    "LOCAÇÃO DE SOFTWARE DE GERENCIAMENTO E CONTROLE DO SITE OFICIAL DA PREFEITURA",
+    "Criação de página na internet",
+    "[LICITANET] - Manutenção de sistemas web da prefeitura",
+  ])("passa: %s", (objeto) => expect(candidataTI(objeto)).toBe(true));
+
+  it.each([
+    "Aquisição de gêneros alimentícios para a merenda escolar",
+    "Reforma da Escola Lúcia Soares no Sítio Cajueiro da Jaburuna",
+    "Construção de praça comunitária localizada no Sítio Campos",
+    "Locação de ônibus rodoviário com capacidade para 42 passageiros",
+    "Aquisição de kits escolares para a rede municipal",
+  ])("descarta sem IA: %s", (objeto) => expect(candidataTI(objeto)).toBe(false));
+
+  it("ignora o prefixo [Portal de Compras Públicas]", () => {
+    expect(candidataTI("[Portal de Compras Públicas] - Contratação de serviços contínuos de auxiliar de limpeza")).toBe(false);
+    expect(candidataTI("[Portal de Compras Públicas] - Hospedagem e manutenção de site")).toBe(true);
+  });
+
+  it("olha só o objeto, não o órgão nem o município", () => {
+    // texto_busca juntaria "Secretaria de Tecnologia da Informação" e "Sítio X"; o pré-filtro recebe só o objeto
+    expect(candidataTI("Aquisição de material de limpeza")).toBe(false);
+  });
+});
+
+describe("novaParaBusca (alertas)", () => {
+  const desde = new Date("2026-11-20T10:00:00Z");
+  const base = { textoBusca: "manutencao de site", uf: "CE", municipio: "Fortaleza", modalidadeId: 6, valorEstimado: "1000.00" };
+  const busca: CriteriosBusca = { termos: [], ufs: ["CE"], municipios: [], modalidades: [], valorMin: null, valorMax: null };
+  const depois = new Date("2026-11-21T10:00:00Z");
+
+  it("entra a classificada depois do último envio, mesmo tendo sido baixada antes", () => {
+    expect(novaParaBusca({ ...base, categoria: "site_manutencao", classificadoEm: depois }, busca, desde)).toBe(true);
+  });
+  it("fica de fora a classificada antes do último envio", () => {
+    expect(novaParaBusca({ ...base, categoria: "site_manutencao", classificadoEm: new Date("2026-11-19T10:00:00Z") }, busca, desde)).toBe(false);
+  });
+  it("fica de fora a pendente ou fora das categorias", () => {
+    expect(novaParaBusca({ ...base, categoria: null, classificadoEm: null }, busca, desde)).toBe(false);
+    expect(novaParaBusca({ ...base, categoria: "nenhuma", classificadoEm: depois }, busca, desde)).toBe(false);
+  });
+  it("respeita os critérios da busca", () => {
+    expect(novaParaBusca({ ...base, categoria: "site_manutencao", classificadoEm: depois }, { ...busca, ufs: ["SP"] }, desde)).toBe(false);
   });
 });
