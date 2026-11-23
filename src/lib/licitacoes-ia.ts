@@ -8,10 +8,11 @@ Para cada objeto de licitação, escolha UMA categoria, ou "${NENHUMA}". As cate
 ${CHAVES_CATEGORIAS.map((k) => `- ${k}: ${CATEGORIAS[k]}`).join("\n")}
 
 Aceite apenas quando o objeto principal for um SERVIÇO de: criar, desenvolver, manter, atualizar ou hospedar site/portal/página na internet ou sistema web; desenvolver formulário eletrônico; programação de computadores sob demanda; ou suporte técnico REMOTO em informática.
+Conta como site_manutencao (ou site_hospedagem, se o foco for hospedar) a locação, licença ou serviço de software para gerenciar o site oficial ou portal institucional do próprio órgão (site da prefeitura/câmara, portal da transparência), quando esse site é o objeto principal.
 Responda "${NENHUMA}" para:
 - compra ou locação de equipamentos, computadores, periféricos, rede, peças ou materiais;
-- licença, assinatura ou locação de software pronto (Microsoft, antivírus, CAD, Oracle, ERP/gestão pública/folha/contabilidade/saúde/educação em SaaS), a não ser que o objeto seja construir ou manter um site ou sistema web;
-- "hospedagem" de pessoas (hotel, pousada, pacientes); "sítio" como lugar rural; obras e engenharia; "sistema" de água, energia, esgoto, som, câmeras, alarme, ar-condicionado;
+- licença, assinatura ou locação de software pronto (Microsoft, antivírus, CAD, Oracle, ERP/gestão pública/folha/contabilidade/saúde/educação/frotas/documentos em SaaS ou "plataforma web" alugada), a não ser que o objeto seja construir ou manter um site ou sistema web, ou o site oficial do órgão (regra acima);
+- "hospedagem" de pessoas (hotel, pousada, pacientes), e "hospedagem" sozinha, sem citar site, sistema, portal, servidor ou dados (em prefeitura é quase sempre hotel); "sítio" como lugar rural; obras e engenharia; "sistema" de água, energia, esgoto, som, câmeras, alarme, ar-condicionado;
 - help desk ou postos de trabalho presenciais com mão de obra alocada; digitalização ou guarda de documentos; consultoria, auditoria, treinamento, publicidade;
 - "desenvolvimento" no sentido social, econômico, infantil ou de pessoas.
 Na dúvida (objeto misto ou genérico), escolha a categoria mais próxima só se o serviço for o objeto principal; senão "${NENHUMA}".
