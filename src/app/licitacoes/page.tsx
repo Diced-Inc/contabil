@@ -139,7 +139,7 @@ async function Abertas({ sp }: { sp: Record<string, string | string[] | undefine
       <Toolbar>
         <form className="contents">
           <FilterField label="Buscar" className="min-w-64 flex-[2]">
-            <Input name="q" defaultValue={f.q} placeholder="Palavras no objeto ou no órgão. Ex.: portal, manutenção" />
+            <Input name="q" defaultValue={f.q} placeholder="Palavras no objeto ou no órgão. Ex.: portal, site" />
           </FilterField>
           <FilterField label="Estado">
             <select name="uf" defaultValue={ufAtual} className={cn(selectCls, "w-24")}>
