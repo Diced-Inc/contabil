@@ -182,8 +182,9 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar, inici
     if (ids.length) {
       try {
         const s = await sugerirAposImportacao(empresaId, ids);
+        const faltam = s.restantes ? ` ${s.restantes} sem sugestão — use Sugerir com IA na conciliação.` : "";
         toast.success(`${ids.length} transações novas.`, {
-          description: `Sugestões: ${s.regras} por regra, ${s.transferencias} transferências, ${s.ia} por IA.`,
+          description: `Sugestões: ${s.regras} por regra, ${s.transferencias} transferências, ${s.ia} por IA.${faltam}`,
         });
         if (s.erros.length) toast.warning(`Falhas na sugestão: ${s.erros.join("; ")}`);
       } catch (e) {

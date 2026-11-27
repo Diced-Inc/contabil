@@ -1,17 +1,27 @@
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { contasBancarias, lancamentos, partidas, planoContas, regras, transacoesBancarias } from "@/db/schema";
-import { classificarComIA, type ExemploIA } from "./ia";
+import { normalizarMemo, selecionarExemplos } from "./exemplos";
+import { classificarLoteIA, type ExemploIA } from "./ia";
 import { aplicarTemplate, primeiraRegra } from "./regras";
 import { parearTransferencias } from "./transferencias";
 
-const CONCORRENCIA_IA = 4;
-const MAX_EXEMPLOS = 30;
+export const LOTE_IA = 20; // transações por chamada à IA
+export const PARALELO_IA = 3; // chamadas simultâneas
+const MAX_IA = 120; // transações por chamada de sugerirPendentes
+const PRAZO_IA_MS = 200_000; // folga sob os 300 s da função na Vercel
+const MIN_PARA_LOTE_MS = 30_000; // com menos prazo que isso, o lote fica para a próxima rodada
+const MAX_POOL = 500;
 
-export type ResultadoSugestao = { regras: number; transferencias: number; ia: number; erros: string[] };
+export type ResultadoSugestao = {
+  regras: number; transferencias: number; ia: number;
+  /** Pendentes ainda sem sugestão que a IA pode pegar numa próxima rodada. */
+  restantes: number;
+  erros: string[];
+};
 
-/** Exemplos few-shot: últimas conciliações aprovadas da empresa (memo → conta de contrapartida). */
-async function exemplosAprovados(empresaId: string): Promise<ExemploIA[]> {
+/** Pool few-shot: conciliações aprovadas da empresa (memo → conta de contrapartida), da mais nova para a mais antiga. */
+export async function exemplosAprovados(empresaId: string): Promise<ExemploIA[]> {
   const txs = await db
     .select({ memo: transacoesBancarias.memo, valor: transacoesBancarias.valor, lancamentoId: lancamentos.id, contaBanco: contasBancarias.contaContabilId })
     .from(transacoesBancarias)
@@ -19,7 +29,7 @@ async function exemplosAprovados(empresaId: string): Promise<ExemploIA[]> {
     .innerJoin(lancamentos, eq(lancamentos.id, transacoesBancarias.lancamentoId))
     .where(and(eq(contasBancarias.empresaId, empresaId), eq(transacoesBancarias.status, "classificada"), eq(lancamentos.status, "aprovado")))
     .orderBy(desc(lancamentos.createdAt))
-    .limit(MAX_EXEMPLOS);
+    .limit(MAX_POOL);
   if (!txs.length) return [];
   const ps = await db
     .select({ lancamentoId: partidas.lancamentoId, contaId: partidas.contaId, codigo: planoContas.codigo, debito: partidas.debito, credito: partidas.credito })
@@ -34,14 +44,27 @@ async function exemplosAprovados(empresaId: string): Promise<ExemploIA[]> {
   });
 }
 
+/** Lotes de memos parecidos juntos (ordem pelo memo normalizado): os exemplos de cada lote ficam mais focados. */
+export function lotesIA<T extends { memo: string }>(ts: T[], tamanho = LOTE_IA): T[][] {
+  const ordenadas = ts
+    .map((t) => ({ t, k: normalizarMemo(t.memo).join(" ") }))
+    .sort((a, b) => a.k.localeCompare(b.k))
+    .map((x) => x.t);
+  const out: T[][] = [];
+  for (let i = 0; i < ordenadas.length; i += tamanho) out.push(ordenadas.slice(i, i + tamanho));
+  return out;
+}
+
 /**
  * Regras valem para pendentes sem sugestão ou com sugestão da IA (regra nova sobrepõe a IA);
- * transferências e IA só para as sem sugestão. IA limitada a `limiteIa` por chamada (tempo de função).
+ * transferências e IA só para as sem sugestão. A IA pega até `maxIa` por chamada, em lotes de LOTE_IA
+ * (PARALELO_IA simultâneos), dentro do prazo; o que sobrar volta em `restantes`.
  */
 export async function sugerirPendentes(
-  empresaId: string, transacaoIds?: string[], { ia = true, limiteIa = 40 }: { ia?: boolean; limiteIa?: number } = {},
+  empresaId: string, transacaoIds?: string[], { ia = true, maxIa = MAX_IA }: { ia?: boolean; maxIa?: number } = {},
 ): Promise<ResultadoSugestao> {
-  const out: ResultadoSugestao = { regras: 0, transferencias: 0, ia: 0, erros: [] };
+  const prazo = Date.now() + PRAZO_IA_MS;
+  const out: ResultadoSugestao = { regras: 0, transferencias: 0, ia: 0, restantes: 0, erros: [] };
 
   const [pendentes, regrasAtivas, contas] = await Promise.all([
     db
@@ -97,10 +120,7 @@ export async function sugerirPendentes(
 
   const semIa = alvos.filter((t) => !t.sugestaoOrigem && !resolvidas.has(t.id));
   if (!ia || !semIa.length) return out;
-  const restantes = semIa.slice(0, limiteIa);
-  if (semIa.length > limiteIa) {
-    out.erros.push(`IA: ${semIa.length - limiteIa} transações restantes, clique em Sugerir com IA novamente`);
-  }
+  out.restantes = semIa.length;
   if (!process.env.ANTHROPIC_API_KEY) {
     out.erros.push("IA desativada: ANTHROPIC_API_KEY ausente");
     return out;
@@ -108,21 +128,30 @@ export async function sugerirPendentes(
 
   const contasIA = contas.map(({ codigo, nome, natureza }) => ({ codigo, nome, natureza }));
   const idPorCodigo = new Map(contas.map((c) => [c.codigo, c.id]));
-  const exemplos = await exemplosAprovados(empresaId);
+  const pool = await exemplosAprovados(empresaId);
+  const fila = lotesIA(semIa.slice(0, maxIa));
 
-  for (let i = 0; i < restantes.length; i += CONCORRENCIA_IA) {
-    const fatia = restantes.slice(i, i + CONCORRENCIA_IA);
-    const res = await Promise.allSettled(fatia.map(async (t) => {
-      const s = await classificarComIA(t, contasIA, exemplos);
-      await db.update(transacoesBancarias).set({
-        sugestaoContaId: idPorCodigo.get(s.contaCodigo)!, sugestaoRegraId: null, sugestaoOrigem: "ia",
-        sugestaoConfianca: s.confianca.toFixed(2), sugestaoHistorico: s.historico, sugestaoJustificativa: s.justificativa,
-      }).where(and(eq(transacoesBancarias.id, t.id), isNull(transacoesBancarias.sugestaoOrigem)));
-    }));
-    res.forEach((r, k) => {
-      if (r.status === "fulfilled") out.ia++;
-      else out.erros.push(`${fatia[k].memo.slice(0, 40)}: ${(r.reason as Error)?.message ?? String(r.reason)}`);
-    });
-  }
+  const trabalhador = async () => {
+    for (let lote = fila.shift(); lote; lote = fila.shift()) {
+      const resta = prazo - Date.now();
+      if (resta < MIN_PARA_LOTE_MS) return;
+      try {
+        const sugestoes = await classificarLoteIA(lote, contasIA, selecionarExemplos(pool, lote), { timeoutMs: resta });
+        await Promise.all([...sugestoes].map(async ([i, s]) => {
+          // Só se continua pendente e sem sugestão: o usuário pode ter agido enquanto a IA rodava.
+          const feitas = await db.update(transacoesBancarias).set({
+            sugestaoContaId: idPorCodigo.get(s.contaCodigo)!, sugestaoRegraId: null, sugestaoOrigem: "ia",
+            sugestaoConfianca: s.confianca.toFixed(2), sugestaoHistorico: s.historico, sugestaoJustificativa: s.justificativa,
+          }).where(and(eq(transacoesBancarias.id, lote[i].id), eq(transacoesBancarias.status, "pendente"), isNull(transacoesBancarias.sugestaoOrigem)))
+            .returning({ id: transacoesBancarias.id });
+          out.ia += feitas.length;
+        }));
+      } catch (e) {
+        out.erros.push(`IA (lote de ${lote.length}): ${(e as Error)?.message ?? String(e)}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: PARALELO_IA }, trabalhador));
+  out.restantes = semIa.length - out.ia;
   return out;
 }

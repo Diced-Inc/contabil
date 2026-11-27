@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCheck, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Undo2 } from "lucide-react";
+import { Ban, CheckCheck, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Square, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { aprovarEmLote, desfazerConciliacao, desfazerEmLote, ignorarEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ const aprovavel = (t: TransacaoLinha) =>
   (t.sugestaoOrigem === "transferencia" && !!t.transferenciaParId);
 
 const MIN_CONFIANCA_IA = 0.7;
+const MAX_RODADAS_IA = 50; // trava de segurança do laço do "Sugerir com IA"
 const confiancaBaixa = (t: TransacaoLinha) => t.sugestaoOrigem === "ia" && Number(t.sugestaoConfianca ?? 0) < MIN_CONFIANCA_IA;
 
 function Sugestao({ t }: { t: TransacaoLinha }) {
@@ -61,6 +62,11 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [aberta, setAberta] = useState<TransacaoLinha | null>(null);
   const [pendente, iniciar] = useTransition();
+  // Progresso do "Sugerir com IA" (null = parado); o laço roda fora da transição para mostrar o andamento.
+  const [ia, setIa] = useState<{ feitas: number; total: number; parando: boolean } | null>(null);
+  const parar = useRef(false);
+  useEffect(() => () => void (parar.current = true), []);
+  const ocupado = pendente || ia !== null;
   const visiveis = new Set(transacoes.map((t) => t.id));
   const selecionadas = [...sel].filter((id) => visiveis.has(id));
   const linhasSel = transacoes.filter((t) => sel.has(t.id));
@@ -102,37 +108,75 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
       router.refresh();
     });
 
-  const sugerir = () =>
-    iniciar(async () => {
-      const r = await sugerirComIA(empresaId);
-      toast.success(`Sugestões: ${r.regras} por regra, ${r.transferencias} transferência(s), ${r.ia} pela IA.`);
-      if (r.erros.length) toast.error(`${r.erros.length} erro(s) na sugestão`, { description: r.erros.slice(0, 5).join("\n") });
-      router.refresh();
-    });
+  /** Chama a action em rodadas enquanto sobrar transação sem sugestão e cada rodada diminuir o que falta. */
+  const sugerir = async () => {
+    parar.current = false;
+    let total = todas.filter((t) => !t.sugestaoOrigem).length;
+    setIa({ feitas: 0, total, parando: false });
+    const soma = { regras: 0, transferencias: 0, ia: 0 };
+    const erros: string[] = [];
+    let anterior = Infinity, restantes = 0, interrompido = false;
+    try {
+      for (let rodada = 0; rodada < MAX_RODADAS_IA; rodada++) {
+        const r = await sugerirComIA(empresaId);
+        soma.regras += r.regras;
+        soma.transferencias += r.transferencias;
+        soma.ia += r.ia;
+        erros.push(...r.erros);
+        restantes = r.restantes;
+        if (rodada === 0) total = r.ia + r.restantes;
+        setIa((x) => x && { ...x, feitas: soma.ia, total });
+        router.refresh();
+        if (!restantes || restantes >= anterior) break; // acabou, ou a rodada não avançou (erro repetido, IA fora)
+        if (parar.current) {
+          interrompido = true;
+          break;
+        }
+        anterior = restantes;
+      }
+    } catch (e) {
+      erros.push((e as Error).message || "Falha ao chamar a IA.");
+    } finally {
+      setIa(null);
+    }
+    const falta = restantes ? `${restantes} ainda sem sugestão${interrompido ? " (interrompido)" : ""}.` : undefined;
+    toast.success(`Sugestões: ${soma.regras} por regra, ${soma.transferencias} transferência(s), ${soma.ia} pela IA.`, { description: falta });
+    if (erros.length) toast.error(`${erros.length} erro(s) na sugestão`, { description: erros.slice(0, 5).join("\n") });
+  };
 
   return (
     <>
       {todas.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
           <Button onClick={() => (porOrigem("ia") ? setConfirmarIa(true) : aprovar())}
-            disabled={pendente || selecionadas.length === 0 || !todasAprovaveis}
+            disabled={ocupado || selecionadas.length === 0 || !todasAprovaveis}
             title={todasAprovaveis ? undefined : "Há transações selecionadas sem sugestão"}>
             <CheckCheck />
             Aprovar selecionadas ({selecionadas.length})
           </Button>
-          <Button variant="outline" onClick={() => setLote(true)} disabled={pendente || selecionadas.length === 0 || sinalMisto}
+          <Button variant="outline" onClick={() => setLote(true)} disabled={ocupado || selecionadas.length === 0 || sinalMisto}
             title={sinalMisto ? "Selecione só entradas ou só saídas" : undefined}>
             <ListChecks />
             Classificar selecionadas ({selecionadas.length})
           </Button>
-          <Button variant="outline" onClick={() => (setMotivo(""), setIgnorar(true))} disabled={pendente || selecionadas.length === 0}>
+          <Button variant="outline" onClick={() => (setMotivo(""), setIgnorar(true))} disabled={ocupado || selecionadas.length === 0}>
             <Ban />
             Ignorar selecionadas ({selecionadas.length})
           </Button>
-          <Button variant="outline" onClick={sugerir} disabled={pendente}>
-            <Sparkles />
-            {pendente ? "Processando..." : "Sugerir com IA"}
+          <Button variant="outline" onClick={sugerir} disabled={ocupado}>
+            <Sparkles className={ia ? "animate-pulse" : undefined} />
+            {ia ? `Sugerindo… ${ia.feitas} de ${ia.total}` : "Sugerir com IA"}
           </Button>
+          {ia && (
+            <Button variant="ghost" disabled={ia.parando} title="Para depois da rodada em andamento"
+              onClick={() => {
+                parar.current = true;
+                setIa((x) => x && { ...x, parando: true });
+              }}>
+              <Square />
+              {ia.parando ? "Parando…" : "Parar"}
+            </Button>
+          )}
           <span className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{transacoes.length} pendentes</span>
             <Badge variant="info">{contagem("regra")} regra</Badge>

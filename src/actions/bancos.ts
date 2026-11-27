@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { contasBancarias, importacoes, mapeamentosCsv, transacoesBancarias } from "@/db/schema";
 import { contaAtivoAnaliticaValida, getContaBancaria } from "@/app/e/[id]/bancos/queries";
-import { sugerirPendentes } from "@/lib/classificacao/pipeline";
+import { LOTE_IA, PARALELO_IA, sugerirPendentes } from "@/lib/classificacao/pipeline";
 import { detectarCsv, parseCsv, type DeteccaoCsv, type ExtratoCsv, type MapeamentoCsv } from "@/lib/csv";
 import { atribuirFitids } from "@/lib/dedup";
 import { extrairExtratoPdf, type ExtratoIA } from "@/lib/extrato-ia";
@@ -336,16 +336,19 @@ export async function importarLinhasRevisadas(
   });
 }
 
-/** Regras + transferências + IA (com o teto de sempre) uma única vez sobre as transações novas de todos os arquivos. */
+/**
+ * Regras + transferências + uma rodada curta de IA (um lote por chamada paralela) sobre as novas de todos os arquivos.
+ * O que sobrar volta em `restantes`: o usuário continua pelo "Sugerir com IA" da conciliação.
+ */
 export async function sugerirAposImportacao(empresaId: string, ids: string[]): Promise<Sugestao> {
   await requireUser();
   const r = z.array(z.uuid()).safeParse(ids);
-  let sugestao: Sugestao = { regras: 0, transferencias: 0, ia: 0, erros: [] };
+  let sugestao: Sugestao = { regras: 0, transferencias: 0, ia: 0, restantes: 0, erros: [] };
   // A importação já está gravada: falha na sugestão vira aviso, nunca erro.
   if (!r.success) sugestao.erros.push("IDs de transação inválidos.");
   else if (r.data.length) {
     try {
-      sugestao = await sugerirPendentes(empresaId, r.data);
+      sugestao = await sugerirPendentes(empresaId, r.data, { maxIa: LOTE_IA * PARALELO_IA });
     } catch (e) {
       sugestao.erros.push((e as Error).message);
     }
