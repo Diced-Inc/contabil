@@ -124,3 +124,37 @@ export async function listarConciliadas(empresaId: string, f: FiltroConciliadas)
     .orderBy(desc(transacoesBancarias.data), asc(transacoesBancarias.valor), asc(transacoesBancarias.id), asc(partidas.ordem));
   return agruparContrapartidas(linhas);
 }
+
+export type SemParLinha = Awaited<ReturnType<typeof listarTransferenciasSemPar>>[number];
+
+/**
+ * Classificadas na conta de papel transferências (lançamento aprovado): transferência sem par, porque o par casado vira
+ * status "transferencia" e não passa pela transitória. `ate`: só até essa data.
+ */
+export async function listarTransferenciasSemPar(empresaId: string, ate?: string) {
+  const rows = await db.execute<{
+    id: string; contaBancariaId: string; contaBancariaNome: string; data: string; valor: string; memo: string; lancamentoId: string;
+  }>(sql`
+    SELECT t.id, t.conta_bancaria_id AS "contaBancariaId", cb.nome AS "contaBancariaNome", t.data::text AS data,
+      t.valor::text AS valor, t.memo, t.lancamento_id AS "lancamentoId"
+    FROM transacoes_bancarias t
+    JOIN contas_bancarias cb ON cb.id = t.conta_bancaria_id
+    JOIN lancamentos l ON l.id = t.lancamento_id AND l.status = 'aprovado'
+    WHERE cb.empresa_id = ${empresaId} AND t.status = 'classificada' ${ate ? sql`AND t.data <= ${ate}` : sql``}
+      AND EXISTS (SELECT 1 FROM partidas p JOIN plano_contas pc ON pc.id = p.conta_id
+                  WHERE p.lancamento_id = l.id AND pc.papel = 'transferencias')
+    ORDER BY t.data, t.valor`);
+  return [...rows];
+}
+
+/** Conta de papel transferências e o saldo (D − C) até `ate`. */
+export async function saldoTransitoria(empresaId: string, ate: string) {
+  const [c] = await db.execute<{ id: string; codigo: string; nome: string; saldo: string }>(sql`
+    SELECT pc.id, pc.codigo, pc.nome, coalesce(sum(p.debito - p.credito) FILTER (WHERE l.data <= ${ate}), 0)::text AS saldo
+    FROM plano_contas pc
+    LEFT JOIN partidas p ON p.conta_id = pc.id
+    LEFT JOIN lancamentos l ON l.id = p.lancamento_id
+    WHERE pc.empresa_id = ${empresaId} AND pc.papel = 'transferencias'
+    GROUP BY pc.id`);
+  return c;
+}

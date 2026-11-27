@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { listarContasComSaldo } from "@/app/e/[id]/bancos/queries";
+import { listarTransferenciasSemPar } from "@/app/e/[id]/conciliacao/queries";
 import { carregarEstado, mesesDoAno } from "./fechamento";
 import { cents, fmtCompetencia, fmtData, fmtValor, hoje, primeiroDiaDoMes } from "./format";
-import { balanco } from "./relatorios/balanco";
+import { balanco, type TotaisBalanco } from "./relatorios/balanco";
 import { saldos, type LinhaSaldo } from "./relatorios/saldos";
+import { contaDeTitulo } from "./sem-titulo";
 
 export type StatusChecagem = "ok" | "alerta" | "erro";
 export type ItemChecagem = {
@@ -13,8 +15,8 @@ export type ItemChecagem = {
   status: StatusChecagem;
   detalhe: string;
   link?: string;
-  /** Detalhamento opcional (até 10 linhas), cada uma com link. */
-  itens?: { texto: string; link: string }[];
+  /** Detalhamento opcional, cada linha com link; `grupo` agrupa as linhas na tela. */
+  itens?: { texto: string; link: string; grupo?: string }[];
 };
 
 const LIMITE_SEM_DOCUMENTO = 1000;
@@ -26,6 +28,122 @@ export function naturezaInvertida(linhas: Pick<LinhaSaldo, "id" | "codigo" | "no
     const s = cents(l.saldoAtual);
     return l.natureza === "D" ? s < 0 : s > 0;
   });
+}
+
+type LinhaRegra = Pick<LinhaSaldo, "id" | "codigo" | "nome" | "natureza" | "tipo" | "saldoAtual" | "papel">;
+const semAcento = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+const reais = (c: number) => `R$ ${fmtValor(Math.abs(c) / 100)}`;
+const ladoSaldo = (c: number) => (c > 0 ? "devedor" : "credor");
+
+/**
+ * Regras patrimoniais (item 9 do Bruno) sobre os saldos analíticos no fim do período e os totais do balanço.
+ * erro bloqueia a apuração: Ativo credor, Passivo + PL devedor, aplicação credora (impossível).
+ * alerta pede revisão: Clientes credor, Fornecedores devedor, imposto a recolher devedor, transitória ≠ 0, sem capital
+ * social, adiantamento a sócio em aberto e os demais saldos contra a natureza (têm casos transitórios legítimos,
+ * e Fornecedores/adiantamento a sócio só fecham quando a obrigação/compensação for registrada).
+ */
+export function regrasPatrimoniais(linhas: LinhaRegra[], p: {
+  base: string; ano: number; totais: TotaisBalanco; semPar?: { data: string; valor: string; memo: string; contaBancariaNome: string }[];
+}): ItemChecagem[] {
+  const an = linhas.filter((l) => l.tipo === "analitica");
+  const s = (l: LinhaRegra) => cents(l.saldoAtual);
+  const razao = (l: LinhaRegra) => `${p.base}/relatorios/razao?ano=${p.ano}&conta=${l.id}`;
+  const linha = (l: LinhaRegra, grupo?: string) => ({
+    texto: `${l.codigo} ${l.nome}: saldo ${ladoSaldo(s(l))} de ${reais(s(l))}`, link: razao(l), grupo,
+  });
+  const porValor = (ls: LinhaRegra[]) => [...ls].sort((a, b) => Math.abs(s(b)) - Math.abs(s(a)));
+  const classe = (c: string) => (l: LinhaRegra) => l.codigo === c || l.codigo.startsWith(`${c}.`);
+  const regra = (id: string, titulo: string, ruim: LinhaRegra[], status: "alerta" | "erro", ok: string, ruimTxt: string): ItemChecagem => ({
+    id, titulo, status: ruim.length ? status : "ok", detalhe: ruim.length ? ruimTxt : ok, itens: porValor(ruim).map((l) => linha(l)),
+  });
+  const itens: ItemChecagem[] = [];
+  const { ativo, passivoPl } = p.totais;
+
+  itens.push({
+    id: "ativo-credor", titulo: "Ativo total com saldo devedor", status: ativo < 0 ? "erro" : "ok",
+    detalhe: ativo < 0
+      ? `Ativo total credor de ${reais(ativo)}: há saldos credores no Ativo (ex.: recebimentos direto em Clientes, transferências sem par).`
+      : `Ativo total devedor de ${reais(ativo)}.`,
+    itens: ativo < 0 ? porValor(an.filter((l) => classe("1")(l) && s(l) < 0)).map((l) => linha(l)) : undefined,
+  });
+  itens.push({
+    id: "passivo-devedor", titulo: "Passivo + PL com saldo credor", status: passivoPl > 0 ? "erro" : "ok",
+    detalhe: passivoPl > 0 ? `Passivo + PL devedor de ${reais(passivoPl)}.` : `Passivo + PL credor de ${reais(passivoPl)}.`,
+    itens: passivoPl > 0 ? porValor(an.filter((l) => classe("2")(l) && s(l) > 0)).map((l) => linha(l)) : undefined,
+  });
+  itens.push({
+    id: "balanco", titulo: "Balanço fecha (Ativo = Passivo + PL)",
+    status: !p.totais.fecha ? "erro" : ativo < 0 || passivoPl > 0 ? "alerta" : "ok",
+    detalhe: !p.totais.fecha
+      ? `Ativo R$ ${fmtValor(ativo / 100)} × Passivo + PL R$ ${fmtValor(-passivoPl / 100)} (diferença R$ ${fmtValor((ativo + passivoPl) / 100)}).`
+      : ativo < 0 || passivoPl > 0
+        ? "Os totais batem, mas só porque saldos invertidos se compensam (veja Ativo e Passivo + PL): o balanço não é confiável."
+        : `Ativo de R$ ${fmtValor(ativo / 100)} igual ao Passivo + PL.`,
+    link: `${p.base}/relatorios/balanco?ano=${p.ano}`,
+  });
+
+  const cobertas = new Set<string>();
+  const marcar = (ls: LinhaRegra[]) => (ls.forEach((l) => cobertas.add(l.id)), ls);
+  const papel = (x: string) => an.filter((l) => l.papel === x);
+
+  itens.push(regra("clientes-credor", "Clientes com saldo credor", marcar(papel("clientes").filter((l) => s(l) < 0)), "alerta",
+    "Clientes sem saldo credor.", "Recebido mais do que foi faturado: recebimentos direto em Clientes sem título. Reclassifique para a receita ou registre os títulos."));
+  itens.push(regra("fornecedores-devedor", "Fornecedores com saldo devedor", marcar(papel("fornecedores").filter((l) => s(l) > 0)), "alerta",
+    "Fornecedores sem saldo devedor.", "Pago mais do que foi reconhecido: falta registrar as obrigações (títulos/NF) desses pagamentos."));
+  itens.push(regra("aplicacoes-credor", "Aplicações financeiras com saldo credor",
+    marcar(an.filter((l) => classe("1")(l) && /aplica/.test(semAcento(l.nome)) && s(l) < 0)), "erro",
+    "Nenhuma aplicação com saldo credor.", "Aplicação não pode ter saldo negativo: falta a aplicação inicial ou um resgate foi lançado a mais."));
+  itens.push(regra("impostos-devedor", "Impostos a recolher com saldo devedor",
+    marcar(an.filter((l) => contaDeTitulo(l) === "impostos" && s(l) > 0)), "alerta",
+    "Nenhum imposto a recolher com saldo devedor.", "Guia paga sem a obrigação registrada: lance a provisão do imposto na competência."));
+
+  const transitoria = papel("transferencias");
+  if (transitoria.length) {
+    const t = marcar(transitoria.filter((l) => s(l) !== 0));
+    const total = transitoria.reduce((x, l) => x + s(l), 0);
+    const tela = `${p.base}/conciliacao?ver=transferencias`;
+    itens.push({
+      id: "transferencias", titulo: "Transferências entre contas zeradas", status: t.length ? "alerta" : "ok",
+      detalhe: t.length
+        ? `Saldo ${ladoSaldo(total)} de ${reais(total)} na conta de transferências, ${p.semPar?.length ?? 0} transação(ões) sem par. Cadastre a outra conta bancária e importe o extrato dela.`
+        : "Conta de transferências zerada.",
+      link: t.length ? tela : undefined,
+      itens: t.length ? [
+        ...t.map((l) => linha(l)),
+        ...(p.semPar ?? []).map((x) => ({
+          texto: `${fmtData(x.data)} · ${x.contaBancariaNome} · R$ ${fmtValor(x.valor)} · ${x.memo}`, link: tela, grupo: "Sem par",
+        })),
+      ] : undefined,
+    });
+  }
+
+  const capital = an.filter((l) => classe("2.3.1")(l) || /capital social/.test(semAcento(l.nome)));
+  const totalCapital = capital.reduce((x, l) => x + s(l), 0);
+  itens.push({
+    id: "capital-social", titulo: "Capital social registrado", status: totalCapital === 0 ? "alerta" : "ok",
+    detalhe: totalCapital === 0
+      ? "PL sem capital social: lance o saldo de abertura (capital subscrito e integralizado)."
+      : `Capital social de ${reais(totalCapital)}.`,
+    link: totalCapital === 0 ? `${p.base}/plano-de-contas` : undefined,
+  });
+
+  itens.push(regra("adiantamento-socios", "Adiantamentos a sócios em aberto",
+    marcar(an.filter((l) => classe("1")(l) && /socio/.test(semAcento(l.nome)) && s(l) !== 0)), "alerta",
+    "Nenhum adiantamento a sócio em aberto.", "Valores com sócio ainda não compensados: devolução, distribuição de lucros ou pró-labore."));
+
+  const nomes = new Map(linhas.map((l) => [l.codigo, l.nome]));
+  const grupoDe = (c: string) => {
+    const g = c.split(".").slice(0, 2).join(".");
+    return `${g} ${nomes.get(g) ?? ""}`.trim();
+  };
+  const outras = naturezaInvertida(an).filter((l) => !cobertas.has(l.id));
+  itens.push({
+    id: "natureza", titulo: "Outros saldos contrários à natureza da conta",
+    status: outras.length ? "alerta" : "ok",
+    detalhe: outras.length ? `${outras.length} conta(s) analítica(s) com saldo invertido, além das acima.` : "Nenhuma outra conta com saldo invertido.",
+    itens: [...outras].sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })).map((l) => linha(l, grupoDe(l.codigo))),
+  });
+  return itens;
 }
 
 /**
@@ -65,7 +183,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   const fim = dez < hoje() ? dez : hoje();
   const base = `/e/${empresaId}`;
 
-  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos, inicio] = await Promise.all([
+  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos, inicio, semPar] = await Promise.all([
     balanco(empresaId, ano),
     listarContasComSaldo(empresaId, fim),
     carregarEstado(db, empresaId),
@@ -102,20 +220,13 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
           (SELECT min(t.data) FROM transacoes_bancarias t JOIN contas_bancarias cb ON cb.id = t.conta_bancaria_id
            WHERE cb.empresa_id = ${empresaId})),
         (SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date FROM empresas WHERE id = ${empresaId}))::text AS d`),
+    listarTransferenciasSemPar(empresaId, fim),
   ]);
 
   const itens: ItemChecagem[] = [];
 
-  // 1. Balanço
-  const t = bal.atual;
-  itens.push({
-    id: "balanco", titulo: "Balanço fecha (Ativo = Passivo + PL)",
-    status: t.fecha ? "ok" : "erro",
-    detalhe: t.fecha
-      ? `Ativo de R$ ${fmtValor(t.ativo / 100)} igual ao Passivo + PL.`
-      : `Ativo R$ ${fmtValor(t.ativo / 100)} × Passivo + PL R$ ${fmtValor(-t.passivoPl / 100)} (diferença R$ ${fmtValor((t.ativo + t.passivoPl) / 100)}).`,
-    link: `${base}/relatorios/balanco?ano=${ano}`,
-  });
+  // 1. Balanço e regras patrimoniais (inclui a natureza invertida, por grupo e sem limite)
+  itens.push(...regrasPatrimoniais(linhas, { base, ano, totais: bal.atual, semPar }));
 
   // 2. Bancos
   for (const b of bancos.filter((b) => b.ativa)) {
@@ -159,20 +270,11 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
       })),
     });
   } else {
-    itens.push({ id: "resultado-zerado", titulo: "Contas de resultado zeradas após a apuração", status: "ok", detalhe: `Exercício ${ano} ainda não apurado.` });
+    itens.push({
+      id: "resultado-zerado", titulo: "Contas de resultado zeradas após a apuração", status: "ok",
+      detalhe: `Exercício ${ano} ainda não apurado: o Balanço é provisório até a apuração.`,
+    });
   }
-
-  // 5. Natureza invertida
-  const inv = naturezaInvertida(linhas);
-  itens.push({
-    id: "natureza", titulo: "Saldos contrários à natureza da conta",
-    status: inv.length ? "alerta" : "ok",
-    detalhe: inv.length ? `${inv.length} conta(s) analítica(s) com saldo invertido.` : "Nenhuma conta com saldo invertido.",
-    itens: inv.slice(0, 10).map((l) => ({
-      texto: `${l.codigo} ${l.nome}: saldo ${cents(l.saldoAtual) > 0 ? "devedor" : "credor"} de R$ ${fmtValor(Math.abs(Number(l.saldoAtual)))}`,
-      link: `${base}/relatorios/razao?ano=${ano}&conta=${l.id}`,
-    })),
-  });
 
   // 6. Sem documento
   const nSemDoc = semDoc[0]?.n ?? 0;

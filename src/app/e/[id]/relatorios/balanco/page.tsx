@@ -6,6 +6,8 @@ import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { db } from "@/db";
+import { carregarEstado } from "@/lib/fechamento";
 import { fmtSaldoDC, fmtValor, fromCents, lerAno } from "@/lib/format";
 import { balanco, type TotaisBalanco } from "@/lib/relatorios/balanco";
 import { nivel } from "@/lib/relatorios/hierarquia";
@@ -23,7 +25,7 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
   const sp = await searchParams;
   const ano = lerAno(sp.ano);
   const empresa = await getEmpresa(id);
-  const b = await balanco(id, ano);
+  const [b, estado] = await Promise.all([balanco(id, ano), carregarEstado(db, id)]);
   const base = `/e/${id}/relatorios/balanco`;
 
   return (
@@ -32,6 +34,7 @@ async function Balanco({ params, searchParams }: PageProps<"/e/[id]/relatorios/b
       empresa={empresa}
       periodoLabel={`31/12/${ano} e 31/12/${ano - 1}`}
       dataAssinatura={`${ano}-12-31`}
+      provisorio={estado.apurados.has(ano) ? undefined : `Exercício ${ano} não apurado: o balanço definitivo sai depois da apuração do resultado.`}
       filtros={
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-muted-foreground">Exercício</span>

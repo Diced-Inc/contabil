@@ -5,7 +5,7 @@ import { ArrowRight, ChevronLeft, ChevronRight, CircleCheck, CircleX, TriangleAl
 import { cn } from "cn";
 import { buttonVariants } from "@/components/ui/button";
 import { Carregando, PageHeader } from "@/components/page-header";
-import { checar, resumir, type StatusChecagem } from "@/lib/checagem";
+import { checar, resumir, type ItemChecagem, type StatusChecagem } from "@/lib/checagem";
 import { lerAno } from "@/lib/format";
 import { getEmpresa } from "../empresa";
 
@@ -71,15 +71,7 @@ async function Checagem({ params, searchParams }: PageProps<"/e/[id]/checagem">)
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{i.titulo}</p>
                 <p className="text-sm text-muted-foreground">{i.detalhe}</p>
-                {!!i.itens?.length && (
-                  <ul className="mt-1.5 grid gap-0.5 text-xs">
-                    {i.itens.map((x) => (
-                      <li key={x.link + x.texto}>
-                        <Link href={x.link} className="text-primary underline-offset-4 hover:underline">{x.texto}</Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                {!!i.itens?.length && <Detalhes itens={i.itens} />}
               </div>
               {i.link && (
                 <Link href={i.link} className={buttonVariants({ variant: "outline", size: "sm" })}>
@@ -92,6 +84,32 @@ async function Checagem({ params, searchParams }: PageProps<"/e/[id]/checagem">)
         })}
       </ul>
     </>
+  );
+}
+
+/** Linhas do item; as com `grupo` ficam sob o título do grupo (na ordem em que aparecem). */
+function Detalhes({ itens }: { itens: NonNullable<ItemChecagem["itens"]> }) {
+  const grupos: { grupo?: string; itens: typeof itens }[] = [];
+  for (const x of itens) {
+    const g = grupos.at(-1);
+    if (g && g.grupo === x.grupo) g.itens.push(x);
+    else grupos.push({ grupo: x.grupo, itens: [x] });
+  }
+  return (
+    <div className="mt-1.5 grid gap-2 text-xs">
+      {grupos.map((g, k) => (
+        <div key={k}>
+          {g.grupo && <p className="mb-0.5 font-medium text-muted-foreground">{g.grupo}</p>}
+          <ul className="grid gap-0.5">
+            {g.itens.map((x, j) => (
+              <li key={j}>
+                <Link href={x.link} className="text-primary underline-offset-4 hover:underline">{x.texto}</Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }
 

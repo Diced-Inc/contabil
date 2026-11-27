@@ -4,7 +4,7 @@ import { cents, fromCents } from "@/lib/format";
 
 export type LinhaSaldo = {
   id: string; codigo: string; nome: string; natureza: "D" | "C"; tipo: "sintetica" | "analitica";
-  parentId: string | null; grupoDre: string | null;
+  parentId: string | null; grupoDre: string | null; papel?: string | null;
   saldoAnterior: string; debitos: string; creditos: string; saldoAtual: string;
 };
 
@@ -19,7 +19,7 @@ export async function saldos(
   { excluirApuracao = false }: { excluirApuracao?: boolean } = {},
 ): Promise<LinhaSaldo[]> {
   const rows = await exec.execute(sql`
-    SELECT pc.id, pc.codigo, pc.nome, pc.natureza, pc.tipo, pc.parent_id AS "parentId", pc.grupo_dre AS "grupoDre",
+    SELECT pc.id, pc.codigo, pc.nome, pc.natureza, pc.tipo, pc.parent_id AS "parentId", pc.grupo_dre AS "grupoDre", pc.papel,
       coalesce(sum(CASE WHEN l.data < ${de} THEN p.debito - p.credito END), 0)::text AS "saldoAnterior",
       coalesce(sum(CASE WHEN l.data >= ${de} AND l.data <= ${ate} THEN p.debito END), 0)::text AS debitos,
       coalesce(sum(CASE WHEN l.data >= ${de} AND l.data <= ${ate} THEN p.credito END), 0)::text AS creditos

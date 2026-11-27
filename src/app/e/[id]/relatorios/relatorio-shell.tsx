@@ -67,8 +67,10 @@ function Assinaturas({ empresa, data }: { empresa: Empresa; data: string }) {
 }
 
 /** Página de relatório: título + Imprimir, filtros, e a "folha" com cabeçalho de demonstração e assinaturas. Renderizar dentro do Suspense. */
-export async function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, filtros, children }: {
+export async function RelatorioShell({ titulo, empresa, periodoLabel, dataAssinatura, filtros, provisorio, children }: {
   titulo: string;
+  /** Marca a folha como PROVISÓRIO (ex.: balanço de exercício ainda não apurado). */
+  provisorio?: string;
   empresa: Empresa;
   periodoLabel: string;
   /** Fim do período, "YYYY-MM-DD": data do local/data acima das assinaturas. */
@@ -84,7 +86,15 @@ export async function RelatorioShell({ titulo, empresa, periodoLabel, dataAssina
       <article className="print-flat overflow-hidden rounded-xl border bg-card shadow-card">
         <header className="flex items-end justify-between gap-6 border-b-2 border-foreground/80 px-8 pt-7 pb-4 print:px-0 print:pt-0">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">{titulo}</p>
+            <p className="flex flex-wrap items-center gap-2 text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+              {titulo}
+              {provisorio && (
+                <span title={provisorio} className="rounded border border-warning/40 bg-warning-soft px-1.5 py-0.5 text-warning print:border-black print:bg-transparent print:text-black">
+                  Provisório
+                </span>
+              )}
+            </p>
+            {provisorio && <p className="mt-0.5 text-xs text-muted-foreground print:text-black">{provisorio}</p>}
             <div className="mt-1.5 flex items-center gap-2.5">
               {logoUrl && (
                 // eslint-disable-next-line @next/next/no-img-element -- URL assinada do Storage; precisa carregar também na impressão.
