@@ -365,7 +365,8 @@ export async function criarContaOutroBanco(empresaId: string): Promise<{ erro?: 
     const conta = await db.transaction(async (tx) => {
       const sel = { id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome };
       const [ja] = await tx.select(sel).from(planoContas)
-        .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.nome, NOME_OUTRA_CONTA)));
+        .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.nome, NOME_OUTRA_CONTA),
+          eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true)));
       if (ja) return ja;
       const [pai] = await tx.select(sel).from(planoContas)
         .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.codigo, "1.1.1"), eq(planoContas.tipo, "sintetica")))

@@ -186,7 +186,7 @@ export async function alterarIgnorada(tx: Tx, empresaId: string, transacaoId: st
  */
 export async function reclassificarTransacao(tx: Tx, input: {
   empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
-  competencia?: string; usuarioId?: string | null;
+  competencia?: string; usuarioId?: string | null; confirmarSemTitulo?: boolean;
 }) {
   const t = await travar(tx, input.empresaId, input.transacaoId);
   if (t.status !== "classificada" || !t.lancamentoId) throw new Error("Só transações classificadas podem ser reclassificadas");
@@ -247,6 +247,9 @@ export async function zerarTransitoria(tx: Tx, input: {
 }) {
   if ((await mesesFechados(tx, input.empresaId)).has(primeiroDiaDoMes(input.data)))
     throw new Error(`O mês ${fmtCompetencia(input.data)} está fechado: escolha uma data em mês aberto ou reabra o mês em Fechamento`);
+  // trava a transitória: duas confirmações simultâneas não lançam o ajuste duas vezes
+  const tr = await contaPorPapel(tx, input.empresaId, "transferencias");
+  await tx.select({ id: planoContas.id }).from(planoContas).where(eq(planoContas.id, tr.id)).for("update");
   const t = await previaZerarTransitoria(tx, input.empresaId, input.data);
   await exigirContas(tx, input.empresaId, [input.contaId]);
   if (t.saldo !== input.saldoEsperado)
@@ -263,8 +266,12 @@ export async function zerarTransitoria(tx: Tx, input: {
  */
 export async function parearTransferenciaSemPar(tx: Tx, input: { empresaId: string; transacaoId: string; parId: string; usuarioId?: string | null }) {
   const t = await contaPorPapel(tx, input.empresaId, "transferencias");
+  const fechados = await mesesFechados(tx, input.empresaId);
   for (const id of [input.transacaoId, input.parId].sort()) {
     const x = await travar(tx, input.empresaId, id);
+    // a transferência é lançada na data da saída
+    if (cents(x.valor) < 0 && fechados.has(primeiroDiaDoMes(x.data)))
+      throw new Error(`Reabra o mês ${fmtCompetencia(x.data)} em Fechamento para parear a transferência`);
     if (x.status === "pendente") continue;
     if (x.status !== "classificada" || !x.lancamentoId) throw new Error("Uma das transações já está conciliada de outro jeito: desfaça antes");
     const [p] = await tx.select({ id: partidas.id }).from(partidas)
