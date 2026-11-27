@@ -18,11 +18,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TablePanel } from "@/components/page-header";
 import { Valor } from "@/components/valor";
 import { cents, fmtData } from "@/lib/format";
+import { operacaoDaConta, OPERACOES, type Operacao } from "@/lib/operacoes";
 import { contaDeTitulo, type TipoSemTitulo } from "@/lib/sem-titulo";
 import { AvisoSemTitulo } from "./aviso-sem-titulo";
 import { ClassificarLote } from "./classificar-lote";
-import { PainelReclassificar, PainelTransacao } from "./painel-transacao";
-import type { ConciliadaLinha, TituloAberto, TransacaoLinha } from "./queries";
+import { PainelReclassificar, PainelTransacao, type ContextoPainel } from "./painel-transacao";
+import type { ConciliadaLinha, TransacaoLinha } from "./queries";
 
 const aprovavel = (t: TransacaoLinha) =>
   ((t.sugestaoOrigem === "regra" || t.sugestaoOrigem === "ia") && !!t.sugestaoContaId) ||
@@ -32,15 +33,26 @@ const MIN_CONFIANCA_IA = 0.7;
 const MAX_RODADAS_IA = 50; // trava de segurança do laço do "Sugerir com IA"
 const confiancaBaixa = (t: TransacaoLinha) => t.sugestaoOrigem === "ia" && Number(t.sugestaoConfianca ?? 0) < MIN_CONFIANCA_IA;
 
-function Sugestao({ t }: { t: TransacaoLinha }) {
+/** Operação curta para o badge (a IA grava a dela; regra deriva da conta sugerida). */
+const CURTO: Partial<Record<Operacao, string>> = {
+  receita_direta: "Receita", despesa_direta: "Despesa", baixa_receber: "Baixa a receber", baixa_pagar: "Baixa a pagar",
+  baixa_imposto: "Imposto", adiantamento_socio: "Adto. sócio", distribuicao_lucros: "Lucros", emprestimo: "Empréstimo",
+  estorno: "Estorno", a_identificar: "A identificar",
+};
+
+function Sugestao({ t, contas }: { t: TransacaoLinha; contas: Map<string, ContaOpcao> }) {
   if (!t.sugestaoOrigem) return <Badge variant="warning">Sem sugestão</Badge>;
+  const op = t.sugestaoOperacao ?? (t.sugestaoOrigem === "regra" ? operacaoDaConta(contas.get(t.sugestaoContaId ?? ""), cents(t.valor) > 0) : null);
+  const curto = op && CURTO[op];
   const badge =
     t.sugestaoOrigem === "regra" ? (
-      <Badge variant="info">Regra</Badge>
+      <Badge variant="info">Regra{curto && ` · ${curto}`}</Badge>
     ) : t.sugestaoOrigem === "transferencia" ? (
       <Badge variant="violet">Transf.</Badge>
     ) : (
-      <Badge variant="muted">IA {Number(t.sugestaoConfianca ?? 0).toFixed(2).replace(".", ",")}</Badge>
+      <Badge variant="muted" title={op ? OPERACOES[op].rotulo : undefined}>
+        IA {Number(t.sugestaoConfianca ?? 0).toFixed(2).replace(".", ",")}{curto && ` · ${curto}`}
+      </Badge>
     );
   return (
     <span className="flex min-w-0 items-center gap-2">
@@ -52,14 +64,14 @@ function Sugestao({ t }: { t: TransacaoLinha }) {
   );
 }
 
-export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos, vazio }: {
+export function ConciliacaoLista({ empresaId, transacoes, todas, ctx, vazio }: {
   vazio: ReactNode;
   empresaId: string;
   transacoes: TransacaoLinha[];
   todas: TransacaoLinha[];
-  contas: ContaOpcao[];
-  titulos: TituloAberto[];
+  ctx: ContextoPainel;
 }) {
+  const { contas } = ctx;
   const router = useRouter();
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [aberta, setAberta] = useState<TransacaoLinha | null>(null);
@@ -236,7 +248,7 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
                   <TableCell className="max-w-40 truncate py-1.5">{t.contaBancariaNome}</TableCell>
                   <TableCell className="max-w-96 truncate py-1.5" title={t.memo}>{t.memo}</TableCell>
                   <TableCell className="py-2 text-right"><Valor v={t.valor} /></TableCell>
-                  <TableCell className="max-w-80 py-1.5"><Sugestao t={t} /></TableCell>
+                  <TableCell className="max-w-80 py-1.5"><Sugestao t={t} contas={contaPorId} /></TableCell>
                   <TableCell className="py-2 text-right">
                     <Button size="sm" variant="outline" onClick={() => setAberta(t)}>Revisar</Button>
                   </TableCell>
@@ -252,13 +264,13 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
         transacao={aberta}
         onClose={() => setAberta(null)}
         todas={todas}
-        contas={contas}
-        titulos={titulos}
+        ctx={ctx}
       />
       <ClassificarLote
         empresaId={empresaId}
         transacoes={linhasSel}
         contas={contas}
+        fechados={ctx.fechados}
         open={lote}
         onClose={() => setLote(false)}
         onDone={() => setSel(new Set())}
@@ -395,8 +407,8 @@ function Classificacao({ c }: { c: ConciliadaLinha }) {
   );
 }
 
-export function Conciliadas({ empresaId, transacoes, contas, vazio }: {
-  empresaId: string; transacoes: ConciliadaLinha[]; contas: ContaOpcao[]; vazio: ReactNode;
+export function Conciliadas({ empresaId, transacoes, contas, fechados, vazio }: {
+  empresaId: string; transacoes: ConciliadaLinha[]; contas: ContaOpcao[]; fechados: string[]; vazio: ReactNode;
 }) {
   const router = useRouter();
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -418,10 +430,10 @@ export function Conciliadas({ empresaId, transacoes, contas, vazio }: {
       if (ids.length === 1) {
         const r = await desfazerConciliacao(empresaId, ids[0]);
         if (r.erro) return void toast.error(r.erro);
-        toast.success("Conciliação desfeita.");
+        toast.success("Conciliação desfeita.", { description: r.aviso });
       } else {
         const r = await desfazerEmLote(empresaId, ids);
-        if (r.desfeitas) toast.success(`${r.desfeitas} conciliação(ões) desfeita(s).`);
+        if (r.desfeitas) toast.success(`${r.desfeitas} conciliação(ões) desfeita(s).`, { description: r.aviso });
         if (r.erros.length) toast.error(`${r.erros.length} com erro`, { description: r.erros.slice(0, 5).join("\n") });
       }
       setConfirmar(null);
@@ -508,6 +520,7 @@ export function Conciliadas({ empresaId, transacoes, contas, vazio }: {
         empresaId={empresaId}
         transacao={aberta}
         contas={contas}
+        fechados={fechados}
         onClose={() => setAberta(null)}
       />
       <Dialog open={!!confirmar} onOpenChange={(o) => !o && setConfirmar(null)}>
@@ -516,7 +529,7 @@ export function Conciliadas({ empresaId, transacoes, contas, vazio }: {
             <DialogTitle>
               {confirmar && confirmar.length > 1 ? `Desfazer ${confirmar.length} conciliações?` : "Desfazer a conciliação?"}
             </DialogTitle>
-            <DialogDescription>A transação volta para pendentes e o lançamento é estornado.</DialogDescription>
+            <DialogDescription>A transação volta para pendentes e o lançamento é estornado. Baixa de título: o título volta a aberto (o reconhecimento continua).</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmar(null)} disabled={pendente}>Cancelar</Button>

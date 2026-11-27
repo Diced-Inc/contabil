@@ -8,10 +8,12 @@ import { contasBancarias, planoContas, transacoesBancarias } from "@/db/schema";
 import { aplicarTemplate, valorDoPadrao } from "@/lib/classificacao/regras";
 import { sugerirPendentes, type ResultadoSugestao } from "@/lib/classificacao/pipeline";
 import {
-  alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, ErroSemTitulo, inserirRegra,
-  parearTransferenciaSemPar, previaZerarTransitoria, reclassificarTransacao, transferirEntreContas, zerarTransitoria,
+  alterarIgnorada, baixarTitulosPorTransacao, classificarTransacao, contaSobDemanda, desfazerConciliacao as desfazer, ErroSemTitulo,
+  inserirRegra, lancarDireta, parearTransferenciaSemPar, previaZerarTransitoria, reclassificarTransacao, reconhecerEBaixar,
+  transferirEntreContas, zerarTransitoria,
 } from "@/lib/conciliacao";
 import { NOME_OUTRA_CONTA } from "@/lib/classificacao/transferencias";
+import { IDS_OPERACAO, NOMES_A_IDENTIFICAR, PAI_A_IDENTIFICAR } from "@/lib/operacoes";
 import { contaDeTitulo } from "@/lib/sem-titulo";
 import { cents, fmtCompetencia, fmtData, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
@@ -68,6 +70,7 @@ const classificacaoSchema = z.object({
     .transform((s) => (s ? `${s}-01` : undefined)),
   criarRegra: novaRegraSchema,
   confirmarSemTitulo: z.boolean().optional(),
+  operacao: z.enum(IDS_OPERACAO).optional(),
 });
 export type ClassificacaoInput = z.input<typeof classificacaoSchema>;
 
@@ -94,15 +97,69 @@ export async function reclassificar(empresaId: string, input: ReclassificacaoInp
   return { ...res, aviso: `Mês ${fmtCompetencia(extrato)} fechado: ${quando}, competência ${fmtCompetencia(r.data.competencia ?? extrato)}.` };
 }
 
-export async function baixarTituloPelaTransacao(
-  empresaId: string,
-  input: { transacaoId: string; tituloId: string; contaDiferencaId?: string | null },
-): Promise<EstadoForm> {
-  const r = z
-    .object({ transacaoId: uuid, tituloId: z.uuid("Selecione o título."), contaDiferencaId: z.uuid().nullish().or(z.literal("").transform(() => null)) })
-    .safeParse(input);
+const valorSchema = z.string().transform(parseValorBR).pipe(z.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inválido (use até 2 casas decimais)."));
+const valorOpcional = z.string().optional().transform((v) => (v?.trim() ? parseValorBR(v) : "0"))
+  .pipe(z.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inválido (use até 2 casas decimais)."));
+const contaOpcional = z.uuid().nullish().or(z.literal("").transform(() => null));
+
+const baixaSchema = z.object({
+  transacaoId: uuid,
+  itens: z.array(z.object({ tituloId: z.uuid("Selecione o título."), valor: valorSchema, juros: valorOpcional, desconto: valorOpcional }))
+    .min(1, "Selecione ao menos um título."),
+  contaJurosId: contaOpcional,
+  contaDescontoId: contaOpcional,
+});
+export type BaixaInput = z.input<typeof baixaSchema>;
+
+/** Baixa total/parcial de um ou mais títulos pela transação. */
+export async function baixarTitulosPelaTransacao(empresaId: string, input: BaixaInput): Promise<EstadoForm> {
+  const r = baixaSchema.safeParse(input);
   if (!r.success) return { erro: r.error.issues[0].message };
-  return executar(empresaId, (usuarioId) => db.transaction((tx) => baixarTituloPorTransacao(tx, { ...r.data, empresaId, usuarioId })));
+  return executar(empresaId, (usuarioId) => db.transaction((tx) => baixarTitulosPorTransacao(tx, { ...r.data, empresaId, usuarioId })));
+}
+
+const competenciaMes = z.string().regex(/^\d{4}-\d{2}$/, "Competência inválida.").transform((s) => `${s}-01`);
+const linhasSchema = classificacaoSchema.shape.partidas;
+
+const reconhecerSchema = z.object({
+  transacaoId: uuid,
+  contraparte: z.string().trim().min(1, "Informe a contraparte.").max(200),
+  descricao: z.string().trim().min(3, "Descrição deve ter ao menos 3 caracteres."),
+  documento: z.string().trim().optional().transform((s) => s || null),
+  competencia: competenciaMes,
+  vencimento: z.union([z.literal("").transform(() => null), z.iso.date("Vencimento inválido.")]).optional(),
+  linhas: linhasSchema,
+});
+export type ReconhecerInput = z.input<typeof reconhecerSchema>;
+
+/** "Reconhecer agora": título(s) na competência + baixa pela transação. */
+export async function reconhecerEBaixarAction(empresaId: string, input: ReconhecerInput): Promise<EstadoForm> {
+  const r = reconhecerSchema.safeParse(input);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  return executar(empresaId, (usuarioId) => db.transaction((tx) => reconhecerEBaixar(tx, { ...r.data, empresaId, usuarioId })));
+}
+
+const diretaSchema = z.object({
+  transacaoId: uuid,
+  partidas: linhasSchema,
+  historico: z.string().trim().min(3, "Histórico deve ter ao menos 3 caracteres."),
+  documento: z.string().trim().optional().transform((s) => s || null),
+  competencia: competenciaMes,
+  contraparte: z.string().trim().min(1, "Informe a contraparte.").max(200),
+});
+export type DiretaInput = z.input<typeof diretaSchema>;
+
+/** Receita/despesa direta: um lançamento no mês do extrato, ou reconhecimento na competência + baixa. */
+export async function lancarDiretaAction(empresaId: string, input: DiretaInput): Promise<EstadoForm & { aviso?: string }> {
+  const r = diretaSchema.safeParse(input);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  let separada = false;
+  const res = await executar(empresaId, async (usuarioId) => {
+    separada = (await db.transaction((tx) => lancarDireta(tx, { ...r.data, empresaId, usuarioId }))).separada;
+  });
+  return separada && res.ok
+    ? { ...res, aviso: `Reconhecido em ${fmtCompetencia(r.data.competencia)} (título criado em Títulos) e baixado na data do extrato.` }
+    : res;
 }
 
 export async function marcarTransferencia(empresaId: string, input: { transacaoId: string; parId: string }): Promise<EstadoForm> {
@@ -141,13 +198,20 @@ export async function reativarTransacao(empresaId: string, transacaoId: string):
   return executar(empresaId, () => db.transaction((tx) => alterarIgnorada(tx, empresaId, transacaoId, false)));
 }
 
-export async function desfazerConciliacao(empresaId: string, transacaoId: string): Promise<EstadoForm> {
+const avisoReabertos = (n: number) =>
+  n ? `${n} título(s) reaberto(s): o valor baixado por esta transação volta a ficar em aberto. Se o reconhecimento também estava errado, cancele o título em Títulos.` : undefined;
+
+export async function desfazerConciliacao(empresaId: string, transacaoId: string): Promise<EstadoForm & { aviso?: string }> {
   if (!uuid.safeParse(transacaoId).success) return { erro: "Transação inválida." };
-  return executar(empresaId, (usuarioId) => db.transaction((tx) => desfazer(tx, empresaId, transacaoId, usuarioId)));
+  let n = 0;
+  const res = await executar(empresaId, async (usuarioId) => {
+    n = (await db.transaction((tx) => desfazer(tx, empresaId, transacaoId, usuarioId))).titulosReabertos;
+  });
+  return { ...res, aviso: res.ok ? avisoReabertos(n) : undefined };
 }
 
 /** Cada transação na sua própria transação do banco; o par de uma transferência é desfeito junto. */
-export async function desfazerEmLote(empresaId: string, transacaoIds: string[]): Promise<{ desfeitas: number; erros: string[] }> {
+export async function desfazerEmLote(empresaId: string, transacaoIds: string[]): Promise<{ desfeitas: number; erros: string[]; aviso?: string }> {
   const user = await requireUser();
   if (!empresaValida(empresaId)) return { desfeitas: 0, erros: ["Empresa inválida."] };
   const ids = z.array(z.uuid()).safeParse(transacaoIds);
@@ -158,12 +222,13 @@ export async function desfazerEmLote(empresaId: string, transacaoIds: string[]):
     .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
     .where(and(eq(contasBancarias.empresaId, empresaId), inArray(transacoesBancarias.id, ids.data)));
   let desfeitas = 0;
+  let reabertos = 0;
   const erros: string[] = [];
   const feitos = new Set<string>();
   for (const t of txs) {
     if (t.lancamentoId && feitos.has(t.lancamentoId)) continue;
     try {
-      await db.transaction((tx) => desfazer(tx, empresaId, t.id, user.id));
+      reabertos += (await db.transaction((tx) => desfazer(tx, empresaId, t.id, user.id))).titulosReabertos;
       if (t.lancamentoId) feitos.add(t.lancamentoId);
       desfeitas++;
     } catch (e) {
@@ -171,7 +236,7 @@ export async function desfazerEmLote(empresaId: string, transacaoIds: string[]):
     }
   }
   revalidatePath(`/e/${empresaId}`, "layout");
-  return { desfeitas, erros };
+  return { desfeitas, erros, aviso: avisoReabertos(reabertos) };
 }
 
 /** semTitulo: sugestões da IA em Clientes puladas por falta de confirmação; diretas: aprovadas direto em conta de título. */
@@ -362,23 +427,23 @@ export async function criarContaOutroBanco(empresaId: string): Promise<{ erro?: 
   await requireUser();
   if (!empresaValida(empresaId)) return { erro: "Empresa inválida." };
   try {
-    const conta = await db.transaction(async (tx) => {
-      const sel = { id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome };
-      const [ja] = await tx.select(sel).from(planoContas)
-        .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.nome, NOME_OUTRA_CONTA),
-          eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true)));
-      if (ja) return ja;
-      const [pai] = await tx.select(sel).from(planoContas)
-        .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.codigo, "1.1.1"), eq(planoContas.tipo, "sintetica")))
-        .for("update");
-      if (!pai) throw new Error("Grupo 1.1.1 (Caixa e Equivalentes) não encontrado: crie a conta no plano de contas");
-      const filhos = await tx.select({ codigo: planoContas.codigo }).from(planoContas).where(eq(planoContas.parentId, pai.id));
-      const n = Math.max(0, ...filhos.map((f) => Number(f.codigo.split(".").at(-1)) || 0)) + 1;
-      const [c] = await tx.insert(planoContas).values({
-        empresaId, parentId: pai.id, codigo: `1.1.1.${String(n).padStart(2, "0")}`, nome: NOME_OUTRA_CONTA, natureza: "D", tipo: "analitica",
-      }).returning(sel);
-      return c;
-    });
+    const conta = await db.transaction((tx) => contaSobDemanda(tx, empresaId, { paiCodigo: "1.1.1", nome: NOME_OUTRA_CONTA, natureza: "D" }));
+    revalidatePath(`/e/${empresaId}`, "layout");
+    return { conta };
+  } catch (e) {
+    return { erro: msg(e) };
+  }
+}
+
+/** Cria (ou devolve) "Recebimentos a identificar" (2.1.5, entrada) ou "Pagamentos a identificar" (1.1.4, saída). */
+export async function criarContaAIdentificar(empresaId: string, entrada: boolean): Promise<{ erro?: string; conta?: { id: string; codigo: string; nome: string; papel: string | null } }> {
+  await requireUser();
+  if (!empresaValida(empresaId)) return { erro: "Empresa inválida." };
+  const lado = entrada ? "entrada" : "saida";
+  try {
+    const conta = await db.transaction((tx) => contaSobDemanda(tx, empresaId, {
+      paiCodigo: PAI_A_IDENTIFICAR[lado].codigo, nome: NOMES_A_IDENTIFICAR[lado], natureza: PAI_A_IDENTIFICAR[lado].natureza,
+    }));
     revalidatePath(`/e/${empresaId}`, "layout");
     return { conta };
   } catch (e) {

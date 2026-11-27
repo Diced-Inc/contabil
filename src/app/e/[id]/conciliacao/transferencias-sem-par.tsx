@@ -16,6 +16,7 @@ import { TablePanel } from "@/components/page-header";
 import { Valor } from "@/components/valor";
 import { NOME_OUTRA_CONTA } from "@/lib/classificacao/transferencias";
 import { cents, fmtData, fmtSaldoDC, fmtValor, fromCents } from "@/lib/format";
+import { PreviaLancamentos } from "./previa-lancamentos";
 import type { SemParLinha } from "./queries";
 
 type Par = Pick<SemParLinha, "id" | "data" | "contaBancariaNome" | "valor" | "memo">;
@@ -147,11 +148,12 @@ function ZerarDialog({ empresaId, transitoria, ate, contas: iniciais, onClose }:
       router.refresh();
     });
 
-  const v = previa ? fmtValor(fromCents(Math.abs(previa.saldo))) : "";
-  const linhas = previa && conta
+  const v = previa ? fromCents(Math.abs(previa.saldo)) : "";
+  // mesmas partidas de partidasZerarTransitoria (servidor)
+  const partidas = previa && conta
     ? previa.saldo < 0
-      ? [{ lado: "D", c: transitoria }, { lado: "C", c: conta }]
-      : [{ lado: "D", c: conta }, { lado: "C", c: transitoria }]
+      ? [{ contaId: transitoria.id, debito: v }, { contaId: conta.id, credito: v }]
+      : [{ contaId: conta.id, debito: v }, { contaId: transitoria.id, credito: v }]
     : [];
 
   return (
@@ -188,20 +190,8 @@ function ZerarDialog({ empresaId, transitoria, ate, contas: iniciais, onClose }:
             </div>
           </div>
         ) : (
-          <div className="grid gap-2 text-sm">
-            <p className="text-muted-foreground">Lançamento manual em {fmtData(previa.data)}: {historico}</p>
-            <div className="divide-y rounded-lg border">
-              {linhas.map((l) => (
-                <div key={l.lado} className="flex items-center gap-3 px-3 py-2">
-                  <span className="w-5 font-semibold">{l.lado}</span>
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className="font-mono text-xs text-muted-foreground">{l.c.codigo}</span> {l.c.nome}
-                  </span>
-                  <span className="tabular-nums">R$ {v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <PreviaLancamentos contas={[...contas, transitoria]}
+            previa={[{ data: previa.data, competencia: `${previa.data.slice(0, 7)}-01`, historico: `Lançamento manual: ${historico}`, partidas }]} />
         )}
         {erro && <p className="text-sm text-danger">{erro}</p>}
         <DialogFooter>

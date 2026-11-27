@@ -14,15 +14,20 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Valor } from "@/components/valor";
 import { cents, fmtData, fromCents } from "@/lib/format";
-import { padraoComum, SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classificacao/regras";
+import { aplicarTemplate, padraoComum, SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classificacao/regras";
+import { partidasClassificacao } from "@/lib/operacoes";
 import { avisosSemTitulo } from "@/lib/sem-titulo";
 import { AvisoSemTitulo } from "./aviso-sem-titulo";
+import { montarPrevia, PreviaLancamentos } from "./previa-lancamentos";
 import type { TransacaoLinha } from "./queries";
 
 const selectCls =
   "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
-type Props = { empresaId: string; transacoes: TransacaoLinha[]; contas: ContaOpcao[]; open: boolean; onClose: () => void; onDone: () => void };
+type Props = {
+  empresaId: string; transacoes: TransacaoLinha[]; contas: ContaOpcao[]; fechados: string[]; open: boolean; onClose: () => void; onDone: () => void;
+};
+const MAX_PREVIA = 3;
 
 export function ClassificarLote({ open, onClose, ...rest }: Props) {
   return (
@@ -34,7 +39,7 @@ export function ClassificarLote({ open, onClose, ...rest }: Props) {
   );
 }
 
-function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<Props, "open">) {
+function Conteudo({ empresaId, transacoes: ts, contas, fechados, onClose, onDone }: Omit<Props, "open">) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
   const entrada = cents(ts[0].valor) > 0;
@@ -52,6 +57,16 @@ function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<P
   const [regra, setRegra] = useState<{ nome: string; tipoMatch: TipoMatch; padrao: string; sinal: Sinal }>(() => {
     const padrao = padraoComum(ts.map((t) => t.memo));
     return { nome: padrao.slice(0, 60), tipoMatch: "memo_contem", padrao, sinal: entrada ? "entrada" : "saida" };
+  });
+
+  // um lançamento por transação, igual ao servidor (classificarEmLote → classificarTransacao)
+  const previa = montarPrevia(() => {
+    if (!contaId) throw new Error("Escolha a contrapartida para ver as partidas.");
+    return ts.slice(0, MAX_PREVIA).map((t) => ({
+      data: t.data, competencia: porMes ? `${t.data.slice(0, 7)}-01` : `${competencia}-01`,
+      historico: aplicarTemplate(historico, t).trim() || "Conciliação bancária",
+      partidas: partidasClassificacao(t.valor, t.contaContabilId, [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }]),
+    }));
   });
 
   const enviar = () =>
@@ -158,6 +173,8 @@ function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<P
             <p className="text-xs text-muted-foreground">A regra usa a contrapartida e o histórico acima.</p>
           </div>
         )}
+        <PreviaLancamentos previa={previa} contas={contas} fechados={fechados}
+          extra={ts.length > MAX_PREVIA ? `E mais ${ts.length - MAX_PREVIA} lançamento(s) iguais, com o valor e a data de cada transação.` : undefined} />
         <Button type="submit" disabled={pendente || !contaId || travado}>
           <Check />
           {pendente ? "Aprovando..." : `Aprovar ${ts.length} classificações`}

@@ -16,7 +16,8 @@ import { CancelarTituloDialog, TituloDialog } from "./titulo-dialog";
 const ABAS: Record<TipoTitulo, string> = { receber: "A receber", pagar: "A pagar" };
 const STATUS = {
   aberto: <Badge variant="warning">Aberto</Badge>,
-  baixado: <Badge variant="success">Baixado</Badge>,
+  parcial: <Badge variant="info">Parcial</Badge>,
+  quitado: <Badge variant="success">Quitado</Badge>,
   cancelado: <Badge variant="muted" className="line-through">Cancelado</Badge>,
 } as const;
 
@@ -76,9 +77,9 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
                 <TableHead>Competência</TableHead>
                 <TableHead>Vencimento</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
+                <TableHead className="text-right">Em aberto</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Lançamento</TableHead>
-                <TableHead>Baixa</TableHead>
+                <TableHead>Lançamentos</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
@@ -91,9 +92,20 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
                   <TableCell className="text-muted-foreground">{fmtData(t.competencia)}</TableCell>
                   <TableCell>{t.vencimento && fmtData(t.vencimento)}</TableCell>
                   <TableCell className="text-right font-medium">{fmtValor(t.valor)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {t.status !== "cancelado" && fmtValor(Number(t.valor) - Number(t.baixado))}
+                  </TableCell>
                   <TableCell>{STATUS[t.status]}</TableCell>
-                  <TableCell>{lanc(t.lancamentoId, t.lancamentoNumero)}</TableCell>
-                  <TableCell>{lanc(t.baixaLancamentoId, t.baixaNumero)}</TableCell>
+                  <TableCell>
+                    <span className="flex flex-wrap gap-x-2 text-sm">
+                      {lanc(t.lancamentoId, t.lancamentoNumero)}
+                      {t.baixas.map((b) => (
+                        <span key={b.lancamentoId} title={`Baixa de R$ ${fmtValor(b.valor)}`} className="text-muted-foreground">
+                          baixa {lanc(b.lancamentoId, b.numero)}
+                        </span>
+                      ))}
+                    </span>
+                  </TableCell>
                   <TableCell>{t.status === "aberto" && <CancelarTituloDialog empresaId={id} titulo={t} />}</TableCell>
                 </TableRow>
               ))}

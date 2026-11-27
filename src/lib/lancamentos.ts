@@ -1,6 +1,6 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { fechamentos, lancamentos, partidas, lancamentoLog, planoContas, titulos } from "@/db/schema";
+import { baixas, fechamentos, lancamentos, partidas, lancamentoLog, planoContas, titulos } from "@/db/schema";
 import { cents, fmtCompetencia, fromCents, primeiroDiaDoMes, hoje } from "./format";
 
 export type PartidaInput = { contaId: string; debito?: string; credito?: string };
@@ -81,9 +81,10 @@ export async function exigirSemTitulo(tx: Tx, id: string) {
   const [t] = await tx
     .select({ id: titulos.id })
     .from(titulos)
-    .where(or(eq(titulos.lancamentoId, id), eq(titulos.baixaLancamentoId, id)))
+    .where(eq(titulos.lancamentoId, id))
     .limit(1);
-  if (t) throw new Error("Lançamento vinculado a um título; cancele o título ou desfaça a conciliação");
+  const [b] = await tx.select({ id: baixas.id }).from(baixas).where(eq(baixas.lancamentoId, id)).limit(1);
+  if (t || b) throw new Error("Lançamento vinculado a um título; cancele o título ou desfaça a conciliação");
 }
 
 /** Substitui cabeçalho e partidas. Só lançamentos manuais não estornados (conciliação/apuração/estorno têm fluxo próprio). */

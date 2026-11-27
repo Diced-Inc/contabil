@@ -1,5 +1,4 @@
-import { and, asc, eq, like } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, asc, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { lancamentos, planoContas, titulos } from "@/db/schema";
 import type { TipoTitulo } from "@/lib/titulos";
@@ -9,8 +8,8 @@ export const PREFIXO_RESULTADO: Record<TipoTitulo, string> = { receber: "3.1.", 
 
 export type TituloLinha = Awaited<ReturnType<typeof listarTitulos>>[number];
 
+/** Títulos do tipo, com o saldo em aberto e as baixas (lançamento, valor). */
 export function listarTitulos(empresaId: string, tipo: TipoTitulo) {
-  const baixa = alias(lancamentos, "baixa");
   return db
     .select({
       id: titulos.id,
@@ -23,12 +22,13 @@ export function listarTitulos(empresaId: string, tipo: TipoTitulo) {
       status: titulos.status,
       lancamentoId: titulos.lancamentoId,
       lancamentoNumero: lancamentos.numero,
-      baixaLancamentoId: titulos.baixaLancamentoId,
-      baixaNumero: baixa.numero,
+      baixado: sql<string>`coalesce((select sum(b.valor) from baixas b where b.titulo_id = "titulos"."id"), 0)::text`,
+      baixas: sql<{ lancamentoId: string; numero: number; valor: string }[]>`coalesce((
+        select json_agg(json_build_object('lancamentoId', bl.id, 'numero', bl.numero, 'valor', b.valor::text) order by bl.numero)
+        from baixas b join lancamentos bl on bl.id = b.lancamento_id where b.titulo_id = "titulos"."id"), '[]'::json)`,
     })
     .from(titulos)
     .leftJoin(lancamentos, eq(lancamentos.id, titulos.lancamentoId))
-    .leftJoin(baixa, eq(baixa.id, titulos.baixaLancamentoId))
     .where(and(eq(titulos.empresaId, empresaId), eq(titulos.tipo, tipo)))
     .orderBy(asc(titulos.vencimento), asc(titulos.competencia), asc(titulos.createdAt));
 }

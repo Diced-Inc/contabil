@@ -1,55 +1,64 @@
 import { describe, expect, it } from "vitest";
 import { validarPartidas } from "./lancamentos";
-import { partidasBaixa } from "./titulos";
+import { distribuirBaixa, partidasBaixas, statusPorBaixas, totalBaixa } from "./operacoes";
 
-const BANCO = "11111111-1111-4111-8111-111111111111";
-const PAPEL = "22222222-2222-4222-8222-222222222222";
-const DIF = "33333333-3333-4333-8333-333333333333";
-const base = { contaBancoId: BANCO, contaPapelId: PAPEL, contaDiferencaId: DIF };
+const BANCO = "banco", PAPEL = "papel", JUROS = "juros", DESC = "desconto";
+const base = { contaBancoId: BANCO, contaPapelId: PAPEL, contaJurosId: JUROS, contaDescontoId: DESC };
 
-describe("partidasBaixa", () => {
-  it("valor exato: duas partidas", () => {
-    expect(partidasBaixa({ ...base, tipo: "receber", valorTitulo: "100.00", valorPago: "100" })).toEqual([
+describe("partidasBaixas", () => {
+  it("receber exato: D Banco / C Clientes", () => {
+    expect(partidasBaixas({ ...base, tipo: "receber", itens: [{ valor: "100" }] })).toEqual([
       { contaId: BANCO, debito: "100.00" },
       { contaId: PAPEL, credito: "100.00" },
     ]);
   });
-  it("receber com desconto: D diferença", () => {
-    const ps = partidasBaixa({ ...base, tipo: "receber", valorTitulo: "100.00", valorPago: "95.50" });
-    expect(ps).toContainEqual({ contaId: DIF, debito: "4.50" });
-    expect(ps).toContainEqual({ contaId: BANCO, debito: "95.50" });
-  });
-  it("receber com juros: C diferença", () => {
-    expect(partidasBaixa({ ...base, tipo: "receber", valorTitulo: "100.00", valorPago: "102.30" })).toContainEqual({
-      contaId: DIF,
-      credito: "2.30",
-    });
-  });
-  it("pagar espelhado", () => {
-    expect(partidasBaixa({ ...base, tipo: "pagar", valorTitulo: "100.00", valorPago: "100.00" })).toEqual([
-      { contaId: PAPEL, debito: "100.00" },
-      { contaId: BANCO, credito: "100.00" },
+  it("receber com desconto: D Banco líquido + D desconto / C Clientes cheio", () => {
+    const ps = partidasBaixas({ ...base, tipo: "receber", itens: [{ valor: "100", desconto: "4.50" }] });
+    expect(ps).toEqual([
+      { contaId: BANCO, debito: "95.50" }, { contaId: DESC, debito: "4.50" }, { contaId: PAPEL, credito: "100.00" },
     ]);
-    expect(partidasBaixa({ ...base, tipo: "pagar", valorTitulo: "100.00", valorPago: "90" })).toContainEqual({
-      contaId: DIF,
-      credito: "10.00",
-    });
-    expect(partidasBaixa({ ...base, tipo: "pagar", valorTitulo: "100.00", valorPago: "110" })).toContainEqual({
-      contaId: DIF,
-      debito: "10.00",
-    });
+    expect(validarPartidas(ps).total).toBe(10000);
   });
-  it("diferença sem conta é erro", () => {
-    expect(() =>
-      partidasBaixa({ ...base, contaDiferencaId: null, tipo: "receber", valorTitulo: "100", valorPago: "99" }),
-    ).toThrow(/conta da diferença/);
+  it("pagar com juros: D Fornecedores + D juros / C Banco", () => {
+    const ps = partidasBaixas({ ...base, tipo: "pagar", itens: [{ valor: "100", juros: "2.30" }] });
+    expect(ps).toEqual([
+      { contaId: PAPEL, debito: "100.00" }, { contaId: JUROS, debito: "2.30" }, { contaId: BANCO, credito: "102.30" },
+    ]);
   });
-  it("valor pago zero é erro", () => {
-    expect(() => partidasBaixa({ ...base, tipo: "pagar", valorTitulo: "100", valorPago: "0" })).toThrow(/maior que zero/);
+  it("vários títulos numa transação: soma os abatimentos num lançamento só", () => {
+    const itens = [{ valor: "60" }, { valor: "40.10", juros: "1" }, { valor: "25", desconto: "5" }];
+    const ps = partidasBaixas({ ...base, tipo: "pagar", itens });
+    expect(ps).toContainEqual({ contaId: PAPEL, debito: "125.10" });
+    expect(ps).toContainEqual({ contaId: BANCO, credito: "121.10" });
+    expect(totalBaixa(itens)).toBe(12110);
+    expect(validarPartidas(ps).total).toBe(12610);
   });
-  it("sempre balanceado", () => {
-    for (const tipo of ["receber", "pagar"] as const)
-      for (const valorPago of ["0.01", "33.33", "100", "100.01", "1234.56"])
-        expect(() => validarPartidas(partidasBaixa({ ...base, tipo, valorTitulo: "100.00", valorPago }))).not.toThrow();
+  it("exige conta de juros/desconto quando há diferença e valor > 0", () => {
+    expect(() => partidasBaixas({ tipo: "receber", contaBancoId: BANCO, contaPapelId: PAPEL, itens: [{ valor: "10", juros: "1" }] })).toThrow(/juros/);
+    expect(() => partidasBaixas({ ...base, tipo: "receber", itens: [{ valor: "0" }] })).toThrow(/maior que zero/);
+    expect(() => partidasBaixas({ ...base, tipo: "receber", itens: [] })).toThrow();
+  });
+});
+
+describe("statusPorBaixas", () => {
+  it("aberto sem baixa, parcial até o valor, quitado ao completar", () => {
+    expect(statusPorBaixas("100.00", 0)).toBe("aberto");
+    expect(statusPorBaixas("100.00", 4000)).toBe("parcial");
+    expect(statusPorBaixas("100.00", 10000)).toBe("quitado");
+  });
+  it("desfazer uma das baixas parciais volta o status pela soma que sobrou", () => {
+    // título de 100 baixado por duas transações (60 + 40); desfazer a de 40 reabre como parcial, a de 60 também → aberto
+    const baixas = [6000, 4000];
+    expect(statusPorBaixas("100", baixas.reduce((s, v) => s + v, 0))).toBe("quitado");
+    expect(statusPorBaixas("100", baixas[0])).toBe("parcial");
+    expect(statusPorBaixas("100", 0)).toBe("aberto");
+  });
+});
+
+describe("distribuirBaixa", () => {
+  it("preenche os títulos até o saldo; sobra vira juros no último", () => {
+    expect(distribuirBaixa([5000, 3000], 8000)).toEqual([{ valor: 5000, juros: 0 }, { valor: 3000, juros: 0 }]);
+    expect(distribuirBaixa([5000, 3000], 6000)).toEqual([{ valor: 5000, juros: 0 }, { valor: 1000, juros: 0 }]);
+    expect(distribuirBaixa([5000], 5200)).toEqual([{ valor: 5000, juros: 200 }]);
   });
 });

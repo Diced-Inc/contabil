@@ -13,8 +13,8 @@ import { getEmpresa } from "../empresa";
 import { listarContasAnaliticas } from "../lancamentos/queries";
 import { ConciliacaoLista, Conciliadas, Ignoradas } from "./conciliacao-toolbar";
 import {
-  contarConciliadas, listarConciliadas, listarContasBancarias, listarTitulosAbertos, listarTransacoes, listarTransferenciasSemPar,
-  saldoTransitoria, type SemParLinha, type TransacaoLinha,
+  contarConciliadas, listarConciliadas, listarContasBancarias, listarMesesFechados, listarTitulosAbertos, listarTransacoes,
+  listarTransferenciasSemPar, saldosARecolher, saldoTransitoria, type SemParLinha, type TransacaoLinha,
 } from "./queries";
 import { TransferenciasSemPar } from "./transferencias-sem-par";
 
@@ -28,7 +28,7 @@ const str = (s: unknown) => (typeof s === "string" ? s.trim() : "");
 const VER = ["pendentes", "ignoradas", "conciliadas", "transferencias"] as const;
 type Ver = (typeof VER)[number];
 const fimDoMes = (d: string) => new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).toISOString().slice(0, 10);
-const DESCRICAO = "Revise as transações importadas: classifique, baixe títulos, case transferências ou ignore.";
+const DESCRICAO = "Revise as transações importadas: escolha a operação (receita, despesa, baixa de título, transferência...) e confira a prévia antes de aprovar.";
 
 async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/conciliacao">) {
   await connection();
@@ -175,6 +175,14 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
   );
 }
 
+/** Contas, títulos em aberto, meses fechados e saldo dos impostos: o painel monta a prévia exata com isso. */
+async function contextoPainel(empresaId: string) {
+  const [contas, titulos, fechados, saldosImpostos] = await Promise.all([
+    listarContasAnaliticas(empresaId), listarTitulosAbertos(empresaId), listarMesesFechados(empresaId), saldosARecolher(empresaId),
+  ]);
+  return { contas, titulos, fechados, saldosImpostos };
+}
+
 async function ListaPendentes({ empresaId, transacoes, todas, vazio }: {
   empresaId: string;
   transacoes: Awaited<ReturnType<typeof listarTransacoes>>;
@@ -182,17 +190,7 @@ async function ListaPendentes({ empresaId, transacoes, todas, vazio }: {
   vazio: ReactNode;
 }) {
   await connection();
-  const [contas, titulosAbertos] = await Promise.all([listarContasAnaliticas(empresaId), listarTitulosAbertos(empresaId)]);
-  return (
-    <ConciliacaoLista
-      empresaId={empresaId}
-      transacoes={transacoes}
-      todas={todas}
-      contas={contas}
-      titulos={titulosAbertos}
-      vazio={vazio}
-    />
-  );
+  return <ConciliacaoLista empresaId={empresaId} transacoes={transacoes} todas={todas} ctx={await contextoPainel(empresaId)} vazio={vazio} />;
 }
 
 /** Transitória, classificadas nela sem par (com o par, se apareceu) e pendentes que parecem transferência própria. */
@@ -200,9 +198,8 @@ async function ListaTransferencias({ empresaId, ate, semPar, pendentes, suspeita
   empresaId: string; ate: string; semPar: SemParLinha[]; pendentes: TransacaoLinha[]; suspeitas: TransacaoLinha[];
 }) {
   await connection();
-  const [transitoria, contas, titulosAbertos] = await Promise.all([
-    saldoTransitoria(empresaId, ate), listarContasAnaliticas(empresaId), listarTitulosAbertos(empresaId),
-  ]);
+  const [transitoria, ctx] = await Promise.all([saldoTransitoria(empresaId, ate), contextoPainel(empresaId)]);
+  const { contas } = ctx;
   if (!transitoria)
     return (
       <EmptyState icon={ArrowLeftRight} title="Sem conta de transferências"
@@ -220,14 +217,13 @@ async function ListaTransferencias({ empresaId, ate, semPar, pendentes, suspeita
       <TransferenciasSemPar empresaId={empresaId} transitoria={transitoria} ate={ate} semPar={comPar} contas={contas} />
       <h2 className="mb-1 text-sm font-semibold">Pendentes que parecem transferência própria</h2>
       <p className="mb-3 text-xs text-muted-foreground">
-        CNPJ ou nome da empresa no memo. Case com a outra conta na aba Transferência do painel; sem a outra conta, classifique na conta de transferências.
+        CNPJ ou nome da empresa no memo. No painel, escolha a operação Transferência entre contas próprias: com o par da outra conta ou, sem ele, na conta de transferências.
       </p>
       <ConciliacaoLista
         empresaId={empresaId}
         transacoes={suspeitas}
         todas={pendentes}
-        contas={contas}
-        titulos={titulosAbertos}
+        ctx={ctx}
         vazio={<EmptyState icon={CircleCheckBig} title="Nenhuma pendente parecida" hint="Nenhuma transação pendente com o CNPJ ou o nome da empresa no memo." />}
       />
     </>
@@ -240,8 +236,10 @@ async function ListaConciliadas({ empresaId, filtros, vazio }: {
   vazio: ReactNode;
 }) {
   await connection();
-  const [transacoes, contas] = await Promise.all([listarConciliadas(empresaId, filtros), listarContasAnaliticas(empresaId)]);
-  return <Conciliadas empresaId={empresaId} transacoes={transacoes} contas={contas} vazio={vazio} />;
+  const [transacoes, contas, fechados] = await Promise.all([
+    listarConciliadas(empresaId, filtros), listarContasAnaliticas(empresaId), listarMesesFechados(empresaId),
+  ]);
+  return <Conciliadas empresaId={empresaId} transacoes={transacoes} contas={contas} fechados={fechados} vazio={vazio} />;
 }
 
 export default function ConciliacaoPage(props: PageProps<"/e/[id]/conciliacao">) {

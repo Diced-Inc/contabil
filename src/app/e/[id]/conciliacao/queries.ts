@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { contasBancarias, lancamentos, partidas, planoContas, titulos, transacoesBancarias } from "@/db/schema";
+import { contasBancarias, fechamentos, lancamentos, partidas, planoContas, titulos, transacoesBancarias } from "@/db/schema";
 import { agruparContrapartidas } from "@/lib/conciliacao";
 import { escapeLike } from "@/lib/format";
 
@@ -27,6 +27,9 @@ export function listarTransacoes(empresaId: string, status: "pendente" | "ignora
       sugestaoHistorico: transacoesBancarias.sugestaoHistorico,
       sugestaoJustificativa: transacoesBancarias.sugestaoJustificativa,
       transferenciaParId: transacoesBancarias.transferenciaParId,
+      sugestaoOperacao: transacoesBancarias.sugestaoOperacao,
+      /** Conta contábil do banco: a prévia das partidas é montada no cliente. */
+      contaContabilId: contasBancarias.contaContabilId,
     })
     .from(transacoesBancarias)
     .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
@@ -43,15 +46,35 @@ export function listarContasBancarias(empresaId: string) {
     .orderBy(asc(contasBancarias.nome));
 }
 
+/** Títulos aberto/parcial com o saldo em aberto (valor − baixas). */
 export function listarTitulosAbertos(empresaId: string) {
   return db
     .select({
       id: titulos.id, tipo: titulos.tipo, contraparte: titulos.contraparte, descricao: titulos.descricao,
-      documento: titulos.documento, valor: titulos.valor, vencimento: titulos.vencimento,
+      documento: titulos.documento, valor: titulos.valor, vencimento: titulos.vencimento, competencia: titulos.competencia,
+      status: titulos.status,
+      // SQL cru: em select de tabela única o drizzle não qualifica a coluna (casaria b.id)
+      saldo: sql<string>`("titulos"."valor" - coalesce((select sum(b.valor) from baixas b where b.titulo_id = "titulos"."id"), 0))::text`,
     })
     .from(titulos)
-    .where(and(eq(titulos.empresaId, empresaId), eq(titulos.status, "aberto")))
+    .where(and(eq(titulos.empresaId, empresaId), inArray(titulos.status, ["aberto", "parcial"])))
     .orderBy(asc(titulos.vencimento), asc(titulos.competencia));
+}
+
+/** Competências fechadas ("YYYY-MM-01"): a prévia avisa antes de enviar. */
+export async function listarMesesFechados(empresaId: string) {
+  const fs = await db.select({ c: fechamentos.competencia }).from(fechamentos).where(eq(fechamentos.empresaId, empresaId));
+  return fs.map((f) => f.c);
+}
+
+/** Saldo (D − C) das contas de imposto a recolher (classe 2, "a recolher"), para a Baixa de imposto. */
+export async function saldosARecolher(empresaId: string) {
+  const rs = await db.execute<{ id: string; saldo: string }>(sql`
+    SELECT pc.id, coalesce(sum(p.debito - p.credito), 0)::text AS saldo
+    FROM plano_contas pc LEFT JOIN partidas p ON p.conta_id = pc.id
+    WHERE pc.empresa_id = ${empresaId} AND pc.tipo = 'analitica' AND pc.codigo LIKE '2%' AND pc.nome ILIKE '%a recolher%'
+    GROUP BY pc.id`);
+  return Object.fromEntries([...rs].map((r) => [r.id, r.saldo]));
 }
 
 /** Transação conciliada que aponta para o lançamento (para "Desfazer conciliação" no detalhe). */
@@ -94,6 +117,7 @@ export async function listarConciliadas(empresaId: string, f: FiltroConciliadas)
     .select({
       transacaoId: transacoesBancarias.id,
       contaBancariaNome: contasBancarias.nome,
+      contaContabilId: contasBancarias.contaContabilId,
       data: transacoesBancarias.data,
       valor: transacoesBancarias.valor,
       memo: transacoesBancarias.memo,
@@ -104,7 +128,7 @@ export async function listarConciliadas(empresaId: string, f: FiltroConciliadas)
       documento: lancamentos.documento,
       competencia: lancamentos.competencia,
       parContaNome: parConta.nome,
-      baixaTitulo: sql<boolean>`exists (select 1 from titulos tb where tb.baixa_lancamento_id = ${lancamentos.id})`,
+      baixaTitulo: sql<boolean>`exists (select 1 from baixas b where b.lancamento_id = ${lancamentos.id})`,
       contaId: partidas.contaId,
       codigo: planoContas.codigo,
       nome: planoContas.nome,

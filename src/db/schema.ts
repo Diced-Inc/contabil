@@ -4,6 +4,7 @@ import {
 import { relations, sql } from "drizzle-orm";
 import type { MotivoEncerramento } from "@/lib/ciclo";
 import { TIPOS_GUIA } from "../lib/guias"; // relativo: também carregado pelo drizzle-kit
+import type { Operacao } from "@/lib/operacoes";
 
 export const regimeEnum = pgEnum("regime_tributario", ["simples", "presumido", "real", "mei"]);
 export const porteEnum = pgEnum("porte_empresa", ["mei", "me", "epp", "demais"]);
@@ -23,7 +24,7 @@ export const statusLancEnum = pgEnum("status_lancamento", ["aprovado", "estornad
 export const tipoMatchEnum = pgEnum("tipo_match", ["memo_contem", "documento", "valor_exato"]);
 export const sinalEnum = pgEnum("sinal", ["entrada", "saida", "qualquer"]);
 export const tipoTituloEnum = pgEnum("tipo_titulo", ["receber", "pagar"]);
-export const statusTituloEnum = pgEnum("status_titulo", ["aberto", "baixado", "cancelado"]);
+export const statusTituloEnum = pgEnum("status_titulo", ["aberto", "parcial", "quitado", "cancelado"]);
 export const acaoLogEnum = pgEnum("acao_log", ["criado", "alterado", "estornado", "fechamento", "reabertura", "apuracao"]);
 export const papelMembroEnum = pgEnum("papel_membro", ["cliente"]);
 export const statusCicloEnum = pgEnum("status_ciclo", [
@@ -155,6 +156,8 @@ export const transacoesBancarias = pgTable("transacoes_bancarias", {
   sugestaoHistorico: text("sugestao_historico"),
   sugestaoJustificativa: text("sugestao_justificativa"),
   transferenciaParId: uuid("transferencia_par_id"),
+  /** Operação sugerida pela IA (o painel abre nela); regra e transferência derivam da conta. */
+  sugestaoOperacao: text("sugestao_operacao").$type<Operacao>(),
   createdAt: createdAt(),
 }, (t) => [unique().on(t.contaBancariaId, t.fitid)]);
 
@@ -184,9 +187,24 @@ export const titulos = pgTable("titulos", {
   vencimento: date("vencimento"),
   lancamentoId: uuid("lancamento_id").references(() => lancamentos.id),
   status: statusTituloEnum("status").notNull().default("aberto"),
-  baixaLancamentoId: uuid("baixa_lancamento_id").references(() => lancamentos.id),
   createdAt: createdAt(),
 });
+
+/**
+ * Baixa de título por transação do extrato (N:M): `valor` abate o título; o banco movimentou valor + juros − desconto.
+ * O status do título (aberto/parcial/quitado) sai da soma de `valor`.
+ */
+export const baixas = pgTable("baixas", {
+  id: id(),
+  tituloId: uuid("titulo_id").notNull().references(() => titulos.id),
+  transacaoId: uuid("transacao_id").notNull().references(() => transacoesBancarias.id),
+  lancamentoId: uuid("lancamento_id").notNull().references(() => lancamentos.id),
+  valor: money("valor").notNull(),
+  juros: money("juros").notNull().default("0"),
+  desconto: money("desconto").notNull().default("0"),
+  createdBy: uuid("created_by"),
+  createdAt: createdAt(),
+}, (t) => [index("baixas_titulo_idx").on(t.tituloId), index("baixas_lancamento_idx").on(t.lancamentoId)]);
 
 export const fechamentos = pgTable("fechamentos", {
   id: id(),

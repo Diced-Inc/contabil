@@ -1,38 +1,19 @@
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { contasBancarias, lancamentos, partidas, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
+import { baixas, contasBancarias, lancamentos, partidas, planoContas, regras, transacoesBancarias } from "@/db/schema";
 import { cents, fmtCompetencia, fmtData, fmtValor, fromCents, hoje, primeiroDiaDoMes } from "./format";
 import { criarLancamento, dataNoMesAberto, estornarLancamento, mesesFechados, type PartidaInput } from "./lancamentos";
+import {
+  competenciaSeparada, contaServe, dataReconhecimento, OPERACOES, partidasClassificacao, type Contrapartida, type ItemBaixa,
+  type Operacao, type TipoTitulo,
+} from "./operacoes";
 import { contaDeTitulo, MSG_CONFIRMAR_CLIENTES } from "./sem-titulo";
-import { baixarTitulo, contaPorPapel } from "./titulos";
+import { baixarTitulos, contaPorPapel, criarTitulo, removerBaixas } from "./titulos";
 
-export { dataNoMesAberto, mesesFechados };
-
-export type Contrapartida = { contaId: string; valor: string };
+export { dataNoMesAberto, mesesFechados, partidasClassificacao, type Contrapartida };
 export type NovaRegra = {
   nome: string; tipoMatch: "memo_contem" | "documento" | "valor_exato"; padrao: string; sinal: "entrada" | "saida" | "qualquer";
 };
-
-/**
- * Partidas da conciliação: entrada → D banco |valor| / C contrapartidas;
- * saída → D contrapartidas / C banco. Σ contrapartidas precisa ser |valor| (centavos).
- */
-export function partidasClassificacao(valorTx: string, contaBancoId: string, contras: Contrapartida[]): PartidaInput[] {
-  if (!contras.length) throw new Error("Informe ao menos uma contrapartida");
-  const total = Math.abs(cents(valorTx));
-  let soma = 0;
-  for (const c of contras) {
-    const v = cents(c.valor);
-    if (!(v > 0)) throw new Error("Cada contrapartida precisa de valor maior que zero");
-    if (c.contaId === contaBancoId) throw new Error("A contrapartida não pode ser a própria conta do banco");
-    soma += v;
-  }
-  if (soma !== total) throw new Error(`Soma das contrapartidas (${fromCents(soma)}) difere do valor da transação (${fromCents(total)})`);
-  const banco = fromCents(total);
-  const entrada = cents(valorTx) > 0;
-  const lados = contras.map((c) => (entrada ? { contaId: c.contaId, credito: c.valor } : { contaId: c.contaId, debito: c.valor }));
-  return entrada ? [{ contaId: contaBancoId, debito: banco }, ...lados] : [...lados, { contaId: contaBancoId, credito: banco }];
-}
 
 /** Transação da empresa com a conta contábil do banco, travada para a transação do Postgres. */
 async function travar(tx: Tx, empresaId: string, transacaoId: string) {
@@ -77,10 +58,18 @@ export async function classificarTransacao(tx: Tx, input: {
   data?: string;
   /** "Sei o que estou fazendo": direto em Clientes sem título (regra criada pelo contador também conta como decisão dele). */
   confirmarSemTitulo?: boolean;
+  /** Operação escolhida no painel: as contrapartidas precisam ser do grupo dela. */
+  operacao?: Operacao;
 }) {
   const t = await travarPendente(tx, input.empresaId, input.transacaoId);
   const contas = await exigirContas(tx, input.empresaId, input.partidas.map((p) => p.contaId));
   if (!input.confirmarSemTitulo && contas.some((c) => contaDeTitulo(c) === "clientes")) throw new ErroSemTitulo();
+  const op = input.operacao;
+  if (op) {
+    const entrada = cents(t.valor) > 0;
+    const fora = contas.find((c) => !contaServe(op, c, entrada));
+    if (fora) throw new Error(`A conta ${fora.codigo} ${fora.nome} não cabe na operação ${OPERACOES[op].rotulo}`);
+  }
   const l = await criarLancamento(tx, {
     empresaId: input.empresaId, data: input.data ?? t.data, dataPagamento: t.data,
     competencia: input.competencia ?? primeiroDiaDoMes(t.data),
@@ -104,23 +93,98 @@ export async function inserirRegra(tx: Tx, empresaId: string, regra: NovaRegra, 
   await tx.insert(regras).values({ empresaId, ...regra, contaId, historicoTemplate });
 }
 
-export async function baixarTituloPorTransacao(tx: Tx, input: {
-  empresaId: string; transacaoId: string; tituloId: string; contaDiferencaId?: string | null; usuarioId?: string | null;
+/** Baixa total/parcial de um ou mais títulos pela transação (tabela `baixas`). */
+export async function baixarTitulosPorTransacao(tx: Tx, input: {
+  empresaId: string; transacaoId: string; itens: (ItemBaixa & { tituloId: string })[];
+  contaJurosId?: string | null; contaDescontoId?: string | null; usuarioId?: string | null;
 }) {
   const t = await travarPendente(tx, input.empresaId, input.transacaoId);
-  const [tit] = await tx.select({ tipo: titulos.tipo }).from(titulos)
-    .where(and(eq(titulos.id, input.tituloId), eq(titulos.empresaId, input.empresaId)));
-  if (!tit) throw new Error("Título não encontrado");
-  const entrada = cents(t.valor) > 0;
-  if ((tit.tipo === "receber") !== entrada)
-    throw new Error(entrada ? "Entrada só baixa título a receber" : "Saída só baixa título a pagar");
-  if (input.contaDiferencaId) await exigirContas(tx, input.empresaId, [input.contaDiferencaId]);
-  const l = await baixarTitulo(tx, {
-    empresaId: input.empresaId, tituloId: input.tituloId, contaBancariaContabilId: t.contaBanco,
-    valorPago: fromCents(Math.abs(cents(t.valor))), data: t.data, contaDiferencaId: input.contaDiferencaId, usuarioId: input.usuarioId,
+  const extras = [input.contaJurosId, input.contaDescontoId].filter((x): x is string => !!x);
+  if (extras.length) await exigirContas(tx, input.empresaId, extras);
+  const l = await baixarTitulos(tx, {
+    empresaId: input.empresaId, transacao: { id: t.id, contaBanco: t.contaBanco, data: t.data, valor: t.valor },
+    itens: input.itens, contaJurosId: input.contaJurosId, contaDescontoId: input.contaDescontoId, usuarioId: input.usuarioId,
   });
   await marcar(tx, t.id, { status: "classificada", lancamentoId: l.id });
   return l;
+}
+
+const PREFIXO_RESULTADO: Record<TipoTitulo, string> = { receber: "3.1", pagar: "3.2" };
+
+/**
+ * "Reconhecer agora": cria um título por linha (D Clientes / C receita ou D despesa / C Fornecedores, no mês da
+ * competência) e baixa todos pela transação, no mesmo lançamento de baixa. Os dois meses precisam estar abertos.
+ */
+export async function reconhecerEBaixar(tx: Tx, input: {
+  empresaId: string; transacaoId: string; contraparte: string; descricao: string; documento?: string | null;
+  competencia: string; vencimento?: string | null; linhas: Contrapartida[]; usuarioId?: string | null;
+}) {
+  const t = await travarPendente(tx, input.empresaId, input.transacaoId);
+  const tipo: TipoTitulo = cents(t.valor) > 0 ? "receber" : "pagar";
+  partidasClassificacao(t.valor, t.contaBanco, input.linhas); // soma = valor da transação, valores > 0
+  const contas = await exigirContas(tx, input.empresaId, input.linhas.map((l) => l.contaId));
+  const prefixo = PREFIXO_RESULTADO[tipo];
+  const fora = contas.find((c) => !(c.codigo === prefixo || c.codigo.startsWith(`${prefixo}.`)));
+  if (fora) throw new Error(`${fora.codigo} ${fora.nome}: o título ${tipo === "receber" ? "a receber reconhece receita (3.1)" : "a pagar reconhece custo ou despesa (3.2)"}`);
+  const data = dataReconhecimento(input.competencia, t.data);
+  const fechados = await mesesFechados(tx, input.empresaId);
+  for (const d of [data, t.data])
+    if (fechados.has(primeiroDiaDoMes(d))) throw new Error(`O mês ${fmtCompetencia(d)} está fechado: reabra-o em Fechamento para reconhecer e baixar`);
+  const ts = [];
+  for (const l of input.linhas)
+    ts.push(await criarTitulo(tx, {
+      empresaId: input.empresaId, tipo, contraparte: input.contraparte, descricao: input.descricao, documento: input.documento,
+      valor: l.valor, competencia: data, vencimento: input.vencimento ?? null, contaResultadoId: l.contaId, usuarioId: input.usuarioId,
+    }));
+  return baixarTitulosPorTransacao(tx, {
+    empresaId: input.empresaId, transacaoId: input.transacaoId, usuarioId: input.usuarioId,
+    itens: ts.map((x) => ({ tituloId: x.id, valor: x.valor })),
+  });
+}
+
+/**
+ * Receita/despesa direta: competência no mês do extrato → um lançamento (D Banco / C Receita); em outro mês →
+ * reconhecimento na competência + baixa na data do extrato (via título, para o desfazer reabrir o título).
+ */
+export async function lancarDireta(tx: Tx, input: {
+  empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
+  competencia: string; contraparte: string; usuarioId?: string | null;
+}) {
+  const t = await travarPendente(tx, input.empresaId, input.transacaoId);
+  const operacao: Operacao = cents(t.valor) > 0 ? "receita_direta" : "despesa_direta";
+  const contas = await exigirContas(tx, input.empresaId, input.partidas.map((p) => p.contaId));
+  const fora = contas.find((c) => !contaServe(operacao, c, cents(t.valor) > 0));
+  if (fora) throw new Error(`A conta ${fora.codigo} ${fora.nome} não cabe na operação ${OPERACOES[operacao].rotulo}`);
+  if (!competenciaSeparada(input.competencia, t.data))
+    return { separada: false, l: await classificarTransacao(tx, { ...input, operacao, competencia: primeiroDiaDoMes(input.competencia) }) };
+  return {
+    separada: true,
+    l: await reconhecerEBaixar(tx, {
+      empresaId: input.empresaId, transacaoId: input.transacaoId, contraparte: input.contraparte, descricao: input.historico,
+      documento: input.documento, competencia: input.competencia, linhas: input.partidas, usuarioId: input.usuarioId,
+    }),
+  };
+}
+
+/**
+ * Analítica criada sob demanda (ex.: "Bancos – Outra Conta", "Pagamentos a identificar"): devolve a ativa com esse
+ * nome ou cria no próximo código livre do grupo sintético `paiCodigo`.
+ */
+export async function contaSobDemanda(tx: Tx, empresaId: string, p: { paiCodigo: string; nome: string; natureza: "D" | "C" }) {
+  const sel = { id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, papel: planoContas.papel };
+  const [ja] = await tx.select(sel).from(planoContas)
+    .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.nome, p.nome), eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true)));
+  if (ja) return ja;
+  const [pai] = await tx.select(sel).from(planoContas)
+    .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.codigo, p.paiCodigo), eq(planoContas.tipo, "sintetica")))
+    .for("update");
+  if (!pai) throw new Error(`Grupo ${p.paiCodigo} não encontrado: crie a conta no plano de contas`);
+  const filhos = await tx.select({ codigo: planoContas.codigo }).from(planoContas).where(eq(planoContas.parentId, pai.id));
+  const n = Math.max(0, ...filhos.map((f) => Number(f.codigo.split(".").at(-1)) || 0)) + 1;
+  const [c] = await tx.insert(planoContas).values({
+    empresaId, parentId: pai.id, codigo: `${p.paiCodigo}.${String(n).padStart(2, "0")}`, nome: p.nome, natureza: p.natureza, tipo: "analitica",
+  }).returning(sel);
+  return c;
 }
 
 /** Um lançamento D banco destino / C banco origem, ligado às duas transações. */
@@ -149,8 +213,8 @@ export async function transferirEntreContas(tx: Tx, input: {
 }
 
 /**
- * Estorna o lançamento no dia dele (hoje, se o mês fechou), devolve a(s) transação(ões) a pendente e reabre título
- * baixado por ele. Retorna a data do estorno.
+ * Estorna o lançamento no dia dele (hoje, se o mês fechou), devolve a(s) transação(ões) a pendente e apaga as baixas
+ * dele (os títulos voltam a aberto/parcial; o reconhecimento continua). Retorna a data do estorno e quantos títulos reabriu.
  */
 export async function desfazerConciliacao(
   tx: Tx, empresaId: string, transacaoId: string, usuarioId?: string | null, acao = "desfazer",
@@ -166,10 +230,10 @@ export async function desfazerConciliacao(
   await estornarLancamento(tx, lancId, data, usuarioId);
   await tx.update(transacoesBancarias).set({
     status: "pendente", lancamentoId: null, transferenciaParId: null, sugestaoContaId: null, sugestaoConfianca: null,
-    sugestaoOrigem: null, sugestaoRegraId: null, sugestaoHistorico: null, sugestaoJustificativa: null,
+    sugestaoOrigem: null, sugestaoRegraId: null, sugestaoHistorico: null, sugestaoJustificativa: null, sugestaoOperacao: null,
   }).where(eq(transacoesBancarias.lancamentoId, lancId));
-  await tx.update(titulos).set({ status: "aberto", baixaLancamentoId: null }).where(eq(titulos.baixaLancamentoId, lancId));
-  return data;
+  const titulosReabertos = await removerBaixas(tx, lancId);
+  return { data, titulosReabertos };
 }
 
 /** pendente ↔ ignorada. */
@@ -190,10 +254,10 @@ export async function reclassificarTransacao(tx: Tx, input: {
 }) {
   const t = await travar(tx, input.empresaId, input.transacaoId);
   if (t.status !== "classificada" || !t.lancamentoId) throw new Error("Só transações classificadas podem ser reclassificadas");
-  const [baixa] = await tx.select({ id: titulos.id }).from(titulos).where(eq(titulos.baixaLancamentoId, t.lancamentoId)).limit(1);
+  const [baixa] = await tx.select({ id: baixas.id }).from(baixas).where(eq(baixas.lancamentoId, t.lancamentoId)).limit(1);
   if (baixa) throw new Error("Transação baixou um título: desfaça a conciliação em vez de reclassificar");
   const data = dataNoMesAberto(t.data, hoje(), await mesesFechados(tx, input.empresaId), "reclassificar");
-  const estorno = await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId, "reclassificar");
+  const { data: estorno } = await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId, "reclassificar");
   await classificarTransacao(tx, { ...input, data });
   return data === t.data ? null : { extrato: t.data, novo: data, estorno };
 }
