@@ -76,7 +76,18 @@ Restrições do banco (`0001_triggers.sql`): partida só em analítica da empres
   reverter a apuração.
 - Moodlr: lançamentos compensatórios dos 8 pares de setembro/outubro.
 
-## Decisões pendentes (Bruno/Marcelo)
+## Decisões do Bruno (27/11, respostas às pendências abaixo)
+1. NF: importar o **XML da NF-e** + **cadastro manual** (nem todo cliente tem as notas).
+2. Guia anexada vira **obrigação já no upload** (rascunho incluso; editar/remover a guia ajusta/cancela a obrigação).
+3. Relatórios (DRE/balancete/balanço) passam a considerar a **competência**.
+4. Lançamento manual: **mantém a edição no lugar** (não mexer em `editarLancamento`).
+5. Natureza: recebimento só vai para **Clientes** com regra ou classificação manual explícita (IA nunca sugere Clientes).
+   R$ 1,38 mi ao sócio = **adiantamento**. **Boletos = Fornecedores**. **PIX a pessoa física = autônomos = Fornecedores**,
+   salvo regra criada. (IA pode sugerir Fornecedores nesses casos; aviso de Fornecedores sem título é só informativo.)
+6. A outra conta bancária da TAVAPPS será cadastrada em breve; por ora, **opção manual para zerar** a transitória de
+   transferências (lançamento manual com prévia, estornável depois) — entra na fase 1.
+
+## Decisões pendentes (Bruno/Marcelo) — respondidas acima
 1. Importação de NF: XML NF-e, NFS-e (portal/padrão nacional) ou só cadastro manual na 1ª versão.
 2. Guia do portal vira título de imposto automaticamente? No upload ou no envio ao cliente?
 3. DRE/balancete por `competencia` em vez de `data`? (muda a regra de período fechado)
