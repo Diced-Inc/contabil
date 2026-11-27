@@ -4,7 +4,7 @@
  * no servidor. Caminhos conferidos nos XSDs oficiais (gov.br/nfse v1.00/1.01 com a NT 007/2026; ABRASF 1.00–2.04;
  * NF-e PL_009/PL_010).
  */
-import { cents, fromCents, primeiroDiaDoMes } from "../format";
+import { cents, fimDoMes, fromCents, primeiroDiaDoMes } from "../format";
 import type { TipoRetencao } from "../tributos";
 import { buscar, lerXml, no, todos, txt, type No } from "./xml";
 
@@ -252,3 +252,12 @@ export function parcelasIguais(liquido: string, n: number, primeiroVencimento: s
     vencimento: primeiroVencimento ? somarMes(primeiroVencimento, i) : null,
   }));
 }
+
+/** Data do reconhecimento: a emissão se cair no mês da competência; senão o 1º dia (competência depois) ou o último (antes). */
+export function dataDaNota(emissao: string, competencia: string) {
+  const c = primeiroDiaDoMes(competencia), e = primeiroDiaDoMes(emissao);
+  return c === e ? emissao : c > e ? c : fimDoMes(c);
+}
+
+export const rotuloNota = (origem: OrigemNota | "manual", numero: string, serie: string | null) =>
+  `${origem === "nfse" ? "NFS-e" : origem === "nfe" ? "NF-e" : "NF"} ${numero}${serie ? `/${serie}` : ""}`;

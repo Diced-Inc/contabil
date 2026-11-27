@@ -46,19 +46,26 @@ export function listarContasBancarias(empresaId: string) {
     .orderBy(asc(contasBancarias.nome));
 }
 
-/** Títulos aberto/parcial com o saldo em aberto (valor − baixas). */
-export function listarTitulosAbertos(empresaId: string) {
-  return db
+const contaDoTitulo = alias(planoContas, "conta_do_titulo");
+
+/**
+ * Títulos aberto/parcial com o saldo em aberto (valor − baixas) e a conta patrimonial. `imposto`: a pagar fora de
+ * Fornecedores (guia, parcelamento, imposto a recolher), que vai para a Baixa de imposto.
+ */
+export async function listarTitulosAbertos(empresaId: string) {
+  const rs = await db
     .select({
       id: titulos.id, tipo: titulos.tipo, contraparte: titulos.contraparte, descricao: titulos.descricao,
       documento: titulos.documento, valor: titulos.valor, vencimento: titulos.vencimento, competencia: titulos.competencia,
-      status: titulos.status,
+      status: titulos.status, origem: titulos.origem, contaId: titulos.contaId, contaPapel: contaDoTitulo.papel,
       // SQL cru: em select de tabela única o drizzle não qualifica a coluna (casaria b.id)
       saldo: sql<string>`("titulos"."valor" - coalesce((select sum(b.valor) from baixas b where b.titulo_id = "titulos"."id"), 0))::text`,
     })
     .from(titulos)
+    .leftJoin(contaDoTitulo, eq(contaDoTitulo.id, titulos.contaId))
     .where(and(eq(titulos.empresaId, empresaId), inArray(titulos.status, ["aberto", "parcial"])))
     .orderBy(asc(titulos.vencimento), asc(titulos.competencia));
+  return rs.map(({ contaPapel, ...t }) => ({ ...t, imposto: t.tipo === "pagar" && !!t.contaId && contaPapel !== "fornecedores" }));
 }
 
 /** Competências fechadas ("YYYY-MM-01"): a prévia avisa antes de enviar. */

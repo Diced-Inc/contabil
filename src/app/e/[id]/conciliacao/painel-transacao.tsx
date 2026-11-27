@@ -24,7 +24,7 @@ import { SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classific
 import {
   competenciaSeparada, contaPadrao, contasDaOperacao, contasDiferencaPadrao, dataReconhecimento, distribuirBaixa, explicacao,
   historicoBaixa, historicoTitulo, lancamentosDireta, NOMES_A_IDENTIFICAR, OPERACOES, operacaoDaConta, operacoesPara,
-  PAI_A_IDENTIFICAR, partidasBaixas, partidasClassificacao, partidasTitulo, rankearTitulos, type LancPrevia, type Operacao,
+  MEMO_IMPOSTO, PAI_A_IDENTIFICAR, partidasBaixas, partidasClassificacao, partidasTitulo, rankearTitulos, type LancPrevia, type Operacao,
   type TipoTitulo,
 } from "@/lib/operacoes";
 import { avisosSemTitulo } from "@/lib/sem-titulo";
@@ -147,7 +147,9 @@ const GRUPOS = ["Resultado", "Títulos", "Movimentos", "Outros"] as const;
 function operacaoInicial(t: TransacaoLinha, ctx: ContextoPainel, entrada: boolean): Operacao {
   if (t.sugestaoOrigem === "transferencia") return "transferencia";
   const v = Math.abs(cents(t.valor));
-  if (ctx.titulos.some((x) => x.tipo === (entrada ? "receber" : "pagar") && cents(x.saldo) === v)) return entrada ? "baixa_receber" : "baixa_pagar";
+  const exato = ctx.titulos.find((x) => x.tipo === (entrada ? "receber" : "pagar") && cents(x.saldo) === v);
+  if (exato) return exato.imposto ? "baixa_imposto" : entrada ? "baixa_receber" : "baixa_pagar";
+  if (!entrada && MEMO_IMPOSTO.test(t.memo) && ctx.titulos.some((x) => x.imposto)) return "baixa_imposto";
   const contas = ctx.contas;
   if (t.sugestaoOperacao && operacoesPara(entrada).includes(t.sugestaoOperacao)) return t.sugestaoOperacao;
   return operacaoDaConta(contas.find((c) => c.id === t.sugestaoContaId), entrada) ?? (entrada ? "receita_direta" : "despesa_direta");
@@ -176,11 +178,12 @@ function Conteudo({ t, empresaId, onClose, todas, ctx }: Omit<Props, "transacao"
           parar={(parId) => executar(() => marcarTransferencia(empresaId, { transacaoId: t.id, parId }), "Transferência registrada.")}
           semPar={(input) => classificar(input, "transferencia")} />
       );
-    if (op === "baixa_receber" || op === "baixa_pagar")
+    if (op === "baixa_receber" || op === "baixa_pagar" || op === "baixa_imposto")
       return (
-        <BaixaTitulos {...comuns} tipo={tipo} contas={contas} papelId={papelId} empresaId={empresaId} executar={executar}
-          titulos={ctx.titulos.filter((x) => x.tipo === tipo)}
-          direto={op === "baixa_pagar" ? (input) => classificar(input, "baixa_pagar") : undefined} />
+        <BaixaTitulos key={op} {...comuns} tipo={tipo} contas={contas} papelId={papelId} empresaId={empresaId} executar={executar}
+          titulos={ctx.titulos.filter((x) => x.tipo === tipo && x.imposto === (op === "baixa_imposto"))}
+          imposto={op === "baixa_imposto"} saldosImpostos={ctx.saldosImpostos}
+          direto={op !== "baixa_receber" ? (input) => classificar(input, op) : undefined} />
       );
     const doGrupo = contasDaOperacao(op, contas, entrada);
     if (op === "a_identificar" && !doGrupo.length)
@@ -189,7 +192,6 @@ function Conteudo({ t, empresaId, onClose, todas, ctx }: Omit<Props, "transacao"
     return (
       <Classificar key={op} {...comuns} contas={doGrupo} operacao={op} contaInicial={contaPadrao(op, contas, entrada, sugerida)}
         papelId={direta ? papelId : undefined}
-        saldosImpostos={op === "baixa_imposto" ? ctx.saldosImpostos : undefined}
         onBaixarTitulo={ctx.titulos.some((x) => x.tipo === tipo) ? () => setOp(entrada ? "baixa_receber" : "baixa_pagar") : undefined}
         enviar={(input, separada) =>
           separada
@@ -441,11 +443,13 @@ function CriarAIdentificar({ empresaId, entrada, onCriada }: { empresaId: string
 
 type Sel = { id: string; valor: string; juros: string; desconto: string };
 
-function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId, pendente, empresaId, executar, direto }: {
+function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId, pendente, empresaId, executar, direto, imposto, saldosImpostos }: {
   t: TransacaoLinha; tipo: TipoTitulo; titulos: TituloAberto[]; contas: ContaOpcao[]; todasContas: ContaOpcao[];
   fechados: string[]; papelId: string | null; pendente: boolean; empresaId: string;
   executar: (acao: () => Promise<EstadoForm & { aviso?: string }>, sucesso: string) => void;
   direto?: (input: ClassificacaoInput) => void;
+  /** Baixa de imposto: títulos de guia/parcelamento; "Sem título" classifica direto na conta a recolher. */
+  imposto?: boolean; saldosImpostos?: Record<string, string>;
 }) {
   const total = Math.abs(cents(t.valor));
   const ranking = rankearTitulos(titulos, { valor: t.valor, data: t.data, memo: t.memo });
@@ -454,7 +458,7 @@ function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId
   // sugestão direto em Fornecedores (boleto/PIX a PF) sem título parecido: abre em "Sem título"
   const relevante = ranking.some((r) => r.exato || r.nomeParecido);
   const [modo, setModo] = useState<"titulos" | "reconhecer" | "direto">(
-    relevante ? "titulos" : direto && papelId && t.sugestaoContaId === papelId ? "direto" : ranking.length ? "titulos" : "reconhecer");
+    relevante ? "titulos" : direto && (imposto ? !ranking.length : papelId && t.sugestaoContaId === papelId) ? "direto" : ranking.length ? "titulos" : "reconhecer");
   const padrao = contasDiferencaPadrao(contas, tipo);
   const [contaJuros, setContaJuros] = useState<string | null>(padrao.juros);
   const [contaDesconto, setContaDesconto] = useState<string | null>(padrao.desconto);
@@ -468,7 +472,7 @@ function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId
       return ids.map((x, i) => ({ id: x, valor: valorParaInput(fromCents(dist[i].valor)), juros: dist[i].juros ? valorParaInput(fromCents(dist[i].juros)) : "", desconto: "" }));
     });
   const setItem = (id: string, p: Partial<Sel>) => setSel((s) => s.map((x) => (x.id === id ? { ...x, ...p } : x)));
-  const itens = sel.map((s) => ({ tituloId: s.id, valor: reais(s.valor), juros: reais(s.juros), desconto: reais(s.desconto) }));
+  const itens = sel.map((s) => ({ tituloId: s.id, valor: reais(s.valor), juros: reais(s.juros), desconto: reais(s.desconto), contaId: porId.get(s.id)?.contaId }));
   const somaBanco = sel.reduce((x, s) => x + centavos(s.valor) + centavos(s.juros) - centavos(s.desconto), 0);
   const dif = total - somaBanco;
   const temJuros = sel.some((s) => centavos(s.juros) > 0);
@@ -477,7 +481,7 @@ function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId
 
   const previa = montarPrevia(() => {
     if (!sel.length) throw new Error("Marque o(s) título(s) que esta transação paga.");
-    if (!papelId) throw new Error(`Marque a conta de papel ${tipo === "receber" ? "Clientes" : "Fornecedores"} no plano de contas.`);
+    if (!papelId && sel.some((s) => !porId.get(s.id)?.contaId)) throw new Error(`Marque a conta de papel ${tipo === "receber" ? "Clientes" : "Fornecedores"} no plano de contas.`);
     if (passa) throw new Error(`O valor a abater de ${porId.get(passa.id)?.contraparte} passa do saldo em aberto.`);
     if (dif !== 0) throw new Error(`A baixa soma ${fmtValor(fromCents(somaBanco))}; a transação é ${fmtValor(fromCents(total))}. Ajuste o abatimento, os juros ou o desconto.`);
     return [{
@@ -493,7 +497,7 @@ function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId
   return (
     <div className="grid gap-3">
       <div className="inline-flex w-fit rounded-lg border bg-muted p-[3px] text-xs">
-        {([["titulos", `Títulos em aberto (${ranking.length})`], ["reconhecer", "Reconhecer agora"], ...(direto ? [["direto", "Sem título"]] : [])] as const)
+        {([["titulos", `${imposto ? "Obrigações" : "Títulos"} em aberto (${ranking.length})`], ...(imposto ? [] : [["reconhecer", "Reconhecer agora"]]), ...(direto ? [["direto", "Sem título"]] : [])] as const)
           .map(([k, r]) => (
             <button key={k} type="button" onClick={() => setModo(k as typeof modo)}
               className={cn("rounded-md px-2.5 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground", modo === k && "bg-card text-foreground shadow-xs")}>
@@ -505,13 +509,19 @@ function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId
       {modo === "titulos" && (ranking.length === 0 ? (
         <Alert className={alertaCls}>
           <TriangleAlert />
-          <AlertTitle>Nenhum título {tipo === "receber" ? "a receber" : "a pagar"} em aberto</AlertTitle>
+          <AlertTitle>{imposto ? "Nenhuma obrigação de imposto em aberto" : `Nenhum título ${tipo === "receber" ? "a receber" : "a pagar"} em aberto`}</AlertTitle>
           <AlertDescription className="grid gap-2">
-            <p>Reconheça o {tipo === "receber" ? "direito" : "obrigação"} agora, na competência, e baixe com esta transação.</p>
-            <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => setModo("reconhecer")}>
-              <FilePlus2 />
-              Reconhecer agora
-            </Button>
+            {imposto ? (
+              <p>Anexe a guia no Fechamento (vira a obrigação na competência) ou use “Sem título” para classificar direto na conta a recolher.</p>
+            ) : (
+              <>
+                <p>Reconheça o {tipo === "receber" ? "direito" : "obrigação"} agora, na competência, e baixe com esta transação.</p>
+                <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => setModo("reconhecer")}>
+                  <FilePlus2 />
+                  Reconhecer agora
+                </Button>
+              </>
+            )}
           </AlertDescription>
         </Alert>
       ) : (
@@ -586,8 +596,9 @@ function BaixaTitulos({ t, tipo, titulos, contas, todasContas, fechados, papelId
       )}
 
       {modo === "direto" && direto && (
-        <Classificar t={t} contas={contasDaOperacao("baixa_pagar", contas, false)} todasContas={todasContas} fechados={fechados}
-          pendente={pendente} operacao="baixa_pagar" contaInicial={papelId} enviar={(input) => direto(input)} />
+        <Classificar t={t} contas={contasDaOperacao(imposto ? "baixa_imposto" : "baixa_pagar", contas, false)} todasContas={todasContas} fechados={fechados}
+          pendente={pendente} operacao={imposto ? "baixa_imposto" : "baixa_pagar"} contaInicial={imposto ? null : papelId}
+          saldosImpostos={imposto ? saldosImpostos : undefined} enviar={(input) => direto(input)} />
       )}
     </div>
   );

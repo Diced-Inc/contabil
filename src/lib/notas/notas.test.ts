@@ -5,8 +5,7 @@ import { describe, expect, it } from "vitest";
 import { cents, somarMeses } from "../format";
 import { validarPartidas } from "../lancamentos";
 import { partidasTitulo } from "../operacoes";
-import { chaveDocumento, contraparteDaNota, direcaoDaNota, lerNota, parcelasDaNota, parcelasIguais } from "./index";
-import { dataDaNota } from "./registro";
+import { chaveDocumento, contraparteDaNota, dataDaNota, direcaoDaNota, lerNota, parcelasDaNota, parcelasIguais } from "./index";
 import { decodificarXml, lerXml, txt } from "./xml";
 import { lerZip } from "./zip";
 

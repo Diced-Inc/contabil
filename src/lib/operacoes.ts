@@ -360,3 +360,13 @@ export function distribuirBaixa(saldos: number[], total: number): { valor: numbe
   if (resta > 0 && out.length) out[out.length - 1].juros = resta;
   return out;
 }
+
+/**
+ * Contrapartida possível no reconhecimento de título/nota: analítica de ativo ou resultado sem papel, fora caixa e bancos
+ * (1.1.1). Receber começa pelas receitas (3.1), pagar pelos custos e despesas (3.2), estoque e imobilizado.
+ */
+export function contasDeContrapartida<T extends ContaComPapel>(contas: T[], tipo: TipoTitulo) {
+  const ok = contas.filter((c) => !c.papel && /^[13]\./.test(c.codigo) && !em(c, "1.1.1"));
+  const primeiro = tipo === "receber" ? "3.1" : "3.2";
+  return [...ok.filter((c) => em(c, primeiro)), ...ok.filter((c) => !em(c, primeiro))];
+}

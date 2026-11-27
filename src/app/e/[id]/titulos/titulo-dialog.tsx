@@ -75,7 +75,7 @@ function Form({ empresaId, tipo, contas, setAberta }: {
         </div>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="contaResultadoId">{tipo === "receber" ? "Conta de receita" : "Conta de custo ou despesa"}</Label>
+        <Label htmlFor="contaResultadoId">{tipo === "receber" ? "Contrapartida (receita)" : "Contrapartida (custo, despesa, estoque ou imobilizado)"}</Label>
         <ContaSelect id="contaResultadoId" name="contaResultadoId" contas={contas} />
       </div>
       <Button type="submit" disabled={pendente}>

@@ -5,12 +5,12 @@
 import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { partidas, planoContas, titulos } from "@/db/schema";
-import { cents, fimDoMes, fmtCompetencia, fromCents, primeiroDiaDoMes } from "../format";
+import { cents, fmtCompetencia, fromCents, primeiroDiaDoMes } from "../format";
 import { mesesFechados } from "../lancamentos";
 import { contaSobDemanda } from "../conciliacao";
 import { acharConta, contaRetencao, NOMES_RETENCAO, type TipoRetencao } from "../tributos";
 import { criarTitulo } from "../titulos";
-import type { Direcao, OrigemNota, Parte } from "./index";
+import { dataDaNota, rotuloNota, type Direcao, type OrigemNota, type Parte } from "./index";
 
 export class NotaDuplicada extends Error {}
 
@@ -21,15 +21,6 @@ export type NotaParaRegistrar = {
   contaResultadoId: string; parcelas: { valor: string; vencimento: string | null }[]; descricao?: string | null;
   usuarioId?: string | null;
 };
-
-/** Data do reconhecimento: a emissão se cair no mês da competência; senão o 1º dia (competência depois) ou o último (antes). */
-export function dataDaNota(emissao: string, competencia: string) {
-  const c = primeiroDiaDoMes(competencia), e = primeiroDiaDoMes(emissao);
-  return c === e ? emissao : c > e ? c : fimDoMes(c);
-}
-
-export const rotuloNota = (origem: OrigemNota | "manual", numero: string, serie: string | null) =>
-  `${origem === "nfse" ? "NFS-e" : origem === "nfe" ? "NF-e" : "NF"} ${numero}${serie ? `/${serie}` : ""}`;
 
 /** Chaves que já têm título não cancelado. */
 export async function chavesRegistradas(tx: Pick<Tx, "selectDistinct">, empresaId: string, chaves: string[]) {

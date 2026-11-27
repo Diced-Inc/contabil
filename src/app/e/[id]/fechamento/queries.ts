@@ -1,6 +1,6 @@
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apuracoes, lancamentos, partidas, planoContas } from "@/db/schema";
+import { apuracoes, lancamentos, partidas, planoContas, titulos } from "@/db/schema";
 import { carregarEstado, mesesDoAno, motivoNaoApurar, motivoNaoFechar, motivoNaoReabrir } from "@/lib/fechamento";
 
 export async function painelFechamento(empresaId: string, ano: number) {
@@ -34,3 +34,18 @@ export async function painelFechamento(empresaId: string, ano: number) {
 }
 
 export type MesFechamento = Awaited<ReturnType<typeof painelFechamento>>["meses"][number];
+
+/** Obrigação (título) de cada guia: contas, status e se já foi baixada no banco. */
+export async function obrigacoesDasGuias(guiaIds: string[]) {
+  if (!guiaIds.length) return new Map<string, ObrigacaoGuia>();
+  const rs = await db
+    .select({
+      guiaId: titulos.guiaId, status: titulos.status, obrigacaoId: titulos.contaId,
+      despesaId: sql<string | null>`(select p.conta_id from partidas p where p.lancamento_id = "titulos"."lancamento_id" and p.debito > 0 order by p.ordem limit 1)`,
+      baixada: sql<boolean>`exists (select 1 from baixas b where b.titulo_id = "titulos"."id")`,
+    })
+    .from(titulos)
+    .where(inArray(titulos.guiaId, guiaIds));
+  return new Map(rs.filter((r) => r.status !== "cancelado").map((r) => [r.guiaId!, { obrigacaoId: r.obrigacaoId, despesaId: r.despesaId, baixada: r.baixada }]));
+}
+export type ObrigacaoGuia = { obrigacaoId: string | null; despesaId: string | null; baixada: boolean };

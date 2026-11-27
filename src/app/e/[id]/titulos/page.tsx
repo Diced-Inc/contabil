@@ -1,57 +1,78 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { Receipt } from "lucide-react";
+import { FileUp, Receipt } from "lucide-react";
 import { cn } from "cn";
+import { db } from "@/db";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Carregando, EmptyState, PageHeader, TablePanel } from "@/components/page-header";
 import { fmtData, fmtValor } from "@/lib/format";
+import { contrapartidasLembradas } from "@/lib/notas/registro";
+import { contasDeContrapartida } from "@/lib/operacoes";
 import type { TipoTitulo } from "@/lib/titulos";
+import { listarMesesFechados } from "../conciliacao/queries";
 import { getEmpresa } from "../empresa";
 import { listarContasAnaliticas } from "../lancamentos/queries";
-import { listarTitulos, PREFIXO_RESULTADO } from "./queries";
+import { NotaDialog } from "./nota-dialog";
+import { Parcelamentos } from "./parcelamentos";
+import { listarParcelamentos, listarTitulos, type TituloLinha } from "./queries";
 import { CancelarTituloDialog, TituloDialog } from "./titulo-dialog";
 
-const ABAS: Record<TipoTitulo, string> = { receber: "A receber", pagar: "A pagar" };
+type Aba = TipoTitulo | "parcelamentos";
+const ABAS: Record<Aba, string> = { receber: "A receber", pagar: "A pagar", parcelamentos: "Parcelamentos" };
 const STATUS = {
   aberto: <Badge variant="warning">Aberto</Badge>,
   parcial: <Badge variant="info">Parcial</Badge>,
   quitado: <Badge variant="success">Quitado</Badge>,
   cancelado: <Badge variant="muted" className="line-through">Cancelado</Badge>,
 } as const;
+const ORIGEM = { manual: "Manual", nfe: "NF-e", nfse: "NFS-e", guia: "Guia", parcelamento: "Parcela" } as const;
+/** Só os títulos de documento cancelam aqui; guia e parcela seguem o fluxo deles. */
+const CANCELA_AQUI = new Set<TituloLinha["origem"]>(["manual", "nfe", "nfse"]);
 
 async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
   await connection();
   const { id } = await params;
   const sp = await searchParams;
-  const tipo: TipoTitulo = sp.tipo === "pagar" ? "pagar" : "receber";
-  await getEmpresa(id);
-  const [lista, todas] = await Promise.all([listarTitulos(id, tipo), listarContasAnaliticas(id)]);
-  const contas = todas.filter((c) => c.codigo.startsWith(PREFIXO_RESULTADO[tipo]));
+  const aba: Aba = sp.tipo === "pagar" ? "pagar" : sp.tipo === "parcelamentos" ? "parcelamentos" : "receber";
+  const tipo: TipoTitulo = aba === "pagar" ? "pagar" : "receber";
+  const empresa = await getEmpresa(id);
+  const [lista, todas, fechados, lembradas, parcelamentos] = await Promise.all([
+    aba === "parcelamentos" ? Promise.resolve([]) : listarTitulos(id, tipo), listarContasAnaliticas(id), listarMesesFechados(id),
+    contrapartidasLembradas(db, id), aba === "parcelamentos" ? listarParcelamentos(id) : Promise.resolve([]),
+  ]);
+  const contas = contasDeContrapartida(todas, tipo);
   const lanc = (lid: string | null, numero: number | null) =>
     lid && (
       <Link href={`/e/${id}/lancamentos/${lid}`} className="font-medium text-primary underline-offset-4 hover:underline">
         nº {numero}
       </Link>
     );
+  const acoes = (
+    <>
+      <Link href={`/e/${id}/titulos/importar`} className={buttonVariants({ variant: "outline" })}>
+        <FileUp />
+        Importar XML
+      </Link>
+      <NotaDialog empresaId={id} cnpj={empresa.cnpj} contas={todas} fechados={fechados} lembradas={lembradas} tipoInicial={tipo} />
+      {aba !== "parcelamentos" && <TituloDialog key={tipo} empresaId={id} tipo={tipo} contas={contas} />}
+    </>
+  );
 
   return (
     <>
-      <PageHeader
-        title="Títulos"
-        description={DESCRICAO}
-        actions={<TituloDialog key={tipo} empresaId={id} tipo={tipo} contas={contas} />}
-      />
+      <PageHeader title="Títulos" description={DESCRICAO} actions={acoes} />
       <div className="mb-4">
         <nav className="inline-flex rounded-lg border bg-muted p-[3px] text-sm">
-          {(Object.keys(ABAS) as TipoTitulo[]).map((t) => (
+          {(Object.keys(ABAS) as Aba[]).map((t) => (
             <Link
               key={t}
               href={`/e/${id}/titulos?tipo=${t}`}
               className={cn(
                 "inline-flex h-8 items-center rounded-md px-3 font-medium text-muted-foreground transition-colors hover:text-foreground",
-                t === tipo && "bg-card text-foreground shadow-xs",
+                t === aba && "bg-card text-foreground shadow-xs",
               )}
             >
               {ABAS[t]}
@@ -59,11 +80,13 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
           ))}
         </nav>
       </div>
-      {lista.length === 0 ? (
+      {aba === "parcelamentos" ? (
+        <Parcelamentos empresaId={id} lista={parcelamentos} contas={todas} fechados={fechados} />
+      ) : lista.length === 0 ? (
         <EmptyState
           icon={Receipt}
-          title={`Nenhum título ${ABAS[tipo].toLowerCase()}`}
-          hint="A baixa acontece na conciliação, ao casar o título com a transação do extrato."
+          title={`Nenhum título ${ABAS[aba].toLowerCase()}`}
+          hint="Importe o XML das notas, cadastre a nota manualmente ou anexe a guia no Fechamento. A baixa acontece na conciliação."
           action={<TituloDialog key={`vazio-${tipo}`} empresaId={id} tipo={tipo} contas={contas} />}
         />
       ) : (
@@ -73,7 +96,7 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
               <TableRow>
                 <TableHead>Contraparte</TableHead>
                 <TableHead>Descrição</TableHead>
-                <TableHead>Documento</TableHead>
+                <TableHead>Origem</TableHead>
                 <TableHead>Competência</TableHead>
                 <TableHead>Vencimento</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
@@ -86,9 +109,15 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
             <TableBody>
               {lista.map((t) => (
                 <TableRow key={t.id} className={cn(t.status === "cancelado" && "text-muted-foreground")}>
-                  <TableCell className="font-medium">{t.contraparte}</TableCell>
-                  <TableCell className="max-w-64 truncate">{t.descricao}</TableCell>
-                  <TableCell>{t.documento}</TableCell>
+                  <TableCell className="font-medium">
+                    {t.contraparte}
+                    {t.contraparteDocumento && <span className="block text-xs font-normal text-muted-foreground tabular-nums">{t.contraparteDocumento}</span>}
+                  </TableCell>
+                  <TableCell className="max-w-64">
+                    <span className="block truncate">{t.descricao}</span>
+                    {t.contaCodigo && <span className="block truncate text-xs text-muted-foreground" title={t.contaNome ?? ""}>{t.contaCodigo} {t.contaNome}</span>}
+                  </TableCell>
+                  <TableCell><Badge variant="muted">{ORIGEM[t.origem]}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{fmtData(t.competencia)}</TableCell>
                   <TableCell>{t.vencimento && fmtData(t.vencimento)}</TableCell>
                   <TableCell className="text-right font-medium">{fmtValor(t.valor)}</TableCell>
@@ -106,7 +135,7 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
                       ))}
                     </span>
                   </TableCell>
-                  <TableCell>{t.status === "aberto" && <CancelarTituloDialog empresaId={id} titulo={t} />}</TableCell>
+                  <TableCell>{t.status === "aberto" && CANCELA_AQUI.has(t.origem) && <CancelarTituloDialog empresaId={id} titulo={t} />}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -117,7 +146,7 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
   );
 }
 
-const DESCRICAO = "Contas a receber e a pagar. A baixa é feita na conciliação, ao casar com a transação do extrato.";
+const DESCRICAO = "Contas a receber e a pagar: notas fiscais, guias de imposto e parcelamentos. A baixa é feita na conciliação, ao casar com a transação do extrato.";
 
 export default function TitulosPage(props: PageProps<"/e/[id]/titulos">) {
   return (

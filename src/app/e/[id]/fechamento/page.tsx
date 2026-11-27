@@ -18,8 +18,10 @@ import { guiasEsperadas, resumoGuias } from "@/lib/guias";
 import { getEmpresa } from "../empresa";
 import { EncerrarDialog, ProcessarBotao, ReabrirBotao } from "./ciclo-acoes";
 import { ApuracaoBotao, MesBotao } from "./fechamento-botoes";
+import { listarMesesFechados } from "../conciliacao/queries";
+import { listarContasAnaliticas } from "../lancamentos/queries";
 import { GuiasDoMes } from "./guias-mes";
-import { painelFechamento } from "./queries";
+import { obrigacoesDasGuias, painelFechamento } from "./queries";
 
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const dataHora = (d: Date) => d.toLocaleDateString("pt-BR");
@@ -126,6 +128,9 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
   const status = ciclo?.status ?? "aguardando_extrato";
   const st = STATUS_CICLO[status];
   const guias = ciclo ? await listarGuias([ciclo.id], { comRascunhos: true }) : [];
+  const [obrigacoes, contas, fechados] = await Promise.all([
+    obrigacoesDasGuias(guias.map((g) => g.id)), listarContasAnaliticas(empresaId), listarMesesFechados(empresaId),
+  ]);
   const link = (n: number) => `/e/${empresaId}/fechamento?ano=${ano}&ciclo=${somarMeses(competencia, n).slice(0, 7)}`;
   // Sem arquivo mas com data de recebimento = o cliente avisou que mandou por WhatsApp/e-mail (só avisarExtratoPorFora faz isso).
   const porFora = ciclo?.extratoRecebidoEm && (docs.total === 0 || ciclo.clienteObs);
@@ -207,8 +212,10 @@ async function CicloBloco({ empresaId, competencia, ano }: { empresaId: string; 
         esperadas={guiasEsperadas({ regime: empresa.regimeTributario, temProLabore: empresa.temProLabore })}
         guias={guias.map((g) => ({
           id: g.id, tipo: g.tipo, descricao: g.descricao, valor: g.valor, vencimento: g.vencimento, codigoReceita: g.codigoReceita,
-          enviadoEm: g.enviadoEm, pagoEm: g.pagoEm,
+          enviadoEm: g.enviadoEm, pagoEm: g.pagoEm, obrigacao: obrigacoes.get(g.id) ?? null,
         }))}
+        contas={contas}
+        mesFechado={fechados.includes(competencia)}
         clientes={clientes.map((c) => c.email)}
         vencimentoSugerido={`${somarMeses(competencia, 1).slice(0, 8)}20`}
       />

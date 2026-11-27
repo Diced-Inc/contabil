@@ -14,6 +14,7 @@ import { Baixar } from "@/components/baixar";
 import { VerEmail } from "@/components/ver-email";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -27,6 +28,12 @@ import {
   guiasFaltando, listaTipos, nomeTipoGuia, resumoGuias, rotuloGuia, situacaoGuia, textoSituacao, TIPOS_GUIA, type TipoGuia,
 } from "@/lib/guias";
 import { createClient } from "@/supabase/client";
+import { ContaSelect, type ContaOpcao } from "@/components/conta-select";
+import { fimDoMes } from "@/lib/format";
+import { partidasTitulo } from "@/lib/operacoes";
+import { acharConta, contasDaGuia, norm } from "@/lib/tributos";
+import { montarPrevia, PreviaLancamentos } from "../conciliacao/previa-lancamentos";
+import type { ObrigacaoGuia } from "./queries";
 
 export type GuiaView = {
   id: string;
@@ -37,9 +44,12 @@ export type GuiaView = {
   codigoReceita: string | null;
   enviadoEm: Date | null;
   pagoEm: Date | null;
+  /** Título (obrigação) da guia, se já registrado. */
+  obrigacao: ObrigacaoGuia | null;
 };
 
-type Base = { empresaId: string; competencia: string; hoje: string };
+/** contas: analíticas ativas (para as contas da obrigação); mesFechado: competência fechada (o título não é registrado). */
+type Base = { empresaId: string; competencia: string; hoje: string; contas: ContaOpcao[]; mesFechado: boolean };
 
 const SELECT =
   "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -124,7 +134,7 @@ type Erros = Partial<Record<"guia" | "valor" | "vencimento", string>>;
  * Formulário de uma guia. Anexar (`slot` = tipo esperado, ou null para "Outra guia"): o PDF vai ao Storage ao ser escolhido
  * e o servidor lê valor, vencimento, tipo e código. Editar (`guia`): só os campos.
  */
-function GuiaForm({ empresaId, competencia, hoje, slot, guia, vencimentoSugerido, onPath, onSalvo }: Base & {
+function GuiaForm({ empresaId, competencia, hoje, contas, mesFechado, slot, guia, vencimentoSugerido, onPath, onSalvo }: Base & {
   slot: TipoGuia | null;
   guia?: GuiaView;
   vencimentoSugerido: string;
@@ -144,6 +154,17 @@ function GuiaForm({ empresaId, competencia, hoje, slot, guia, vencimentoSugerido
   const [erros, setErros] = useState<Erros>({});
   const [pendente, iniciar] = useTransition();
   const escolha = useRef(0); // ignora a leitura de um arquivo que já foi trocado
+  // contas da obrigação: as do título (edição), as escolhidas, ou as do mapa do tributo (mudam com tipo/código)
+  const [contasEscolhidas, setContasEscolhidas] = useState<{ obrigacaoId: string | null; despesaId: string | null } | null>(
+    guia?.obrigacao ? { obrigacaoId: guia.obrigacao.obrigacaoId, despesaId: guia.obrigacao.despesaId } : null);
+  const mapa = contasDaGuia(tipo, codigo);
+  const padrao = {
+    obrigacaoId: acharConta(contas, mapa?.obrigacao)?.id ?? null,
+    despesaId: mapa?.modo === "despesa" ? acharConta(contas, mapa.despesa)?.id ?? null : null,
+  };
+  const efetivas = contasEscolhidas ?? padrao;
+  // conta que o servidor cria sob demanda (ex.: PIS/COFINS/CSLL retidos): ainda sem id aqui
+  const criaObrigacao = !efetivas.obrigacaoId && !contasEscolhidas && !!mapa?.obrigacao.criar;
   const valorOk = lerValor(valor);
   const lendo = leitura?.estado === "lendo";
   const id = (c: string) => `guia-${guia?.id ?? slot ?? "outra"}-${c}`;
@@ -195,11 +216,14 @@ function GuiaForm({ empresaId, competencia, hoje, slot, guia, vencimentoSugerido
       if (!vencimento) e.vencimento = "Informe a data de vencimento.";
       setErros(e);
       if (Object.keys(e).length || !valorOk) return;
+      if (!mesFechado && !efetivas.obrigacaoId && !criaObrigacao) return setErro("Escolha a conta da obrigação (imposto a recolher) desta guia.");
       const r = await salvarGuia(empresaId, competencia, guia ? { guiaId: guia.id } : { path: path! }, {
         tipo, descricao, valor: valorOk, vencimento, codigoReceita: codigo,
-      });
+      }, efetivas.obrigacaoId && !mesFechado ? { obrigacaoId: efetivas.obrigacaoId, despesaId: efetivas.despesaId } : null);
       if ("erro" in r) return setErro(r.erro);
-      toast.success(guia ? "Guia atualizada." : `${rotuloGuia({ tipo, descricao: descricao.trim() || null })} anexado.`);
+      const nome = rotuloGuia({ tipo, descricao: descricao.trim() || null });
+      if (r.aviso) toast.warning(guia ? "Guia atualizada." : `${nome} anexado.`, { description: r.aviso });
+      else toast.success(guia ? "Guia atualizada." : `${nome} anexado.`, { description: mesFechado ? undefined : "Obrigação registrada em Títulos a pagar." });
       onSalvo();
     });
 
@@ -308,6 +332,9 @@ function GuiaForm({ empresaId, competencia, hoje, slot, guia, vencimentoSugerido
           )}
         </div>
       </div>
+      <Obrigacao contas={contas} competencia={competencia} valor={valorOk} mesFechado={mesFechado} tributo={mapa?.tributo}
+        nota={mapa?.nota} efetivas={efetivas} criaObrigacao={criaObrigacao ? mapa?.obrigacao.criar?.nome : undefined}
+        baixada={!!guia?.obrigacao?.baixada} onChange={setContasEscolhidas} />
       <DialogFooter>
         <DialogClose render={<Button variant="outline" type="button" />} disabled={pendente}>
           Cancelar
@@ -318,6 +345,52 @@ function GuiaForm({ empresaId, competencia, hoje, slot, guia, vencimentoSugerido
         </Button>
       </DialogFooter>
     </div>
+  );
+}
+
+/**
+ * Obrigação da guia (título a pagar na competência): conta a recolher, despesa (ou obrigação já registrada, sem
+ * lançamento) e a prévia D/C. Tributo desconhecido pelo código: o contador escolhe.
+ */
+function Obrigacao({ contas, competencia, valor, mesFechado, tributo, nota, efetivas, criaObrigacao, baixada, onChange }: {
+  contas: ContaOpcao[]; competencia: string; valor: string | null; mesFechado: boolean; tributo?: string; nota?: string;
+  efetivas: { obrigacaoId: string | null; despesaId: string | null }; criaObrigacao?: string; baixada: boolean;
+  onChange: (c: { obrigacaoId: string | null; despesaId: string | null }) => void;
+}) {
+  const passivo = contas.filter((c) => /^2\.[12]\./.test(c.codigo) && !c.papel);
+  const despesas = contas.filter((c) => /^[13]\./.test(c.codigo) && !c.papel && !c.codigo.startsWith("1.1.1"));
+  const jaRegistrada = !efetivas.despesaId;
+  const previa = montarPrevia(() => {
+    if (!valor) throw new Error("Informe o valor da guia para ver o lançamento.");
+    if (!efetivas.obrigacaoId) throw new Error(criaObrigacao ? `A conta “${criaObrigacao}” será criada ao salvar.` : "Escolha a conta da obrigação.");
+    if (jaRegistrada) throw new Error("Obrigação já registrada: só o título, sem lançamento (a baixa debita a conta a recolher).");
+    return [{ data: fimDoMes(competencia), competencia, historico: `Título a pagar: ${tributo ?? "guia"}`, partidas: partidasTitulo("pagar", efetivas.obrigacaoId, efetivas.despesaId!, valor) }];
+  });
+  if (mesFechado)
+    return <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">Mês fechado: a guia entra, mas a obrigação não é registrada em Títulos.</p>;
+  return (
+    <fieldset className="grid gap-3 rounded-lg border p-3">
+      <legend className="px-1 text-sm font-medium">Obrigação em Títulos{tributo ? `: ${tributo}` : ""}</legend>
+      {!tributo && <Aviso>Tributo não reconhecido pelo tipo/código: escolha a conta a recolher e a despesa.</Aviso>}
+      {baixada && <Aviso>Esta obrigação já foi baixada na conciliação: valor e contas não mudam sem desfazer a baixa.</Aviso>}
+      {nota && <p className="text-xs text-muted-foreground">{nota}</p>}
+      <div className="grid gap-2">
+        <Label>Obrigação (crédito)</Label>
+        <ContaSelect contas={passivo} value={efetivas.obrigacaoId} onChange={(id) => onChange({ ...efetivas, obrigacaoId: id })}
+          placeholder={criaObrigacao ? `${criaObrigacao} (será criada)` : "Imposto a recolher"} />
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={jaRegistrada} onCheckedChange={(c) => onChange({ ...efetivas, despesaId: c ? null : acharConta(contas, { prefixo: "3.2", re: /^impostos e taxas$/ })?.id ?? despesas.find((d) => /^3\.2/.test(d.codigo) && /impost/.test(norm(d.nome)))?.id ?? null })} />
+        Obrigação já registrada (retenção na nota/folha): sem despesa
+      </label>
+      {!jaRegistrada && (
+        <div className="grid gap-2">
+          <Label>Despesa (débito)</Label>
+          <ContaSelect contas={despesas} value={efetivas.despesaId} onChange={(id) => onChange({ ...efetivas, despesaId: id })} />
+        </div>
+      )}
+      <PreviaLancamentos previa={previa} contas={contas} />
+    </fieldset>
   );
 }
 
@@ -406,7 +479,7 @@ function AcaoGuia({ empresaId, g, acao }: { empresaId: string; g: GuiaView; acao
           <DialogDescription>
             {acao === "pagar"
               ? "Os lembretes desta guia param. O cliente vê a guia como paga no portal."
-              : "A guia e o PDF são apagados. O cliente ainda não tinha recebido esta guia."}
+              : "A guia e o PDF são apagados e a obrigação dela em Títulos é cancelada (estorno). O cliente ainda não tinha recebido esta guia."}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -580,7 +653,7 @@ function EnviarGuias({ empresaId, competencia, rascunhos, faltando, clientes, ex
  * "Guias do mês" no fechamento: checklist das guias que a empresa paga (anexada / faltando), as demais guias anexadas,
  * e o envio ao cliente. Depois do envio dá para anexar mais uma guia (sai num e-mail próprio) e marcar como paga.
  */
-export function GuiasDoMes({ empresaId, competencia, hoje, status, esperadas, guias, clientes, vencimentoSugerido }: Base & {
+export function GuiasDoMes({ empresaId, competencia, hoje, status, esperadas, guias, clientes, vencimentoSugerido, contas, mesFechado }: Base & {
   status: string;
   esperadas: TipoGuia[];
   guias: GuiaView[];
@@ -593,7 +666,7 @@ export function GuiasDoMes({ empresaId, competencia, hoje, status, esperadas, gu
   const faltando = guiasFaltando(esperadas, guias);
   const anexadas = esperadas.filter((t) => !faltando.includes(t)).length;
   const total = resumoGuias(guias, hoje).total;
-  const base = { empresaId, competencia, hoje, vencimentoSugerido };
+  const base = { empresaId, competencia, hoje, vencimentoSugerido, contas, mesFechado };
   const extras = guias.filter((g) => !esperadas.includes(g.tipo));
 
   const linhaGuia = (g: GuiaView) => (
