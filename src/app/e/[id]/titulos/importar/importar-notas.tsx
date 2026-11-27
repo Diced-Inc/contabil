@@ -22,7 +22,8 @@ import { decodificarXml } from "@/lib/notas/xml";
 import { lerZip } from "@/lib/notas/zip";
 import { contasDeContrapartida } from "@/lib/operacoes";
 import { acharConta, NOMES_RETENCAO } from "@/lib/tributos";
-import { montarPrevia, PreviaLancamentos } from "../../conciliacao/previa-lancamentos";
+import type { LancPrevia } from "@/lib/operacoes";
+import { PreviaLancamentos } from "../../conciliacao/previa-lancamentos";
 import { previaNota } from "../previa-nota";
 
 type Ignorado = { arquivo: string; motivo: string };
@@ -103,15 +104,20 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
     if (fechados.includes(primeiroDiaDoMes(dataDaNota(l.nota.emissao, `${l.competencia}-01`)))) return `Mês ${l.competencia.split("-").reverse().join("/")} fechado`;
     return null;
   };
-  const montar = (l: Linha) => montarPrevia(() => {
-    if (!l.direcao) throw new Error("A empresa não é emitente nem destinatária desta nota.");
-    const { parcelas } = parcelasDaNota(l.nota);
-    return previaNota({
-      tipo: l.direcao, contas, contaResultadoId: l.contaId, emissao: l.nota.emissao, competencia: `${l.competencia}-01`,
-      contraparte: contraparteDaNota(l.nota, l.direcao).nome, rotulo: rotuloNota(l.nota.origem, l.nota.numero, l.nota.serie),
-      retencoes: l.nota.retencoes.map((r, i) => ({ ...r, contaId: l.contasRet[i] ?? null })), parcelas,
-    }).previa;
-  });
+  const calcular = (l: Linha): { previa: LancPrevia[] | string; novas: ContaOpcao[] } => {
+    try {
+      if (!l.direcao) throw new Error("A empresa não é emitente nem destinatária desta nota.");
+      const { parcelas } = parcelasDaNota(l.nota);
+      return previaNota({
+        tipo: l.direcao, contas, contaResultadoId: l.contaId, emissao: l.nota.emissao, competencia: `${l.competencia}-01`,
+        contraparte: contraparteDaNota(l.nota, l.direcao).nome, rotulo: rotuloNota(l.nota.origem, l.nota.numero, l.nota.serie),
+        retencoes: l.nota.retencoes.map((r, i) => ({ ...r, contaId: l.contasRet[i] ?? null })), parcelas,
+      });
+    } catch (e) {
+      return { previa: (e as Error).message, novas: [] };
+    }
+  };
+  const montar = (l: Linha) => calcular(l).previa;
   const prontas = linhas.filter((l) => l.marcada && !bloqueio(l));
   const comErro = prontas.filter((l) => typeof montar(l) === "string");
 
@@ -179,18 +185,15 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
                   <TableHead>Direção</TableHead>
                   <TableHead>Contraparte</TableHead>
                   <TableHead>Competência</TableHead>
-                  <TableHead className="text-right">Bruto</TableHead>
-                  <TableHead>Retenções</TableHead>
-                  <TableHead className="text-right">Líquido</TableHead>
-                  <TableHead>Parcelas</TableHead>
-                  <TableHead className="min-w-64">Conta</TableHead>
+                  <TableHead className="text-right">Valores</TableHead>
+                  <TableHead className="min-w-60">Conta</TableHead>
                   <TableHead>Situação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {linhas.map((l) => {
                   const b = bloqueio(l);
-                  const prev = montar(l);
+                  const { previa: prev, novas } = calcular(l);
                   const { parcelas, aviso } = parcelasDaNota(l.nota);
                   const avisos = [...l.nota.avisos, ...(aviso ? [aviso] : [])];
                   const outra = l.direcao ? contraparteDaNota(l.nota, l.direcao) : l.nota.emitente;
@@ -215,19 +218,19 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
                           <span className="block text-xs text-muted-foreground tabular-nums">{outra.documento}</span>
                         </TableCell>
                         <TableCell>
-                          <Input type="month" value={l.competencia} onChange={(e) => e.target.value && set(l.id, { competencia: e.target.value })} className="h-8 w-36" aria-label="Competência" disabled={!!l.resultado?.ok} />
+                          <Input type="month" value={l.competencia} onChange={(e) => e.target.value && set(l.id, { competencia: e.target.value })} className="h-8 w-40" aria-label="Competência" disabled={!!l.resultado?.ok} />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{fmtValor(l.nota.bruto)}</TableCell>
-                        <TableCell className="text-xs">
-                          {l.nota.retencoes.length ? l.nota.retencoes.map((r, i) => (
-                            <span key={i} className={cn("block whitespace-nowrap", r.tipo === "outras" && "font-medium text-warning")}>
-                              {NOMES_RETENCAO[r.tipo]} {fmtValor(r.valor)}{r.tipo === "outras" && " · confirme"}
+                        <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">
+                          <span className="block text-sm font-medium">{fmtValor(l.nota.liquido)}</span>
+                          {l.nota.retencoes.length > 0 && (
+                            <span className={cn("block", l.nota.retencoes.some((r) => r.tipo === "outras") ? "text-warning" : "text-muted-foreground")}
+                              title={l.nota.retencoes.map((r) => `${NOMES_RETENCAO[r.tipo]} ${fmtValor(r.valor)}`).join("\n")}>
+                              bruto {fmtValor(l.nota.bruto)} − {l.nota.retencoes.length} ret.
                             </span>
-                          )) : <span className="text-muted-foreground">—</span>}
-                        </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">{fmtValor(l.nota.liquido)}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {parcelas.length > 1 ? `${parcelas.length}× (1ª ${parcelas[0].vencimento ? fmtData(parcelas[0].vencimento) : "s/ venc."})` : parcelas[0].vencimento ? `vence ${fmtData(parcelas[0].vencimento)}` : "1"}
+                          )}
+                          <span className="block text-muted-foreground">
+                            {parcelas.length > 1 ? `${parcelas.length} parcelas, 1ª ${parcelas[0].vencimento ? fmtData(parcelas[0].vencimento) : "s/ venc."}` : parcelas[0].vencimento ? `vence ${fmtData(parcelas[0].vencimento)}` : ""}
+                          </span>
                         </TableCell>
                         <TableCell>
                           {l.direcao && (
@@ -255,9 +258,14 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
                       {l.aberta && (
                         <TableRow>
                           <TableCell />
-                          <TableCell colSpan={10} className="whitespace-normal">
+                          <TableCell colSpan={7} className="whitespace-normal">
                             <div className="grid max-w-3xl gap-3 py-2">
                               {avisos.map((a) => <p key={a} className="flex gap-1.5 text-sm text-warning"><TriangleAlert className="mt-0.5 size-4 shrink-0" />{a}</p>)}
+                              {l.nota.retencoes.length > 0 && (
+                                <p className="text-sm">
+                                  Bruto R$ {fmtValor(l.nota.bruto)} · {l.nota.retencoes.map((r) => `${NOMES_RETENCAO[r.tipo]} ${fmtValor(r.valor)}`).join(" · ")} · líquido R$ {fmtValor(l.nota.liquido)}
+                                </p>
+                              )}
                               {l.direcao && l.nota.retencoes.map((r, i) => r.tipo === "outras" && (
                                 <div key={i} className="grid gap-1.5">
                                   <Label>Conta de {NOMES_RETENCAO[r.tipo]} ({fmtValor(r.valor)})</Label>
@@ -267,7 +275,7 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
                               <p className="text-xs text-muted-foreground">
                                 Competência {fmtCompetencia(`${l.competencia}-01`)} · reconhecimento em {fmtData(dataDaNota(l.nota.emissao, `${l.competencia}-01`))}
                               </p>
-                              <PreviaLancamentos previa={prev} contas={contas} fechados={fechados} />
+                              <PreviaLancamentos previa={prev} contas={[...contas, ...novas]} fechados={fechados} />
                             </div>
                           </TableCell>
                         </TableRow>

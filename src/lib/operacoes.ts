@@ -187,13 +187,16 @@ export function partidasTitulo(
 ): PartidaInput[] {
   const liquido = cents(valor);
   if (!(liquido > 0)) throw new Error("Valor do título deve ser maior que zero");
-  const rs = retencoes.filter((r) => cents(r.valor) !== 0);
-  if (rs.some((r) => !(cents(r.valor) > 0))) throw new Error("Retenção precisa ser maior que zero");
-  const bruto = liquido + rs.reduce((x, r) => x + cents(r.valor), 0);
+  if (retencoes.some((r) => cents(r.valor) < 0 || Number.isNaN(cents(r.valor)))) throw new Error("Retenção precisa ser maior que zero");
+  // uma partida por conta (PIS, COFINS e CSLL retidos caem na mesma)
+  const porConta = new Map<string, number>();
+  for (const r of retencoes) if (cents(r.valor) > 0) porConta.set(r.contaId, (porConta.get(r.contaId) ?? 0) + cents(r.valor));
+  const rs = [...porConta];
+  const bruto = liquido + rs.reduce((x, [, v]) => x + v, 0);
   const f = fromCents;
   return tipo === "receber"
-    ? [{ contaId: contaPapelId, debito: f(liquido) }, ...rs.map((r) => ({ contaId: r.contaId, debito: f(cents(r.valor)) })), { contaId: contaResultadoId, credito: f(bruto) }]
-    : [{ contaId: contaResultadoId, debito: f(bruto) }, ...rs.map((r) => ({ contaId: r.contaId, credito: f(cents(r.valor)) })), { contaId: contaPapelId, credito: f(liquido) }];
+    ? [{ contaId: contaPapelId, debito: f(liquido) }, ...rs.map(([contaId, v]) => ({ contaId, debito: f(v) })), { contaId: contaResultadoId, credito: f(bruto) }]
+    : [{ contaId: contaResultadoId, debito: f(bruto) }, ...rs.map(([contaId, v]) => ({ contaId, credito: f(v) })), { contaId: contaPapelId, credito: f(liquido) }];
 }
 
 export const historicoTitulo = (tipo: TipoTitulo, contraparte: string, descricao: string) =>

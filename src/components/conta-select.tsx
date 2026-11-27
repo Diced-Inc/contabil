@@ -38,7 +38,7 @@ export function ContaSelect({ contas, value, defaultValue, onChange, placeholder
             variant="outline"
             role="combobox"
             aria-expanded={aberto}
-            className={cn("w-full justify-between font-normal", !sel && "text-muted-foreground", className)}
+            className={cn("w-full min-w-0 justify-between font-normal", !sel && "text-muted-foreground", className)}
           />
         }
       >
