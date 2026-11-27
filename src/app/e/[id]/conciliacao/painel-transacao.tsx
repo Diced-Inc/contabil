@@ -20,6 +20,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Valor } from "@/components/valor";
 import { cents, fmtData, fmtValor, fromCents, parseValorBR, valorParaInput } from "@/lib/format";
 import { SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classificacao/regras";
+import { avisosSemTitulo } from "@/lib/sem-titulo";
+import { AvisoSemTitulo } from "./aviso-sem-titulo";
 import type { ConciliadaLinha, TituloAberto, TransacaoLinha } from "./queries";
 
 const selectCls =
@@ -82,7 +84,7 @@ function Reclassificar({ c, empresaId, contas, onClose }: { c: ConciliadaLinha; 
       <Cabecalho t={t} />
       <div className="px-6 py-5">
         <p className="mb-3 text-xs text-muted-foreground">
-          O lançamento {c.numero} é estornado com a data de hoje e um novo é criado com a classificação abaixo.
+          O lançamento {c.numero} é estornado e um novo é criado com a classificação abaixo, na data do extrato enquanto o mês estiver aberto; com o mês fechado, vão para hoje (se o mês atual também estiver fechado, reabra-o em Fechamento).
         </p>
         <Classificar t={t} total={total} entrada={cents(t.valor) > 0} contas={contas} pendente={pendente}
           inicial={{
@@ -119,11 +121,13 @@ function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props,
   const [pendente, executar] = useExecutar(onClose);
   const total = Math.abs(cents(t.valor));
   const entrada = cents(t.valor) > 0;
+  const [aba, setAba] = useState(t.sugestaoOrigem === "transferencia" ? "transferencia" : "classificar");
+  const compativeis = titulos.filter((x) => x.tipo === (entrada ? "receber" : "pagar"));
 
   return (
     <>
       <Cabecalho t={t} />
-      <Tabs defaultValue={t.sugestaoOrigem === "transferencia" ? "transferencia" : "classificar"} className="gap-3 px-6 py-5">
+      <Tabs value={aba} onValueChange={(v) => setAba(String(v))} className="gap-3 px-6 py-5">
         <TabsList className="w-full">
           <TabsTrigger value="classificar">Classificar</TabsTrigger>
           <TabsTrigger value="titulo">Baixar título</TabsTrigger>
@@ -132,11 +136,12 @@ function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props,
         </TabsList>
         <TabsContent value="classificar" className="pt-3">
           <Classificar t={t} total={total} entrada={entrada} contas={contas} pendente={pendente}
+            onBaixarTitulo={compativeis.length ? () => setAba("titulo") : undefined}
             enviar={(input) => executar(() => aprovarClassificacao(empresaId, input), "Transação classificada.")} />
         </TabsContent>
         <TabsContent value="titulo" className="pt-3">
           <BaixarTitulo total={total} contas={contas} pendente={pendente}
-            titulos={titulos.filter((x) => x.tipo === (entrada ? "receber" : "pagar"))}
+            titulos={compativeis}
             enviar={(tituloId, contaDiferencaId) =>
               executar(() => baixarTituloPelaTransacao(empresaId, { transacaoId: t.id, tituloId, contaDiferencaId }), "Título baixado.")} />
         </TabsContent>
@@ -156,9 +161,11 @@ function Conteudo({ t, empresaId, onClose, todas, contas, titulos }: Omit<Props,
 
 type Linha = { contaId: string | null; valor: string };
 
-function Classificar({ t, total, entrada, contas, pendente, enviar, inicial }: {
+function Classificar({ t, total, entrada, contas, pendente, enviar, inicial, onBaixarTitulo }: {
   t: TransacaoBase; total: number; entrada: boolean; contas: ContaOpcao[]; pendente: boolean;
   enviar: (input: ClassificacaoInput) => void;
+  /** Há título aberto compatível: o aviso de Clientes oferece a aba Baixar título. */
+  onBaixarTitulo?: () => void;
   /** Reclassificação: valores do lançamento atual; sem "criar regra". */
   inicial?: { linhas: Linha[]; historico: string; documento: string; competencia: string };
 }) {
@@ -171,8 +178,11 @@ function Classificar({ t, total, entrada, contas, pendente, enviar, inicial }: {
   const [regra, setRegra] = useState<{ nome: string; tipoMatch: TipoMatch; padrao: string; sinal: Sinal }>({
     nome: t.memo.slice(0, 60), tipoMatch: "memo_contem", padrao: t.memo, sinal: entrada ? "entrada" : "saida",
   });
+  const [ciente, setCiente] = useState(false);
   const soma = linhas.reduce((s, l) => s + centavos(l.valor), 0);
   const dif = total - soma;
+  const avisos = avisosSemTitulo(linhas.map((l) => contas.find((c) => c.id === l.contaId)));
+  const travado = avisos.includes("clientes") && !ciente;
   const set = (i: number, p: Partial<Linha>) => setLinhas((ls) => ls.map((l, k) => (k === i ? { ...l, ...p } : l)));
 
   return (
@@ -185,6 +195,7 @@ function Classificar({ t, total, entrada, contas, pendente, enviar, inicial }: {
           partidas: linhas.map((l) => ({ contaId: l.contaId ?? "", valor: l.valor })),
           historico, documento, competencia,
           criarRegra: criaRegra ? regra : undefined,
+          confirmarSemTitulo: avisos.includes("clientes") && ciente,
         });
       }}
     >
@@ -212,6 +223,7 @@ function Classificar({ t, total, entrada, contas, pendente, enviar, inicial }: {
           </span>
         </div>
       </div>
+      <AvisoSemTitulo tipos={avisos} ciente={ciente} onCiente={setCiente} onBaixarTitulo={onBaixarTitulo} />
       {t.sugestaoOrigem === "ia" && t.sugestaoJustificativa && (
         <p className="text-xs text-muted-foreground">IA: {t.sugestaoJustificativa}</p>
       )}
@@ -264,7 +276,7 @@ function Classificar({ t, total, entrada, contas, pendente, enviar, inicial }: {
           <p className="text-xs text-muted-foreground">A regra usa a conta da primeira linha e o histórico acima.</p>
         </div>
       )}
-      <Button type="submit" disabled={pendente || dif !== 0}>
+      <Button type="submit" disabled={pendente || dif !== 0 || travado}>
         <Check />
         {inicial ? (pendente ? "Reclassificando..." : "Reclassificar") : pendente ? "Aprovando..." : "Aprovar classificação"}
       </Button>

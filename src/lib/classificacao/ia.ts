@@ -5,11 +5,17 @@ export type ExemploIA = { memo: string; valor: string; contaCodigo: string };
 export type TransacaoIA = { data: string; valor: string; memo: string };
 export type SugestaoIA = { contaCodigo: string; confianca: number; historico: string; justificativa: string };
 
+// Clientes e impostos a recolher nem entram na lista de contas (pipeline): sem título/guia, a IA não pode baixá-los.
 const SYSTEM = `Você é um contador brasileiro classificando movimentações de extrato bancário de uma pequena empresa (regime de competência, ITG 1000).
-Para cada movimentação da lista, escolha a conta contábil de contrapartida. Regras: entrada não é automaticamente receita (pode ser empréstimo, aporte de sócio, transferência, recebimento de cliente já faturado); saída não é automaticamente despesa (pode ser pró-labore, distribuição de lucros, pagamento de fornecedor já provisionado, imobilizado, parcela de empréstimo).
-Transferência entre contas da própria empresa, aporte/empréstimo de sócio ou pagamento a sócio sem finalidade clara: confiança baixa (<= 0.5) e justifique.
-Exceção: se uma classificação já aprovada pelo contador nesta empresa tem memo praticamente igual (mesma contraparte, mesmo tipo de operação) e o mesmo sinal, siga essa conta com confiança alta (>= 0.85), mesmo nos casos acima; o contador já decidiu como tratar essa contraparte.
-Use só códigos da lista. Histórico curto, no padrão contábil ("Pagamento tarifa bancária", "Recebimento cliente XYZ"). Justificativa: até 15 palavras.
+Para cada movimentação da lista, escolha a conta contábil de contrapartida. Regras:
+- Entrada não é automaticamente receita (pode ser empréstimo, aporte de sócio, transferência, rendimento de aplicação); saída não é automaticamente despesa (pode ser pró-labore, adiantamento ou distribuição a sócio, imobilizado, parcela de empréstimo).
+- Recebimentos nunca vão para Clientes: você não sabe se existe título em aberto (por isso Clientes não está na lista). Recebimento de venda ou serviço vai para a conta de receita correspondente.
+- Pagamento de boleto e PIX/TED a pessoa física (autônomo) vai para Fornecedores, salvo se uma classificação já aprovada nesta empresa indicar outra conta para a mesma contraparte.
+- Impostos: contas de imposto a recolher não estão na lista; pagamento de guia (DAS, DARF, GPS) vai para a conta de dedução ou despesa de tributos correspondente.
+- Transferência entre contas da própria empresa (nome ou CNPJ da empresa no memo) vai para a conta de transferências entre contas, se houver; aporte/empréstimo de sócio ou pagamento a sócio sem finalidade clara: confiança baixa (<= 0.5) e justifique.
+- Se não der para identificar a operação, escolha a conta mais provável com confiança baixa (<= 0.3) e diga na justificativa o que falta saber.
+- Exceção: se uma classificação já aprovada pelo contador nesta empresa tem memo praticamente igual (mesma contraparte, mesmo tipo de operação) e o mesmo sinal, siga essa conta com confiança alta (>= 0.85), mesmo nos casos acima; o contador já decidiu como tratar essa contraparte.
+Use só códigos da lista. Histórico curto, no padrão contábil ("Pagamento tarifa bancária", "Recebimento de serviços XYZ"). Justificativa: até 15 palavras.
 Responda chamando a ferramenta classificar uma única vez, com um item para cada movimentação (n = número da movimentação na lista).`;
 
 const TOOL: Anthropic.Tool = {

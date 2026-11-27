@@ -10,10 +10,10 @@ export const ACOES_LOG = {
   fechamento: "Fechamento", reabertura: "Reabertura", apuracao: "Apuração",
 } as const;
 
-/** Analíticas ativas da empresa, para o ContaSelect das partidas. */
+/** Analíticas ativas da empresa, para o ContaSelect das partidas (papel: guard rail de título na conciliação). */
 export function listarContasAnaliticas(empresaId: string) {
   return db
-    .select({ id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome })
+    .select({ id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, papel: planoContas.papel })
     .from(planoContas)
     .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true)))
     .orderBy(asc(planoContas.codigo));

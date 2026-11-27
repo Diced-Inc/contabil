@@ -1,7 +1,7 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { lancamentos, partidas, lancamentoLog, planoContas, titulos } from "@/db/schema";
-import { cents, fromCents, primeiroDiaDoMes, hoje } from "./format";
+import { fechamentos, lancamentos, partidas, lancamentoLog, planoContas, titulos } from "@/db/schema";
+import { cents, fmtCompetencia, fromCents, primeiroDiaDoMes, hoje } from "./format";
 
 export type PartidaInput = { contaId: string; debito?: string; credito?: string };
 export type LancamentoInput = {
@@ -132,4 +132,20 @@ export async function estornarLancamento(
     depois: { estornoId: estorno.id, estornoNumero: estorno.numero, data },
   });
   return estorno;
+}
+
+/** Competências fechadas da empresa (mesma regra do trigger `periodo_fechado`). */
+export async function mesesFechados(tx: Pick<Tx, "select">, empresaId: string) {
+  const fs = await tx.select({ c: fechamentos.competencia }).from(fechamentos).where(eq(fechamentos.empresaId, empresaId));
+  return new Set(fs.map((f) => f.c));
+}
+
+/**
+ * A própria data se o mês está aberto (estorno e novo lançamento no mês do original, sem contar em dobro);
+ * senão hoje; hoje também fechado → erro claro em vez da mensagem do trigger.
+ */
+export function dataNoMesAberto(data: string, hoje: string, fechados: ReadonlySet<string>, acao: string) {
+  if (!fechados.has(primeiroDiaDoMes(data))) return data;
+  if (fechados.has(primeiroDiaDoMes(hoje))) throw new Error(`Reabra o mês ${fmtCompetencia(hoje)} em Fechamento para ${acao}`);
+  return hoje;
 }

@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { normalizarMemo, selecionarExemplos } from "./exemplos";
+import { montarExemplos, normalizarMemo, selecionarExemplos } from "./exemplos";
 
 const ex = (memo: string, valor: string, contaCodigo: string) => ({ memo, valor, contaCodigo });
+
+describe("montarExemplos", () => {
+  const tx = (lancamentoId: string, memo: string, valor: string) => ({ lancamentoId, memo, valor, contaBanco: "banco" });
+  const p = (lancamentoId: string, contaId: string, codigo: string, nome: string, papel: string | null, debito: string, credito = "0") =>
+    ({ lancamentoId, contaId, codigo, nome, papel, debito, credito });
+  it("pega a maior contrapartida e tira Clientes e imposto a recolher; Fornecedores fica", () => {
+    const r = montarExemplos(
+      [tx("l1", "PIX RECEBIDO ACME", "100.00"), tx("l2", "BOLETO PAGO XYZ", "-50.00"), tx("l3", "DARF", "-30.00"), tx("l4", "PIX RECEBIDO B", "80.00")],
+      [
+        p("l1", "banco", "1.1.1.02", "Bancos", null, "100.00"), p("l1", "cli", "1.1.2.01", "Clientes", "clientes", "0", "100.00"),
+        p("l2", "forn", "2.1.1.01", "Fornecedores Nacionais", "fornecedores", "50.00"), p("l2", "banco", "1.1.1.02", "Bancos", null, "0", "50.00"),
+        p("l3", "irrf", "2.1.3.04", "IRRF a Recolher", null, "30.00"), p("l3", "banco", "1.1.1.02", "Bancos", null, "0", "30.00"),
+        p("l4", "banco", "1.1.1.02", "Bancos", null, "80.00"), p("l4", "rec", "3.1.1.03", "Venda de Serviços", null, "0", "70.00"),
+        p("l4", "jur", "3.1.2.02", "Juros Ativos", null, "0", "10.00"),
+      ],
+    );
+    expect(r).toEqual([{ memo: "BOLETO PAGO XYZ", valor: "-50.00", contaCodigo: "2.1.1.01" }, { memo: "PIX RECEBIDO B", valor: "80.00", contaCodigo: "3.1.1.03" }]);
+  });
+});
 
 describe("normalizarMemo", () => {
   it("tira acento, dígitos, datas e ids", () => {

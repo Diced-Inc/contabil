@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-export type ContaOpcao = { id: string; codigo: string; nome: string };
+export type ContaOpcao = { id: string; codigo: string; nome: string; papel?: string | null };
 
 /**
  * Combobox de conta (passe só analíticas ativas). Busca por código ou nome.

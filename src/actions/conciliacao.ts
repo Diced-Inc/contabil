@@ -4,13 +4,14 @@ import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { contasBancarias, transacoesBancarias } from "@/db/schema";
+import { contasBancarias, planoContas, transacoesBancarias } from "@/db/schema";
 import { aplicarTemplate, valorDoPadrao } from "@/lib/classificacao/regras";
 import { sugerirPendentes, type ResultadoSugestao } from "@/lib/classificacao/pipeline";
 import {
-  alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, inserirRegra, reclassificarTransacao,
-  transferirEntreContas,
+  alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, ErroSemTitulo, inserirRegra,
+  reclassificarTransacao, transferirEntreContas,
 } from "@/lib/conciliacao";
+import { contaDeTitulo } from "@/lib/sem-titulo";
 import { cents, fmtCompetencia, fmtData, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
@@ -65,6 +66,7 @@ const classificacaoSchema = z.object({
     .optional()
     .transform((s) => (s ? `${s}-01` : undefined)),
   criarRegra: novaRegraSchema,
+  confirmarSemTitulo: z.boolean().optional(),
 });
 export type ClassificacaoInput = z.input<typeof classificacaoSchema>;
 
@@ -171,6 +173,9 @@ export async function desfazerEmLote(empresaId: string, transacaoIds: string[]):
   return { desfeitas, erros };
 }
 
+/** semTitulo: sugestões da IA em Clientes puladas por falta de confirmação; diretas: aprovadas direto em conta de título. */
+export type ResultadoAprovacao = { aprovadas: number; puladas: number; semTitulo: number; diretas: number; erros: string[] };
+
 /**
  * Aprova sugestões de regra, transferência e IA; cada transação na sua própria transação do banco.
  * `minConfiancaIa`: sugestões de IA abaixo do limite ficam pendentes e entram em `puladas`.
@@ -178,27 +183,32 @@ export async function desfazerEmLote(empresaId: string, transacaoIds: string[]):
 export async function aprovarEmLote(
   empresaId: string,
   transacaoIds: string[],
-  opcoes: { minConfiancaIa?: number } = {},
-): Promise<{ aprovadas: number; puladas: number; erros: string[] }> {
+  opcoes: { minConfiancaIa?: number; confirmarSemTitulo?: boolean } = {},
+): Promise<ResultadoAprovacao> {
   const user = await requireUser();
-  if (!empresaValida(empresaId)) return { aprovadas: 0, puladas: 0, erros: ["Empresa inválida."] };
+  const vazio = { aprovadas: 0, puladas: 0, semTitulo: 0, diretas: 0 };
+  if (!empresaValida(empresaId)) return { ...vazio, erros: ["Empresa inválida."] };
   const ids = z.array(z.uuid()).safeParse(transacaoIds);
-  if (!ids.success || !ids.data.length) return { aprovadas: 0, puladas: 0, erros: ["Nenhuma transação selecionada."] };
+  if (!ids.success || !ids.data.length) return { ...vazio, erros: ["Nenhuma transação selecionada."] };
   const min = z.number().min(0).max(1).optional().safeParse(opcoes.minConfiancaIa);
-  if (!min.success) return { aprovadas: 0, puladas: 0, erros: ["Confiança mínima inválida."] };
+  if (!min.success) return { ...vazio, erros: ["Confiança mínima inválida."] };
   const txs = await db
     .select({
       id: transacoesBancarias.id, memo: transacoesBancarias.memo, valor: transacoesBancarias.valor,
       sugestaoOrigem: transacoesBancarias.sugestaoOrigem, sugestaoContaId: transacoesBancarias.sugestaoContaId,
       sugestaoHistorico: transacoesBancarias.sugestaoHistorico, transferenciaParId: transacoesBancarias.transferenciaParId,
       sugestaoConfianca: transacoesBancarias.sugestaoConfianca,
+      contaCodigo: planoContas.codigo, contaNome: planoContas.nome, contaPapel: planoContas.papel,
     })
     .from(transacoesBancarias)
     .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
+    .leftJoin(planoContas, eq(planoContas.id, transacoesBancarias.sugestaoContaId))
     .where(and(eq(contasBancarias.empresaId, empresaId), inArray(transacoesBancarias.id, ids.data)));
 
   let aprovadas = 0;
   let puladas = 0;
+  let semTitulo = 0;
+  let diretas = 0;
   const erros: string[] = [];
   const feitas = new Set<string>();
   for (const t of txs) {
@@ -215,8 +225,11 @@ export async function aprovarEmLote(
             empresaId, transacaoId: t.id, usuarioId: user.id,
             partidas: [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }],
             historico: t.sugestaoHistorico || t.memo || "Conciliação bancária",
+            // regra = decisão do contador; sugestão da IA em Clientes precisa da confirmação
+            confirmarSemTitulo: t.sugestaoOrigem === "regra" || !!opcoes.confirmarSemTitulo,
           }),
         );
+        if (t.contaCodigo && contaDeTitulo({ codigo: t.contaCodigo, nome: t.contaNome ?? "", papel: t.contaPapel })) diretas++;
       } else if (t.sugestaoOrigem === "transferencia" && t.transferenciaParId) {
         const parId = t.transferenciaParId;
         await db.transaction((tx) => transferirEntreContas(tx, { empresaId, transacaoId: t.id, parId, usuarioId: user.id }));
@@ -227,11 +240,12 @@ export async function aprovarEmLote(
       feitas.add(t.id);
       aprovadas++;
     } catch (e) {
-      erros.push(`${t.memo.slice(0, 40) || t.id.slice(0, 8)}: ${msg(e)}`);
+      if (e instanceof ErroSemTitulo) semTitulo++;
+      else erros.push(`${t.memo.slice(0, 40) || t.id.slice(0, 8)}: ${msg(e)}`);
     }
   }
   revalidatePath(`/e/${empresaId}`, "layout");
-  return { aprovadas, puladas, erros };
+  return { aprovadas, puladas, semTitulo, diretas, erros };
 }
 
 const loteSchema = z.object({
@@ -241,6 +255,7 @@ const loteSchema = z.object({
   documento: z.string().trim().nullish().transform((s) => s || null),
   competencia: z.string().regex(/^\d{4}-\d{2}$/, "Competência inválida.").nullish(),
   criarRegra: novaRegraSchema,
+  confirmarSemTitulo: z.boolean().optional(),
 });
 export type ClassificacaoLoteInput = z.input<typeof loteSchema>;
 
@@ -250,7 +265,7 @@ export async function classificarEmLote(empresaId: string, input: ClassificacaoL
   if (!empresaValida(empresaId)) return { aprovadas: 0, erros: ["Empresa inválida."] };
   const r = loteSchema.safeParse(input);
   if (!r.success) return { aprovadas: 0, erros: [r.error.issues[0].message] };
-  const { transacaoIds, contaId, historicoTemplate, documento, competencia, criarRegra } = r.data;
+  const { transacaoIds, contaId, historicoTemplate, documento, competencia, criarRegra, confirmarSemTitulo } = r.data;
   const encontradas = await db
     .select({
       id: transacoesBancarias.id, memo: transacoesBancarias.memo, valor: transacoesBancarias.valor,
@@ -275,7 +290,7 @@ export async function classificarEmLote(empresaId: string, input: ClassificacaoL
           empresaId, transacaoId: t.id, usuarioId: user.id, documento,
           partidas: [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }],
           historico: aplicarTemplate(historicoTemplate, t).trim() || "Conciliação bancária",
-          competencia: competencia ? `${competencia}-01` : undefined,
+          competencia: competencia ? `${competencia}-01` : undefined, confirmarSemTitulo,
         }),
       );
       aprovadas++;

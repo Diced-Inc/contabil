@@ -18,6 +18,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TablePanel } from "@/components/page-header";
 import { Valor } from "@/components/valor";
 import { cents, fmtData } from "@/lib/format";
+import { contaDeTitulo, type TipoSemTitulo } from "@/lib/sem-titulo";
+import { AvisoSemTitulo } from "./aviso-sem-titulo";
 import { ClassificarLote } from "./classificar-lote";
 import { PainelReclassificar, PainelTransacao } from "./painel-transacao";
 import type { ConciliadaLinha, TituloAberto, TransacaoLinha } from "./queries";
@@ -77,6 +79,14 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
   const [ignorar, setIgnorar] = useState(false);
   const [motivo, setMotivo] = useState("");
   const porOrigem = (o: string) => linhasSel.filter((t) => t.sugestaoOrigem === o).length;
+  const [ciente, setCiente] = useState(false);
+  // sugestões (regra/IA) direto em conta de título; só as da IA em Clientes pedem confirmação
+  const contaPorId = new Map(contas.map((c) => [c.id, c]));
+  const tipoSugestao = (t: TransacaoLinha) =>
+    t.sugestaoOrigem === "regra" || t.sugestaoOrigem === "ia" ? contaDeTitulo(contaPorId.get(t.sugestaoContaId ?? "")) : null;
+  const semTitulo = (tp: TipoSemTitulo) => linhasSel.filter((t) => tipoSugestao(t) === tp).length;
+  const iaClientes = linhasSel.filter((t) => t.sugestaoOrigem === "ia" && tipoSugestao(t) === "clientes").length;
+  const nSemTitulo = linhasSel.filter((t) => tipoSugestao(t)).length;
   const contagem = (o: string | null) => transacoes.filter((t) => t.sugestaoOrigem === o).length;
 
   const alternar = (id: string, marcado: boolean) =>
@@ -89,9 +99,13 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
 
   const aprovar = (minConfiancaIa?: number) =>
     iniciar(async () => {
-      const r = await aprovarEmLote(empresaId, selecionadas, { minConfiancaIa });
+      const r = await aprovarEmLote(empresaId, selecionadas, { minConfiancaIa, confirmarSemTitulo: ciente });
       if (r.aprovadas || r.puladas)
-        toast.success(r.puladas ? `${r.aprovadas} aprovadas · ${r.puladas} puladas (confiança baixa)` : `${r.aprovadas} aprovadas`);
+        toast.success(
+          [`${r.aprovadas} aprovadas`, r.puladas && `${r.puladas} puladas (confiança baixa)`, r.diretas && `${r.diretas} direto em conta de título`]
+            .filter(Boolean).join(" · "),
+        );
+      if (r.semTitulo) toast.warning(`${r.semTitulo} sugestão(ões) da IA em Clientes ficaram pendentes`, { description: "Sem título; confirme com “Sei o que estou fazendo” ou classifique na receita." });
       if (r.erros.length) toast.error(`${r.erros.length} com erro`, { description: r.erros.slice(0, 5).join("\n") });
       setSel(new Set());
       setConfirmarIa(false);
@@ -148,7 +162,7 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
     <>
       {todas.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <Button onClick={() => (porOrigem("ia") ? setConfirmarIa(true) : aprovar())}
+          <Button onClick={() => (porOrigem("ia") || nSemTitulo ? (setCiente(false), setConfirmarIa(true)) : aprovar())}
             disabled={ocupado || selecionadas.length === 0 || !todasAprovaveis}
             title={todasAprovaveis ? undefined : "Há transações selecionadas sem sugestão"}>
             <CheckCheck />
@@ -271,17 +285,37 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
       <Dialog open={confirmarIa} onOpenChange={(o) => !o && setConfirmarIa(false)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Aprovar sugestões da IA?</DialogTitle>
+            <DialogTitle>{porOrigem("ia") ? "Aprovar sugestões da IA?" : "Aprovar sugestões?"}</DialogTitle>
             <DialogDescription>
               {linhasSel.length} selecionadas: {porOrigem("regra")} por regra, {porOrigem("transferencia")} transferências,{" "}
               {porOrigem("ia")} por IA ({linhasSel.filter(confiancaBaixa).length} com confiança abaixo de 0,70)
             </DialogDescription>
           </DialogHeader>
+          {nSemTitulo > 0 && (
+            <div className="grid gap-2">
+              <p className="text-sm">
+                Direto em conta de título, sem título: {semTitulo("clientes")} em Clientes, {semTitulo("fornecedores")} em Fornecedores,{" "}
+                {semTitulo("impostos")} em impostos a recolher.
+                {semTitulo("clientes") > iaClientes && " As de Clientes por regra seguem a decisão da regra."}
+              </p>
+              <AvisoSemTitulo
+                tipos={iaClientes ? ["clientes"] : []}
+                qtd={iaClientes}
+                ciente={ciente}
+                onCiente={setCiente}
+              />
+              {iaClientes > 0 && !ciente && (
+                <p className="text-xs text-muted-foreground">Sem a confirmação, as {iaClientes} sugestões da IA em Clientes ficam pendentes.</p>
+              )}
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmarIa(false)} disabled={pendente}>Cancelar</Button>
-            <Button variant="outline" disabled={pendente} onClick={() => aprovar(MIN_CONFIANCA_IA)}>
-              Aprovar só confiança ≥ 0,70
-            </Button>
+            {porOrigem("ia") > 0 && (
+              <Button variant="outline" disabled={pendente} onClick={() => aprovar(MIN_CONFIANCA_IA)}>
+                Aprovar só confiança ≥ 0,70
+              </Button>
+            )}
             <Button disabled={pendente} onClick={() => aprovar()}>
               <CheckCheck />
               {pendente ? "Aprovando..." : "Aprovar todas"}

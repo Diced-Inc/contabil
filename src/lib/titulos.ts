@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { planoContas, titulos } from "@/db/schema";
+import { lancamentos, planoContas, titulos } from "@/db/schema";
 import { cents, fromCents, hoje, PAPEIS } from "./format";
-import { criarLancamento, estornarLancamento, type PartidaInput } from "./lancamentos";
+import { criarLancamento, dataNoMesAberto, estornarLancamento, mesesFechados, type PartidaInput } from "./lancamentos";
 
 export type TipoTitulo = "receber" | "pagar";
 export type Papel = keyof typeof PAPEIS;
@@ -43,7 +43,10 @@ export async function criarTitulo(tx: Tx, input: TituloInput) {
   return t;
 }
 
-/** Só título aberto; estorna o lançamento de competência (data de hoje) e marca cancelado. */
+/**
+ * Só título aberto; estorna o lançamento de competência na data dele enquanto o mês estiver aberto (senão hoje;
+ * hoje também fechado → pede para reabrir) e marca cancelado.
+ */
 export async function cancelarTitulo(tx: Tx, empresaId: string, id: string, usuarioId?: string | null) {
   const [t] = await tx
     .update(titulos)
@@ -51,7 +54,11 @@ export async function cancelarTitulo(tx: Tx, empresaId: string, id: string, usua
     .where(and(eq(titulos.id, id), eq(titulos.empresaId, empresaId), eq(titulos.status, "aberto")))
     .returning();
   if (!t) throw new Error("Título não encontrado ou não está em aberto");
-  if (t.lancamentoId) await estornarLancamento(tx, t.lancamentoId, hoje(), usuarioId);
+  if (t.lancamentoId) {
+    const [orig] = await tx.select({ data: lancamentos.data }).from(lancamentos).where(eq(lancamentos.id, t.lancamentoId));
+    const data = dataNoMesAberto(orig.data, hoje(), await mesesFechados(tx, empresaId), "cancelar o título");
+    await estornarLancamento(tx, t.lancamentoId, data, usuarioId);
+  }
   return t;
 }
 

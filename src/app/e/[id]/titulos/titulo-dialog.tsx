@@ -131,7 +131,7 @@ export function CancelarTituloDialog({ empresaId, titulo }: { empresaId: string;
         <DialogHeader>
           <DialogTitle>Cancelar o título de {titulo.contraparte}?</DialogTitle>
           <DialogDescription>
-            O lançamento de competência ({fmtValor(titulo.valor)}) será estornado com a data de hoje.
+            O lançamento de competência ({fmtValor(titulo.valor)}) será estornado na data dele enquanto o mês estiver aberto; com o mês fechado, na data de hoje.
           </DialogDescription>
         </DialogHeader>
         <Erro msg={erro} />

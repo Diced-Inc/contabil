@@ -1,7 +1,8 @@
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { contasBancarias, lancamentos, partidas, planoContas, regras, transacoesBancarias } from "@/db/schema";
-import { normalizarMemo, selecionarExemplos } from "./exemplos";
+import { vetadaParaIA } from "../sem-titulo";
+import { montarExemplos, normalizarMemo, selecionarExemplos } from "./exemplos";
 import { classificarLoteIA, type ExemploIA } from "./ia";
 import { aplicarTemplate, primeiraRegra } from "./regras";
 import { parearTransferencias } from "./transferencias";
@@ -20,7 +21,7 @@ export type ResultadoSugestao = {
   erros: string[];
 };
 
-/** Pool few-shot: conciliações aprovadas da empresa (memo → conta de contrapartida), da mais nova para a mais antiga. */
+/** Pool few-shot: conciliações aprovadas da empresa (memo → conta de contrapartida), da mais nova para a mais antiga; sem Clientes/impostos. */
 export async function exemplosAprovados(empresaId: string): Promise<ExemploIA[]> {
   const txs = await db
     .select({ memo: transacoesBancarias.memo, valor: transacoesBancarias.valor, lancamentoId: lancamentos.id, contaBanco: contasBancarias.contaContabilId })
@@ -32,16 +33,14 @@ export async function exemplosAprovados(empresaId: string): Promise<ExemploIA[]>
     .limit(MAX_POOL);
   if (!txs.length) return [];
   const ps = await db
-    .select({ lancamentoId: partidas.lancamentoId, contaId: partidas.contaId, codigo: planoContas.codigo, debito: partidas.debito, credito: partidas.credito })
+    .select({
+      lancamentoId: partidas.lancamentoId, contaId: partidas.contaId, codigo: planoContas.codigo, nome: planoContas.nome,
+      papel: planoContas.papel, debito: partidas.debito, credito: partidas.credito,
+    })
     .from(partidas)
     .innerJoin(planoContas, eq(planoContas.id, partidas.contaId))
     .where(inArray(partidas.lancamentoId, txs.map((t) => t.lancamentoId)));
-  return txs.flatMap((t) => {
-    const contra = ps
-      .filter((p) => p.lancamentoId === t.lancamentoId && p.contaId !== t.contaBanco)
-      .sort((a, b) => Math.max(Number(b.debito), Number(b.credito)) - Math.max(Number(a.debito), Number(a.credito)))[0];
-    return contra ? [{ memo: t.memo, valor: t.valor, contaCodigo: contra.codigo }] : [];
-  });
+  return montarExemplos(txs, ps);
 }
 
 /** Lotes de memos parecidos juntos (ordem pelo memo normalizado): os exemplos de cada lote ficam mais focados. */
@@ -80,7 +79,7 @@ export async function sugerirPendentes(
         or(isNull(transacoesBancarias.sugestaoOrigem), eq(transacoesBancarias.sugestaoOrigem, "ia")),
       )),
     db.select().from(regras).where(and(eq(regras.empresaId, empresaId), eq(regras.ativa, true))),
-    db.select({ id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, natureza: planoContas.natureza })
+    db.select({ id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, natureza: planoContas.natureza, papel: planoContas.papel })
       .from(planoContas)
       .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true))),
   ]);
@@ -126,7 +125,8 @@ export async function sugerirPendentes(
     return out;
   }
 
-  const contasIA = contas.map(({ codigo, nome, natureza }) => ({ codigo, nome, natureza }));
+  // Clientes e impostos a recolher ficam fora da lista: a validação de código da resposta garante que a IA não os sugere.
+  const contasIA = contas.filter((c) => !vetadaParaIA(c)).map(({ codigo, nome, natureza }) => ({ codigo, nome, natureza }));
   const idPorCodigo = new Map(contas.map((c) => [c.codigo, c.id]));
   const pool = await exemplosAprovados(empresaId);
   const fila = lotesIA(semIa.slice(0, maxIa));

@@ -15,6 +15,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Valor } from "@/components/valor";
 import { cents, fmtData, fromCents } from "@/lib/format";
 import { padraoComum, SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classificacao/regras";
+import { avisosSemTitulo } from "@/lib/sem-titulo";
+import { AvisoSemTitulo } from "./aviso-sem-titulo";
 import type { TransacaoLinha } from "./queries";
 
 const selectCls =
@@ -44,6 +46,9 @@ function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<P
   const [porMes, setPorMes] = useState(true);
   const [competencia, setCompetencia] = useState(ts[0].data.slice(0, 7));
   const [criaRegra, setCriaRegra] = useState(false);
+  const [ciente, setCiente] = useState(false);
+  const avisos = avisosSemTitulo([contas.find((c) => c.id === contaId)]);
+  const travado = avisos.includes("clientes") && !ciente;
   const [regra, setRegra] = useState<{ nome: string; tipoMatch: TipoMatch; padrao: string; sinal: Sinal }>(() => {
     const padrao = padraoComum(ts.map((t) => t.memo));
     return { nome: padrao.slice(0, 60), tipoMatch: "memo_contem", padrao, sinal: entrada ? "entrada" : "saida" };
@@ -54,8 +59,9 @@ function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<P
       const r = await classificarEmLote(empresaId, {
         transacaoIds: ts.map((t) => t.id), contaId: contaId ?? "", historicoTemplate: historico, documento,
         competencia: porMes ? null : competencia, criarRegra: criaRegra ? regra : undefined,
+        confirmarSemTitulo: avisos.includes("clientes") && ciente,
       });
-      if (r.aprovadas) toast.success(`${r.aprovadas} classificada(s).`);
+      if (r.aprovadas) toast.success(`${r.aprovadas} classificada(s)${avisos.length ? " direto em conta de título, sem título" : ""}.`);
       if (r.erros.length) toast.warning(`${r.erros.length} com erro`, { description: r.erros.slice(0, 5).join("\n") });
       if (!r.aprovadas) return;
       onDone();
@@ -96,6 +102,7 @@ function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<P
           <Label>Contrapartida ({entrada ? "crédito" : "débito"})</Label>
           <ContaSelect contas={contas} value={contaId} onChange={setContaId} />
         </div>
+        <AvisoSemTitulo tipos={avisos} ciente={ciente} onCiente={setCiente} qtd={ts.length} />
         <div className="grid gap-2">
           <Label htmlFor="lote-historico">Histórico</Label>
           <Input id="lote-historico" value={historico} onChange={(e) => setHistorico(e.target.value)} />
@@ -151,7 +158,7 @@ function Conteudo({ empresaId, transacoes: ts, contas, onClose, onDone }: Omit<P
             <p className="text-xs text-muted-foreground">A regra usa a contrapartida e o histórico acima.</p>
           </div>
         )}
-        <Button type="submit" disabled={pendente || !contaId}>
+        <Button type="submit" disabled={pendente || !contaId || travado}>
           <Check />
           {pendente ? "Aprovando..." : `Aprovar ${ts.length} classificações`}
         </Button>

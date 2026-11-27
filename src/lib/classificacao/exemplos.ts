@@ -1,4 +1,21 @@
+import { vetadaParaIA } from "../sem-titulo";
 import type { ExemploIA } from "./ia";
+
+type TxAprovada = { memo: string; valor: string; lancamentoId: string; contaBanco: string };
+type PartidaAprovada = { lancamentoId: string; contaId: string; codigo: string; nome: string; papel: string | null; debito: string; credito: string };
+
+/**
+ * Exemplo few-shot de cada conciliação aprovada: a maior contrapartida (fora o banco). Fica de fora a que usou conta
+ * que a IA não pode sugerir (Clientes, imposto a recolher): ensinaria o atalho sem título. Fornecedores fica.
+ */
+export function montarExemplos(txs: TxAprovada[], ps: PartidaAprovada[]): ExemploIA[] {
+  return txs.flatMap((t) => {
+    const contra = ps
+      .filter((p) => p.lancamentoId === t.lancamentoId && p.contaId !== t.contaBanco)
+      .sort((a, b) => Math.max(Number(b.debito), Number(b.credito)) - Math.max(Number(a.debito), Number(a.credito)))[0];
+    return contra && !vetadaParaIA(contra) ? [{ memo: t.memo, valor: t.valor, contaCodigo: contra.codigo }] : [];
+  });
+}
 
 /** Memo para comparação: sem acento, minúsculo, sem dígitos (datas, CNPJ, ids), só palavras de 2+ letras. */
 export function normalizarMemo(memo: string): string[] {

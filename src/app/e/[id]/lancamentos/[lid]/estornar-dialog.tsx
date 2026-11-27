@@ -12,9 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { hoje } from "@/lib/format";
 
-export function EstornarDialog({ empresaId, lancamentoId, numero }: { empresaId: string; lancamentoId: string; numero: number }) {
+/** dataSugerida: a do lançamento se o mês dele está aberto, senão hoje (calculada no servidor). */
+export function EstornarDialog({ empresaId, lancamentoId, numero, dataSugerida }: {
+  empresaId: string; lancamentoId: string; numero: number; dataSugerida: string;
+}) {
   const [aberta, setAberta] = useState(false);
   const [estado, enviar, pendente] = useActionState<EstadoForm, FormData>(estornar.bind(null, empresaId, lancamentoId), {});
   return (
@@ -26,7 +28,10 @@ export function EstornarDialog({ empresaId, lancamentoId, numero }: { empresaId:
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Estornar lançamento {numero}</DialogTitle>
-          <DialogDescription>Cria um lançamento com as partidas invertidas na data escolhida e marca este como estornado.</DialogDescription>
+          <DialogDescription>
+            Cria um lançamento com as partidas invertidas na data escolhida e marca este como estornado. A data sugerida é a do
+            lançamento enquanto o mês dele estiver aberto; com o mês fechado, hoje. Mês fechado não aceita estorno: reabra-o em Fechamento.
+          </DialogDescription>
         </DialogHeader>
         <form action={enviar} className="grid gap-4">
           {estado.erro && (
@@ -37,7 +42,7 @@ export function EstornarDialog({ empresaId, lancamentoId, numero }: { empresaId:
           )}
           <div className="grid gap-2">
             <Label htmlFor="data-estorno">Data do estorno</Label>
-            <Input id="data-estorno" name="data" type="date" required defaultValue={hoje()} />
+            <Input id="data-estorno" name="data" type="date" required defaultValue={dataSugerida} />
           </div>
           <Button type="submit" variant="destructive" disabled={pendente}>
             <Undo2 />
@@ -72,7 +77,7 @@ export function DesfazerConciliacaoDialog({ empresaId, transacaoId, numero }: { 
         <DialogHeader>
           <DialogTitle>Desfazer a conciliação do lançamento {numero}?</DialogTitle>
           <DialogDescription>
-            O lançamento é estornado com a data de hoje, a(s) transação(ões) voltam para pendente e o título baixado, se houver, volta a aberto.
+            O lançamento é estornado na data dele enquanto o mês estiver aberto (com o mês fechado, na data de hoje; se o mês atual também estiver fechado, reabra-o em Fechamento), a(s) transação(ões) voltam para pendente e o título baixado, se houver, volta a aberto.
           </DialogDescription>
         </DialogHeader>
         {erro && (

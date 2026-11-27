@@ -1,9 +1,12 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { contasBancarias, fechamentos, lancamentos, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
-import { cents, fmtCompetencia, fromCents, hoje, primeiroDiaDoMes } from "./format";
-import { criarLancamento, estornarLancamento, type PartidaInput } from "./lancamentos";
+import { contasBancarias, lancamentos, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
+import { cents, fromCents, hoje, primeiroDiaDoMes } from "./format";
+import { criarLancamento, dataNoMesAberto, estornarLancamento, mesesFechados, type PartidaInput } from "./lancamentos";
+import { contaDeTitulo, MSG_CONFIRMAR_CLIENTES } from "./sem-titulo";
 import { baixarTitulo } from "./titulos";
+
+export { dataNoMesAberto, mesesFechados };
 
 export type Contrapartida = { contaId: string; valor: string };
 export type NovaRegra = {
@@ -53,14 +56,15 @@ async function travarPendente(tx: Tx, empresaId: string, transacaoId: string) {
   return t;
 }
 
-/** Contas analíticas ativas da empresa. */
+/** Contas analíticas ativas da empresa (com papel, para o guard rail de título). */
 async function exigirContas(tx: Tx, empresaId: string, ids: string[]) {
   const unicos = [...new Set(ids)];
   const ok = await tx
-    .select({ id: planoContas.id })
+    .select({ id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, papel: planoContas.papel })
     .from(planoContas)
     .where(and(inArray(planoContas.id, unicos), eq(planoContas.empresaId, empresaId), eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true)));
   if (ok.length !== unicos.length) throw new Error("Conta inválida: use contas analíticas ativas desta empresa");
+  return ok;
 }
 
 const marcar = (tx: Tx, id: string, set: Partial<typeof transacoesBancarias.$inferInsert>) =>
@@ -71,9 +75,12 @@ export async function classificarTransacao(tx: Tx, input: {
   competencia?: string; criarRegra?: NovaRegra; usuarioId?: string | null;
   /** Só a reclassificação: data do novo lançamento (hoje, se o mês do extrato fechou), competência do extrato. */
   data?: string;
+  /** "Sei o que estou fazendo": direto em Clientes sem título (regra criada pelo contador também conta como decisão dele). */
+  confirmarSemTitulo?: boolean;
 }) {
   const t = await travarPendente(tx, input.empresaId, input.transacaoId);
-  await exigirContas(tx, input.empresaId, input.partidas.map((p) => p.contaId));
+  const contas = await exigirContas(tx, input.empresaId, input.partidas.map((p) => p.contaId));
+  if (!input.confirmarSemTitulo && contas.some((c) => contaDeTitulo(c) === "clientes")) throw new ErroSemTitulo();
   const l = await criarLancamento(tx, {
     empresaId: input.empresaId, data: input.data ?? t.data, dataPagamento: t.data,
     competencia: input.competencia ?? primeiroDiaDoMes(t.data),
@@ -83,6 +90,13 @@ export async function classificarTransacao(tx: Tx, input: {
   await marcar(tx, t.id, { status: "classificada", lancamentoId: l.id });
   if (input.criarRegra) await inserirRegra(tx, input.empresaId, input.criarRegra, input.partidas[0].contaId, input.historico);
   return l;
+}
+
+/** Classificação direta em Clientes sem a confirmação explícita. */
+export class ErroSemTitulo extends Error {
+  constructor() {
+    super(MSG_CONFIRMAR_CLIENTES);
+  }
 }
 
 export async function inserirRegra(tx: Tx, empresaId: string, regra: NovaRegra, contaId: string, historicoTemplate: string) {
@@ -164,22 +178,6 @@ export async function alterarIgnorada(tx: Tx, empresaId: string, transacaoId: st
   if (t.status !== (ignorar ? "pendente" : "ignorada"))
     throw new Error(ignorar ? "Só transações pendentes podem ser ignoradas" : "Transação não está ignorada");
   await marcar(tx, t.id, { status: ignorar ? "ignorada" : "pendente", sugestaoJustificativa: ignorar ? motivo || null : null });
-}
-
-/** Competências fechadas da empresa (mesma regra do trigger `periodo_fechado`). */
-async function mesesFechados(tx: Tx, empresaId: string) {
-  const fs = await tx.select({ c: fechamentos.competencia }).from(fechamentos).where(eq(fechamentos.empresaId, empresaId));
-  return new Set(fs.map((f) => f.c));
-}
-
-/**
- * A própria data se o mês está aberto (estorno e novo lançamento no mês do original, sem contar em dobro);
- * senão hoje; hoje também fechado → erro claro em vez da mensagem do trigger.
- */
-export function dataNoMesAberto(data: string, hoje: string, fechados: ReadonlySet<string>, acao: string) {
-  if (!fechados.has(primeiroDiaDoMes(data))) return data;
-  if (fechados.has(primeiroDiaDoMes(hoje))) throw new Error(`Reabra o mês ${fmtCompetencia(hoje)} em Fechamento para ${acao}`);
-  return hoje;
 }
 
 /**

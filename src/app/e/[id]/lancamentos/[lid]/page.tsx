@@ -9,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Carregando, PageHeader, TablePanel } from "@/components/page-header";
-import { ORIGEM_BADGE, cents, fmtCompetencia, fmtData, fmtValor, fromCents } from "@/lib/format";
-import type { RetratoLancamento } from "@/lib/lancamentos";
+import { db } from "@/db";
+import { ORIGEM_BADGE, cents, fmtCompetencia, fmtData, fmtValor, fromCents, hoje } from "@/lib/format";
+import { dataNoMesAberto, mesesFechados, type RetratoLancamento } from "@/lib/lancamentos";
 import { requireUser } from "@/supabase/server";
 import { getEmpresa } from "../../empresa";
 import { FormLancamento } from "../form-lancamento";
@@ -55,6 +56,12 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
   const editavel = l.origem === "manual" && l.status === "aprovado";
   const estornavel = l.status === "aprovado" && l.origem === "manual";
   const desfazerTx = l.origem === "conciliacao" && l.status === "aprovado" ? await transacaoDoLancamento(lid) : undefined;
+  let dataEstorno = hoje();
+  if (estornavel) {
+    try {
+      dataEstorno = dataNoMesAberto(l.data, hoje(), await mesesFechados(db, id), "estornar");
+    } catch {} // mês atual também fechado: fica hoje e a action explica que precisa reabrir
+  }
 
   if (editar === "1" && editavel) {
     const contas = await listarContasAnaliticas(id);
@@ -97,7 +104,7 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
                 Editar
               </Link>
             )}
-            {estornavel && <EstornarDialog empresaId={id} lancamentoId={lid} numero={l.numero} />}
+            {estornavel && <EstornarDialog empresaId={id} lancamentoId={lid} numero={l.numero} dataSugerida={dataEstorno} />}
             {desfazerTx && <DesfazerConciliacaoDialog empresaId={id} transacaoId={desfazerTx} numero={l.numero} />}
           </>
         }

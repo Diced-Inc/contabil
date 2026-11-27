@@ -6,8 +6,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
 import { lancamentos } from "@/db/schema";
-import { parseValorBR } from "@/lib/format";
-import { criarLancamento, editarLancamento, estornarLancamento, exigirSemTitulo } from "@/lib/lancamentos";
+import { fmtCompetencia, parseValorBR, primeiroDiaDoMes } from "@/lib/format";
+import { criarLancamento, editarLancamento, estornarLancamento, exigirSemTitulo, mesesFechados } from "@/lib/lancamentos";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
 
@@ -115,6 +115,8 @@ export async function estornar(empresaId: string, id: string, _prev: EstadoForm,
       if (l.origem === "apuracao") throw new Error("Lançamento de apuração: reverta a apuração no fechamento");
       if (l.origem === "estorno") throw new Error("Um estorno não pode ser estornado");
       await exigirSemTitulo(tx, id);
+      if ((await mesesFechados(tx, empresaId)).has(primeiroDiaDoMes(data.data)))
+        throw new Error(`O mês ${fmtCompetencia(data.data)} está fechado: escolha uma data em mês aberto ou reabra o mês em Fechamento`);
       return (await estornarLancamento(tx, id, data.data, user.id)).id;
     });
   } catch (e) {
