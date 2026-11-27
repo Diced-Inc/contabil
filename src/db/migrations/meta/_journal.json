@@ -127,6 +127,13 @@
       "when": 1795806519795,
       "tag": "0017_baixas",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795806534936,
+      "tag": "0018_titulos_sem_baixa_unica",
+      "breakpoints": true
     }
   ]
 }
