@@ -53,7 +53,9 @@ export async function cancelarTitulo(tx: Tx, empresaId: string, id: string, usua
   const [t] = await tx
     .update(titulos)
     .set({ status: "cancelado" })
-    .where(and(eq(titulos.id, id), eq(titulos.empresaId, empresaId), eq(titulos.status, "aberto")))
+    .where(and(eq(titulos.id, id), eq(titulos.empresaId, empresaId), eq(titulos.status, "aberto"),
+      // SQL cru: num update de tabela única o drizzle não qualifica a coluna (casaria b.id)
+      sql`not exists (select 1 from baixas b where b.titulo_id = "titulos"."id")`))
     .returning();
   if (!t) throw new Error("Título não encontrado ou não está em aberto (com baixa parcial, desfaça a conciliação da baixa antes)");
   if (t.lancamentoId) {
@@ -143,6 +145,10 @@ export async function baixarTitulos(tx: Tx, input: BaixaTitulos) {
 
 /** Desfaz as baixas de um lançamento (desfazer conciliação) e reabre os títulos. Retorna quantos títulos voltaram. */
 export async function removerBaixas(tx: Tx, lancamentoId: string) {
+  // trava os títulos em ordem de id (como baixarTitulos): uma baixa simultânea não recalcula com a baixa que sai
+  const afetados = await tx.selectDistinct({ id: baixas.tituloId }).from(baixas).where(eq(baixas.lancamentoId, lancamentoId));
+  if (afetados.length)
+    await tx.select({ id: titulos.id }).from(titulos).where(inArray(titulos.id, afetados.map((r) => r.id))).orderBy(titulos.id).for("update");
   const rs = await tx.delete(baixas).where(eq(baixas.lancamentoId, lancamentoId)).returning({ tituloId: baixas.tituloId });
   await recalcularStatus(tx, rs.map((r) => r.tituloId));
   return new Set(rs.map((r) => r.tituloId)).size;

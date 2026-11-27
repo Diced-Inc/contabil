@@ -249,9 +249,16 @@ export function statusPorBaixas(valorTitulo: string | number, somaBaixas: number
   return somaBaixas >= cents(valorTitulo) ? "quitado" : "parcial";
 }
 
-/** Data do reconhecimento: a do extrato se a competência é o mesmo mês; senão o 1º dia do mês de competência. */
-export const dataReconhecimento = (competencia: string, dataBanco: string) =>
-  primeiroDiaDoMes(dataBanco) === primeiroDiaDoMes(competencia) ? dataBanco : primeiroDiaDoMes(competencia);
+/**
+ * Data do reconhecimento: a do extrato se a competência é o mesmo mês; senão o 1º dia do mês de competência.
+ * Competência depois do extrato é adiantamento (Clientes credor/Fornecedores devedor até lá): recusa.
+ */
+export function dataReconhecimento(competencia: string, dataBanco: string) {
+  const c = primeiroDiaDoMes(competencia), b = primeiroDiaDoMes(dataBanco);
+  if (c > b)
+    throw new Error("Competência depois do mês do extrato é adiantamento: use Outra classificação em Adiantamentos de Clientes/a Fornecedores");
+  return b === c ? dataBanco : c;
+}
 
 /** Receita/despesa direta com competência em outro mês: reconhece (um título por contrapartida) e baixa na data do extrato. */
 export const competenciaSeparada = (competencia: string, dataBanco: string) => primeiroDiaDoMes(competencia) !== primeiroDiaDoMes(dataBanco);

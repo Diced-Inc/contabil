@@ -63,7 +63,7 @@ export function DesfazerConciliacaoDialog({ empresaId, transacaoId, numero }: { 
     iniciar(async () => {
       const r = await desfazerConciliacao(empresaId, transacaoId);
       if (r.erro) return setErro(r.erro);
-      toast.success("Conciliação desfeita.");
+      toast.success("Conciliação desfeita.", { description: r.aviso });
       setAberta(false);
       router.refresh();
     });

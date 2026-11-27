@@ -339,7 +339,7 @@ function Classificar({ t, contas, todasContas, fechados, pendente, enviar, inici
           <Input id="competencia" type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} />
         </div>
       </div>
-      {separada && (
+      {separada && comp < primeiroDiaDoMes(t.data) && (
         <div className="grid gap-2 rounded-lg border border-info/25 bg-info-soft/50 p-3">
           <p className="text-xs text-info">
             Competência {fmtCompetencia(comp)} ≠ mês do extrato: reconhece em {fmtCompetencia(comp)} (título

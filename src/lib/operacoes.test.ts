@@ -105,6 +105,12 @@ describe("lancamentosDireta", () => {
     expect(ls[1].partidas).toEqual([{ contaId: "tarifa", debito: "100.00" }, { contaId: "forn", credito: "100.00" }]);
     expect(ls[2]).toMatchObject({ data: "2025-11-05", partidas: [{ contaId: "forn", debito: "300.00" }, { contaId: "banco", credito: "300.00" }] });
   });
+  it("competência depois do mês do extrato (adiantamento) é recusada", () => {
+    expect(() => lancamentosDireta({
+      ...base, valorTx: "1500.00", dataBanco: "2025-11-10", contaPapelId: "cli", competencia: "2025-12-01",
+      contras: [{ contaId: "serv", valor: "1500.00" }],
+    })).toThrow(/adiantamento/);
+  });
   it("soma das linhas diferente do valor é recusada também com competência separada", () => {
     expect(() => lancamentosDireta({
       ...base, valorTx: "-300.00", dataBanco: "2025-11-05", contaPapelId: "forn", competencia: "2025-10-01",
