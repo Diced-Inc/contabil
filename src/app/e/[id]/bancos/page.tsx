@@ -16,7 +16,7 @@ export const maxDuration = 300;
 
 const TZ = "America/Sao_Paulo";
 const DESCRICAO =
-  "Conferência na data do saldo do último extrato: diferença = saldo do extrato − saldo contábil − pendentes − ignoradas. Zero quando tudo está conciliado.";
+  "Conferência na data do saldo do último extrato: diferença = saldo do extrato − saldo contábil − pendentes. Ignoradas (linhas de saldo, duplicadas) não entram. Zero quando tudo está conciliado.";
 const traco = <span className="text-muted-foreground">-</span>;
 const ORIGEM_BADGE = { ofx: "muted", csv: "info", pdf: "violet" } as const;
 const moeda = (v: string | null) => (v === null ? traco : fmtValor(v));

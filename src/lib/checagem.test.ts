@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { mesesSemLancamento, mesesSocioSemProLabore, naturezaInvertida, regrasPatrimoniais, resumir } from "./checagem";
+import { itemSaldoBanco, mesesSemLancamento, mesesSocioSemProLabore, naturezaInvertida, regrasPatrimoniais, resumir } from "./checagem";
+import { cents, fromCents } from "./format";
+import { diferencaSaldoBanco } from "./saldo-dia";
 
 const conta = (codigo: string, nome: string, natureza: "D" | "C", saldoAtual: string, tipo: "analitica" | "sintetica" = "analitica") => ({
   id: codigo, codigo, nome, natureza, tipo, saldoAtual,
@@ -120,5 +122,53 @@ describe("regrasPatrimoniais", () => {
       l("1.1.5.01", "Transferências entre Contas", "D", "0.00", "transferencias"),
     ], { ...base, totais: { ativo: 10000, passivoPl: -10000, fecha: true } });
     expect(ok.filter((i) => i.status !== "ok").map((i) => i.id)).toEqual([]);
+  });
+  it("item que falha descreve o problema; o que passa mantém o texto positivo", () => {
+    expect(st(r, "ativo-credor")?.titulo).toBe("Ativo total com saldo credor");
+    expect(st(r, "passivo-devedor")?.titulo).toBe("Passivo + PL com saldo devedor");
+    expect(st(r, "balanco")?.titulo).toBe("Balanço fecha só porque saldos invertidos se compensam");
+    expect(st(r, "capital-social")?.titulo).toBe("Capital social não registrado");
+    expect(st(r, "transferencias")?.titulo).toBe("Transferências entre contas com saldo (sem par)");
+    expect(st(r, "clientes-credor")?.titulo).toBe("Clientes com saldo credor");
+    const ok = regrasPatrimoniais([
+      l("1.1.1.02", "Bancos", "D", "100.00"), l("2.3.1.01", "Capital Subscrito", "C", "-100.00"),
+      l("1.1.2.01", "Clientes", "D", "0.00", "clientes"),
+    ], { ...base, totais: { ativo: 10000, passivoPl: -10000, fecha: true } });
+    expect(st(ok, "ativo-credor")?.titulo).toBe("Ativo total com saldo devedor");
+    expect(st(ok, "clientes-credor")?.titulo).toBe("Clientes sem saldo credor");
+    expect(st(ok, "capital-social")?.titulo).toBe("Capital social registrado");
+    // nenhum item reprovado usa o mesmo título do aprovado
+    for (const id of ["ativo-credor", "passivo-devedor", "balanco", "clientes-credor", "fornecedores-devedor", "aplicacoes-credor",
+      "impostos-devedor", "adiantamento-socios", "capital-social", "natureza"]) {
+      if (st(r, id)?.status !== "ok") expect(st(r, id)?.titulo, id).not.toBe(st(ok, id)?.titulo);
+    }
+  });
+});
+
+describe("saldo do banco × OFX", () => {
+  // TAVAPPS: OFX R$ 0,27, contábil R$ 0,27, 102 linhas "SALDO TOTAL DISPONÍVEL DIA" ignoradas somando ~R$ 607 mil
+  const linhasSaldo = Array.from({ length: 102 }, (_, i) => ({ valor: fromCents(500_000 + i * 1_000 + 17), status: "ignorada" as const }));
+  const ignoradas = linhasSaldo.reduce((s, l) => s + cents(l.valor), 0);
+  const b = (saldoContabil: string, pendentes: string) => {
+    const diferenca = fromCents(diferencaSaldoBanco({ saldoOfx: 27, saldoContabil: cents(saldoContabil), pendentes: cents(pendentes) }));
+    return { id: "itau", nome: "Itau Tavapps", saldoOfx: "0.27", saldoContabil, pendentes, diferenca, dataSaldo: "2026-11-25" };
+  };
+  it("linhas ignoradas não entram: contábil igual ao OFX confere", () => {
+    expect(ignoradas).toBeGreaterThan(50_000_000);
+    expect(diferencaSaldoBanco({ saldoOfx: 27, saldoContabil: 27, pendentes: 0 })).toBe(0);
+    const i = itemSaldoBanco(b("0.27", "0.00"), "/e/x", "2026-11-27");
+    expect(i).toMatchObject({ status: "ok", titulo: "Saldo bancário confere: Itau Tavapps" });
+    expect(i.detalhe).not.toMatch(/607/);
+  });
+  it("pendentes aparecem à parte e explicam a diferença", () => {
+    const i = itemSaldoBanco(b("100.27", "-100.00"), "/e/x", "2026-11-27");
+    expect(i.status).toBe("alerta");
+    expect(i.titulo).toMatch(/depois de conciliar as pendentes/);
+    expect(i.detalhe).toContain("pendentes (R$ -100,00)");
+  });
+  it("diferença sem explicação: não confere", () => {
+    const i = itemSaldoBanco(b("10.27", "0.00"), "/e/x", "2026-11-27");
+    expect(i).toMatchObject({ status: "alerta", titulo: "Saldo bancário não confere: Itau Tavapps" });
+    expect(i.detalhe).toContain("sobram R$ -10,00");
   });
 });

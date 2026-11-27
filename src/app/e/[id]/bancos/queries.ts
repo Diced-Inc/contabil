@@ -2,6 +2,7 @@ import { and, asc, desc, eq, like, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { contasBancarias, importacoes, lancamentos, partidas, planoContas, transacoesBancarias } from "@/db/schema";
 import { cents, fromCents } from "@/lib/format";
+import { diferencaSaldoBanco } from "@/lib/saldo-dia";
 
 /** Conta bancária da empresa (ou undefined). */
 export async function getContaBancaria(empresaId: string, contaBancariaId: string) {
@@ -41,7 +42,7 @@ export type ContaComSaldo = Awaited<ReturnType<typeof listarContasComSaldo>>[num
 
 /**
  * Conferência de saldo por conta bancária, na data do OFX com saldo mais recente:
- * diferenca = saldoOfx − saldoContabil − pendentes − ignoradas (0 quando tudo conciliado).
+ * diferenca = saldoOfx − saldoContabil − pendentes (0 quando tudo conciliado); ignoradas não entram (não são movimento).
  */
 /** `ate`: considera só OFX com saldo até essa data (checagem de um exercício passado). */
 export async function listarContasComSaldo(empresaId: string, ate?: string) {
@@ -103,7 +104,7 @@ export async function listarContasComSaldo(empresaId: string, ate?: string) {
     const pendentes = temData ? cents(l.pendentes ?? 0) : null;
     const ignoradas = temData ? cents(l.ignoradas ?? 0) : null;
     const saldoOfx = temData && l.saldoOfx !== null ? cents(l.saldoOfx) : null;
-    const diferenca = saldoOfx !== null ? saldoOfx - saldoContabil! - pendentes! - ignoradas! : null;
+    const diferenca = saldoOfx !== null ? diferencaSaldoBanco({ saldoOfx, saldoContabil: saldoContabil!, pendentes: pendentes! }) : null;
     const s = (c: number | null) => (c === null ? null : fromCents(c));
     return {
       ...l,

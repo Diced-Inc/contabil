@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { listarContasComSaldo } from "@/app/e/[id]/bancos/queries";
+import { listarContasComSaldo, type ContaComSaldo } from "@/app/e/[id]/bancos/queries";
 import { listarTransferenciasSemPar } from "@/app/e/[id]/conciliacao/queries";
 import { carregarEstado, mesesDoAno } from "./fechamento";
 import { cents, fmtCompetencia, fmtData, fmtValor, hoje, primeiroDiaDoMes } from "./format";
@@ -53,27 +53,34 @@ export function regrasPatrimoniais(linhas: LinhaRegra[], p: {
   });
   const porValor = (ls: LinhaRegra[]) => [...ls].sort((a, b) => Math.abs(s(b)) - Math.abs(s(a)));
   const classe = (c: string) => (l: LinhaRegra) => l.codigo === c || l.codigo.startsWith(`${c}.`);
-  const regra = (id: string, titulo: string, ruim: LinhaRegra[], status: "alerta" | "erro", ok: string, ruimTxt: string): ItemChecagem => ({
-    id, titulo, status: ruim.length ? status : "ok", detalhe: ruim.length ? ruimTxt : ok, itens: porValor(ruim).map((l) => linha(l)),
+  /** `titulos`: [quando passa, quando falha] — o título descreve o problema, não a condição esperada. */
+  const regra = (id: string, titulos: [string, string], ruim: LinhaRegra[], status: "alerta" | "erro", ok: string, ruimTxt: string): ItemChecagem => ({
+    id, titulo: titulos[ruim.length ? 1 : 0], status: ruim.length ? status : "ok", detalhe: ruim.length ? ruimTxt : ok,
+    itens: porValor(ruim).map((l) => linha(l)),
   });
   const itens: ItemChecagem[] = [];
   const { ativo, passivoPl } = p.totais;
 
   itens.push({
-    id: "ativo-credor", titulo: "Ativo total com saldo devedor", status: ativo < 0 ? "erro" : "ok",
+    id: "ativo-credor", titulo: ativo < 0 ? "Ativo total com saldo credor" : "Ativo total com saldo devedor", status: ativo < 0 ? "erro" : "ok",
     detalhe: ativo < 0
       ? `Ativo total credor de ${reais(ativo)}: há saldos credores no Ativo (ex.: recebimentos direto em Clientes, transferências sem par).`
       : `Ativo total devedor de ${reais(ativo)}.`,
     itens: ativo < 0 ? porValor(an.filter((l) => classe("1")(l) && s(l) < 0)).map((l) => linha(l)) : undefined,
   });
   itens.push({
-    id: "passivo-devedor", titulo: "Passivo + PL com saldo credor", status: passivoPl > 0 ? "erro" : "ok",
+    id: "passivo-devedor", titulo: passivoPl > 0 ? "Passivo + PL com saldo devedor" : "Passivo + PL com saldo credor", status: passivoPl > 0 ? "erro" : "ok",
     detalhe: passivoPl > 0 ? `Passivo + PL devedor de ${reais(passivoPl)}.` : `Passivo + PL credor de ${reais(passivoPl)}.`,
     itens: passivoPl > 0 ? porValor(an.filter((l) => classe("2")(l) && s(l) > 0)).map((l) => linha(l)) : undefined,
   });
+  const statusBalanco = !p.totais.fecha ? "erro" : ativo < 0 || passivoPl > 0 ? "alerta" : "ok";
   itens.push({
-    id: "balanco", titulo: "Balanço fecha (Ativo = Passivo + PL)",
-    status: !p.totais.fecha ? "erro" : ativo < 0 || passivoPl > 0 ? "alerta" : "ok",
+    id: "balanco",
+    titulo: {
+      ok: "Balanço fecha (Ativo = Passivo + PL)", erro: "Balanço não fecha (Ativo ≠ Passivo + PL)",
+      alerta: "Balanço fecha só porque saldos invertidos se compensam",
+    }[statusBalanco],
+    status: statusBalanco,
     detalhe: !p.totais.fecha
       ? `Ativo R$ ${fmtValor(ativo / 100)} × Passivo + PL R$ ${fmtValor(-passivoPl / 100)} (diferença R$ ${fmtValor((ativo + passivoPl) / 100)}).`
       : ativo < 0 || passivoPl > 0
@@ -86,14 +93,14 @@ export function regrasPatrimoniais(linhas: LinhaRegra[], p: {
   const marcar = (ls: LinhaRegra[]) => (ls.forEach((l) => cobertas.add(l.id)), ls);
   const papel = (x: string) => an.filter((l) => l.papel === x);
 
-  itens.push(regra("clientes-credor", "Clientes com saldo credor", marcar(papel("clientes").filter((l) => s(l) < 0)), "alerta",
+  itens.push(regra("clientes-credor", ["Clientes sem saldo credor", "Clientes com saldo credor"], marcar(papel("clientes").filter((l) => s(l) < 0)), "alerta",
     "Clientes sem saldo credor.", "Recebido mais do que foi faturado: recebimentos direto em Clientes sem título. Reclassifique para a receita ou registre os títulos."));
-  itens.push(regra("fornecedores-devedor", "Fornecedores com saldo devedor", marcar(papel("fornecedores").filter((l) => s(l) > 0)), "alerta",
+  itens.push(regra("fornecedores-devedor", ["Fornecedores sem saldo devedor", "Fornecedores com saldo devedor"], marcar(papel("fornecedores").filter((l) => s(l) > 0)), "alerta",
     "Fornecedores sem saldo devedor.", "Pago mais do que foi reconhecido: falta registrar as obrigações (títulos/NF) desses pagamentos."));
-  itens.push(regra("aplicacoes-credor", "Aplicações financeiras com saldo credor",
+  itens.push(regra("aplicacoes-credor", ["Aplicações financeiras sem saldo credor", "Aplicações financeiras com saldo credor"],
     marcar(an.filter((l) => classe("1")(l) && /aplica/.test(semAcento(l.nome)) && s(l) < 0)), "erro",
     "Nenhuma aplicação com saldo credor.", "Aplicação não pode ter saldo negativo: falta a aplicação inicial ou um resgate foi lançado a mais."));
-  itens.push(regra("impostos-devedor", "Impostos a recolher com saldo devedor",
+  itens.push(regra("impostos-devedor", ["Impostos a recolher sem saldo devedor", "Impostos a recolher com saldo devedor"],
     marcar(an.filter((l) => contaDeTitulo(l) === "impostos" && s(l) > 0)), "alerta",
     "Nenhum imposto a recolher com saldo devedor.", "Guia paga sem a obrigação registrada: lance a provisão do imposto na competência."));
 
@@ -103,7 +110,8 @@ export function regrasPatrimoniais(linhas: LinhaRegra[], p: {
     const total = transitoria.reduce((x, l) => x + s(l), 0);
     const tela = `${p.base}/conciliacao?ver=transferencias`;
     itens.push({
-      id: "transferencias", titulo: "Transferências entre contas zeradas", status: t.length ? "alerta" : "ok",
+      id: "transferencias", titulo: t.length ? "Transferências entre contas com saldo (sem par)" : "Transferências entre contas zeradas",
+      status: t.length ? "alerta" : "ok",
       detalhe: t.length
         ? `Saldo ${ladoSaldo(total)} de ${reais(total)} na conta de transferências, ${p.semPar?.length ?? 0} transação(ões) sem par. Cadastre a outra conta bancária e importe o extrato dela.`
         : "Conta de transferências zerada.",
@@ -120,14 +128,15 @@ export function regrasPatrimoniais(linhas: LinhaRegra[], p: {
   const capital = an.filter((l) => classe("2.3.1")(l) || /capital social/.test(semAcento(l.nome)));
   const totalCapital = capital.reduce((x, l) => x + s(l), 0);
   itens.push({
-    id: "capital-social", titulo: "Capital social registrado", status: totalCapital === 0 ? "alerta" : "ok",
+    id: "capital-social", titulo: totalCapital === 0 ? "Capital social não registrado" : "Capital social registrado",
+    status: totalCapital === 0 ? "alerta" : "ok",
     detalhe: totalCapital === 0
       ? "PL sem capital social: lance o saldo de abertura (capital subscrito e integralizado)."
       : `Capital social de ${reais(totalCapital)}.`,
     link: totalCapital === 0 ? `${p.base}/plano-de-contas` : undefined,
   });
 
-  itens.push(regra("adiantamento-socios", "Adiantamentos a sócios em aberto",
+  itens.push(regra("adiantamento-socios", ["Nenhum adiantamento a sócio em aberto", "Adiantamentos a sócios em aberto"],
     marcar(an.filter((l) => classe("1")(l) && /socio/.test(semAcento(l.nome)) && s(l) !== 0)), "alerta",
     "Nenhum adiantamento a sócio em aberto.", "Valores com sócio ainda não compensados: devolução, distribuição de lucros ou pró-labore."));
 
@@ -138,7 +147,7 @@ export function regrasPatrimoniais(linhas: LinhaRegra[], p: {
   };
   const outras = naturezaInvertida(an).filter((l) => !cobertas.has(l.id));
   itens.push({
-    id: "natureza", titulo: "Outros saldos contrários à natureza da conta",
+    id: "natureza", titulo: outras.length ? "Outros saldos contrários à natureza da conta" : "Nenhum outro saldo contrário à natureza da conta",
     status: outras.length ? "alerta" : "ok",
     detalhe: outras.length ? `${outras.length} conta(s) analítica(s) com saldo invertido, além das acima.` : "Nenhuma outra conta com saldo invertido.",
     itens: [...outras].sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })).map((l) => linha(l, grupoDe(l.codigo))),
@@ -176,6 +185,33 @@ export function resumir(itens: ItemChecagem[]) {
 
 const listaMeses = (ms: string[]) => ms.map(fmtCompetencia).join(", ");
 
+type BancoConferido = Pick<ContaComSaldo, "id" | "nome" | "saldoOfx" | "saldoContabil" | "pendentes" | "diferenca" | "dataSaldo">;
+
+/**
+ * Saldo contábil × OFX na data do último saldo. Diferença = OFX − contábil − pendentes; ignoradas (linhas de saldo do
+ * dia, duplicadas) não são movimento e não entram. Pendentes aparecem à parte: fecham quando conciliadas.
+ */
+export function itemSaldoBanco(b: BancoConferido, base: string, fim: string): ItemChecagem {
+  const item = { id: `banco-${b.id}`, link: `${base}/bancos` };
+  if (b.diferenca === null || b.dataSaldo === null)
+    return { ...item, titulo: `Saldo bancário sem OFX: ${b.nome}`, status: "alerta", detalhe: `Sem OFX com saldo até ${fmtData(fim)}.` };
+  const d = cents(b.diferenca);
+  const pend = cents(b.pendentes ?? 0);
+  const r = (v: string | null) => `R$ ${fmtValor(v ?? 0)}`;
+  const conta = `OFX de ${fmtData(b.dataSaldo)} ${r(b.saldoOfx)} × contábil ${r(b.saldoContabil)}`;
+  if (d === 0 && pend === 0)
+    return { ...item, titulo: `Saldo bancário confere: ${b.nome}`, status: "ok", detalhe: `${conta}. Ignoradas não entram na conta.` };
+  if (d === 0)
+    return {
+      ...item, titulo: `Saldo bancário confere depois de conciliar as pendentes: ${b.nome}`, status: "alerta",
+      detalhe: `${conta}; a diferença são as pendentes (${r(b.pendentes)}), que fecham quando conciliadas.`,
+    };
+  return {
+    ...item, titulo: `Saldo bancário não confere: ${b.nome}`, status: "alerta",
+    detalhe: `${conta}${pend ? ` e ${r(b.pendentes)} em pendentes` : ""}: sobram ${r(b.diferenca)} sem explicação (saldo inicial, lançamento fora do extrato ou movimento ignorado por engano).`,
+  };
+}
+
 /** Checagens de consistência do exercício `ano` (até hoje, se for o ano corrente). */
 export async function checar(empresaId: string, ano: number): Promise<ItemChecagem[]> {
   const ini = `${ano}-01-01`;
@@ -210,7 +246,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
       GROUP BY 1, 2, 3`),
     db.execute<{ tipo: "receber" | "pagar"; n: number }>(sql`
       SELECT tipo, count(*)::int AS n FROM titulos
-      WHERE empresa_id = ${empresaId} AND status = 'aberto' AND vencimento < ${hoje()} AND vencimento <= ${fim}
+      WHERE empresa_id = ${empresaId} AND status IN ('aberto', 'parcial') AND vencimento < ${hoje()} AND vencimento <= ${fim}
       GROUP BY tipo`),
     // primeiro movimento da empresa (lançamento ou OFX); sem nenhum, a data de cadastro
     db.execute<{ d: string }>(sql`
@@ -229,20 +265,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   itens.push(...regrasPatrimoniais(linhas, { base, ano, totais: bal.atual, semPar }));
 
   // 2. Bancos
-  for (const b of bancos.filter((b) => b.ativa)) {
-    const item = { id: `banco-${b.id}`, titulo: `Saldo bancário: ${b.nome}`, link: `${base}/bancos` };
-    if (b.diferenca === null) {
-      itens.push({ ...item, status: "alerta", detalhe: `Sem OFX até ${fmtData(fim)}.` });
-    } else {
-      const d = cents(b.diferenca);
-      itens.push({
-        ...item, status: d === 0 ? "ok" : "alerta",
-        detalhe: d === 0
-          ? `Saldo contábil confere com o OFX de ${fmtData(b.dataSaldo!)} (descontados pendentes e ignoradas).`
-          : `Diferença de R$ ${fmtValor(b.diferenca)} entre saldo OFX (R$ ${fmtValor(b.saldoOfx!)}) e contábil (R$ ${fmtValor(b.saldoContabil!)}) + pendentes + ignoradas.`,
-      });
-    }
-  }
+  for (const b of bancos.filter((b) => b.ativa)) itens.push(itemSaldoBanco(b, base, fim));
 
   // 3. Pendentes
   const pend = [...pendentes];
@@ -250,7 +273,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   const nFechados = emFechados.reduce((s, p) => s + p.n, 0);
   const nTotal = pend.reduce((s, p) => s + p.n, 0);
   itens.push({
-    id: "pendentes", titulo: "Transações pendentes de conciliação",
+    id: "pendentes", titulo: nTotal ? "Transações pendentes de conciliação" : "Nenhuma transação pendente de conciliação",
     status: nFechados ? "erro" : nTotal ? "alerta" : "ok",
     detalhe: nFechados
       ? `${nFechados} pendente(s) em meses fechados (${listaMeses(emFechados.map((p) => p.mes).sort())}); ${nTotal} no período.`
@@ -262,7 +285,8 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   const resultado = linhas.filter((l) => l.tipo === "analitica" && /^3(\.|$)/.test(l.codigo) && cents(l.saldoAtual) !== 0);
   if (estado.apurados.has(ano)) {
     itens.push({
-      id: "resultado-zerado", titulo: "Contas de resultado zeradas após a apuração",
+      id: "resultado-zerado",
+      titulo: resultado.length ? "Contas de resultado com saldo após a apuração" : "Contas de resultado zeradas após a apuração",
       status: resultado.length ? "erro" : "ok",
       detalhe: resultado.length ? `${resultado.length} conta(s) da classe 3 com saldo após a apuração.` : "Todas as contas da classe 3 estão zeradas.",
       itens: resultado.slice(0, 10).map((l) => ({
@@ -271,7 +295,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
     });
   } else {
     itens.push({
-      id: "resultado-zerado", titulo: "Contas de resultado zeradas após a apuração", status: "ok",
+      id: "resultado-zerado", titulo: `Exercício ${ano} ainda não apurado`, status: "ok",
       detalhe: `Exercício ${ano} ainda não apurado: o Balanço é provisório até a apuração.`,
     });
   }
@@ -279,7 +303,10 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   // 6. Sem documento
   const nSemDoc = semDoc[0]?.n ?? 0;
   itens.push({
-    id: "sem-documento", titulo: `Lançamentos sem documento a partir de R$ ${fmtValor(LIMITE_SEM_DOCUMENTO)}`,
+    id: "sem-documento",
+    titulo: nSemDoc
+      ? `Lançamentos sem documento a partir de R$ ${fmtValor(LIMITE_SEM_DOCUMENTO)}`
+      : `Lançamentos a partir de R$ ${fmtValor(LIMITE_SEM_DOCUMENTO)} com documento`,
     status: nSemDoc ? "alerta" : "ok",
     detalhe: nSemDoc ? `${nSemDoc} lançamento(s) sem número de documento.` : "Todos os lançamentos relevantes têm documento.",
     link: nSemDoc ? `${base}/lancamentos?de=${ini}&ate=${fim}&semdoc=${LIMITE_SEM_DOCUMENTO}` : undefined,
@@ -290,7 +317,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
     [...socio].map((s) => ({ ...s, socio: cents(s.socio), proLabore: cents(s.prolabore) })),
   ).sort();
   itens.push({
-    id: "socio", titulo: "Pagamentos a sócio sem pró-labore no mês",
+    id: "socio", titulo: semPL.length ? "Pagamentos a sócio sem pró-labore no mês" : "Pró-labore em todo mês com pagamento a sócio",
     status: semPL.length ? "alerta" : "ok",
     detalhe: semPL.length
       ? `Saída a sócio sem lançamento de pró-labore em ${listaMeses(semPL)}.`
@@ -300,7 +327,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   // 8. Meses sem lançamento
   const vazios = mesesSemLancamento(ano, [...porMes].map((m) => m.mes), { ate: fim, inicio: inicio[0]?.d ?? ini, hoje: hoje() });
   itens.push({
-    id: "meses-vazios", titulo: "Meses sem lançamentos",
+    id: "meses-vazios", titulo: vazios.length ? "Meses sem lançamentos" : "Todos os meses com lançamentos",
     status: vazios.length ? "alerta" : "ok",
     detalhe: vazios.length ? `Sem nenhum lançamento: ${listaMeses(vazios)}.` : "Todos os meses do período têm lançamentos.",
   });
@@ -310,7 +337,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   const nVenc = venc.reduce((s, v) => s + v.n, 0);
   const qtd = (tp: string) => venc.find((v) => v.tipo === tp)?.n ?? 0;
   itens.push({
-    id: "titulos-vencidos", titulo: "Títulos vencidos em aberto",
+    id: "titulos-vencidos", titulo: nVenc ? "Títulos vencidos em aberto" : "Nenhum título vencido em aberto",
     status: nVenc ? "alerta" : "ok",
     detalhe: nVenc ? `${qtd("receber")} a receber e ${qtd("pagar")} a pagar vencidos.` : "Nenhum título vencido em aberto.",
     link: nVenc ? `${base}/titulos?tipo=${qtd("receber") ? "receber" : "pagar"}` : undefined,
