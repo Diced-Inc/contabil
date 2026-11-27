@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { contasBancarias, lancamentos, partidas, planoContas, regras, transacoesBancarias } from "@/db/schema";
+import { operacaoSugerida } from "../operacoes";
 import { vetadaParaIA } from "../sem-titulo";
 import { montarExemplos, normalizarMemo, selecionarExemplos } from "./exemplos";
 import { classificarLoteIA, type ExemploIA } from "./ia";
@@ -97,7 +98,7 @@ export async function sugerirPendentes(
       if (!r) continue;
       await tx.update(transacoesBancarias).set({
         sugestaoContaId: r.contaId, sugestaoRegraId: r.id, sugestaoOrigem: "regra", sugestaoConfianca: "1.00",
-        sugestaoHistorico: aplicarTemplate(r.historicoTemplate, t), sugestaoJustificativa: null,
+        sugestaoHistorico: aplicarTemplate(r.historicoTemplate, t), sugestaoJustificativa: null, sugestaoOperacao: null,
       }).where(eq(transacoesBancarias.id, t.id));
       resolvidas.add(t.id);
       out.regras++;
@@ -109,7 +110,7 @@ export async function sugerirPendentes(
       for (const [eu, par] of [[sId, eId], [eId, sId]] as const) {
         await tx.update(transacoesBancarias).set({
           sugestaoContaId: porId.get(par)!.contaContabilBanco, sugestaoRegraId: null, sugestaoOrigem: "transferencia",
-          sugestaoConfianca: "0.90", sugestaoHistorico: "Transferência entre contas", sugestaoJustificativa: null, transferenciaParId: par,
+          sugestaoConfianca: "0.90", sugestaoHistorico: "Transferência entre contas", sugestaoJustificativa: null, sugestaoOperacao: "transferencia", transferenciaParId: par,
         }).where(eq(transacoesBancarias.id, eu));
         resolvidas.add(eu);
       }
@@ -128,6 +129,7 @@ export async function sugerirPendentes(
   // Clientes e impostos a recolher ficam fora da lista: a validação de código da resposta garante que a IA não os sugere.
   const contasIA = contas.filter((c) => !vetadaParaIA(c)).map(({ codigo, nome, natureza }) => ({ codigo, nome, natureza }));
   const idPorCodigo = new Map(contas.map((c) => [c.codigo, c.id]));
+  const porCodigo = new Map(contas.map((c) => [c.codigo, c]));
   const pool = await exemplosAprovados(empresaId);
   const fila = lotesIA(semIa.slice(0, maxIa));
 
@@ -142,6 +144,8 @@ export async function sugerirPendentes(
           const feitas = await db.update(transacoesBancarias).set({
             sugestaoContaId: idPorCodigo.get(s.contaCodigo)!, sugestaoRegraId: null, sugestaoOrigem: "ia",
             sugestaoConfianca: s.confianca.toFixed(2), sugestaoHistorico: s.historico, sugestaoJustificativa: s.justificativa,
+            // operação incompatível com o sinal/conta cai na derivada da conta
+            sugestaoOperacao: operacaoSugerida(s.operacao, porCodigo.get(s.contaCodigo), Number(lote[i].valor) > 0),
           }).where(and(eq(transacoesBancarias.id, lote[i].id), eq(transacoesBancarias.status, "pendente"), isNull(transacoesBancarias.sugestaoOrigem)))
             .returning({ id: transacoesBancarias.id });
           out.ia += feitas.length;

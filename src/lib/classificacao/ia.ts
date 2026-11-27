@@ -3,7 +3,13 @@ import Anthropic from "@anthropic-ai/sdk";
 export type ContaIA = { codigo: string; nome: string; natureza: "D" | "C" };
 export type ExemploIA = { memo: string; valor: string; contaCodigo: string };
 export type TransacaoIA = { data: string; valor: string; memo: string };
-export type SugestaoIA = { contaCodigo: string; confianca: number; historico: string; justificativa: string };
+export type SugestaoIA = { contaCodigo: string; confianca: number; historico: string; justificativa: string; operacao: string };
+
+/** Operações que a IA pode sugerir (sem baixa a receber: ela não sabe se há título). */
+export const OPERACOES_IA = [
+  "receita_direta", "despesa_direta", "baixa_pagar", "transferencia", "adiantamento_socio", "distribuicao_lucros",
+  "emprestimo", "estorno", "a_identificar", "outra",
+] as const;
 
 // Clientes e impostos a recolher nem entram na lista de contas (pipeline): sem título/guia, a IA não pode baixá-los.
 const SYSTEM = `Você é um contador brasileiro classificando movimentações de extrato bancário de uma pequena empresa (regime de competência, ITG 1000).
@@ -15,6 +21,7 @@ Para cada movimentação da lista, escolha a conta contábil de contrapartida. R
 - Transferência entre contas da própria empresa (nome ou CNPJ da empresa no memo) vai para a conta de transferências entre contas, se houver; aporte/empréstimo de sócio ou pagamento a sócio sem finalidade clara: confiança baixa (<= 0.5) e justifique.
 - Se não der para identificar a operação, escolha a conta mais provável com confiança baixa (<= 0.3) e diga na justificativa o que falta saber.
 - Exceção: se uma classificação já aprovada pelo contador nesta empresa tem memo praticamente igual (mesma contraparte, mesmo tipo de operação) e o mesmo sinal, siga essa conta com confiança alta (>= 0.85), mesmo nos casos acima; o contador já decidiu como tratar essa contraparte.
+Operação (campo operacao): receita_direta (receita recebida), despesa_direta (custo/despesa paga), baixa_pagar (boleto ou PIX a pessoa física em Fornecedores), transferencia (entre contas da própria empresa), adiantamento_socio, distribuicao_lucros, emprestimo (tomado, parcela ou juros), estorno (devolução ou estorno de despesa/receita), a_identificar (não dá para saber a operação: confiança <= 0.3), outra (aplicação financeira, imobilizado e demais). A conta escolhida precisa caber na operação.
 Use só códigos da lista. Histórico curto, no padrão contábil ("Pagamento tarifa bancária", "Recebimento de serviços XYZ"). Justificativa: até 15 palavras.
 Responda chamando a ferramenta classificar uma única vez, com um item para cada movimentação (n = número da movimentação na lista).`;
 
@@ -32,10 +39,11 @@ const TOOL: Anthropic.Tool = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["n", "conta_codigo", "confianca", "historico", "justificativa"],
+          required: ["n", "conta_codigo", "operacao", "confianca", "historico", "justificativa"],
           properties: {
             n: { type: "integer", description: "Número da movimentação, como na lista" },
             conta_codigo: { type: "string", description: "Código da conta de contrapartida, exatamente como na lista" },
+            operacao: { type: "string", enum: [...OPERACOES_IA], description: "Operação que a movimentação representa" },
             confianca: { type: "number", description: "Confiança de 0 a 1" },
             historico: { type: "string" },
             justificativa: { type: "string" },
@@ -86,12 +94,12 @@ export async function classificarLoteIA(
     if (!tu) continue;
     const r = new Map<number, SugestaoIA>();
     const repetidos = new Set<number>();
-    for (const it of (tu.input as { itens: { n: number; conta_codigo: string; confianca: number; historico: string; justificativa: string }[] }).itens) {
+    for (const it of (tu.input as { itens: { n: number; conta_codigo: string; operacao: string; confianca: number; historico: string; justificativa: string }[] }).itens) {
       const i = it.n - 1;
       if (!Number.isInteger(i) || i < 0 || i >= itens.length || !codigos.has(it.conta_codigo)) continue;
       if (r.has(i)) repetidos.add(i);
       const confianca = Number.isFinite(it.confianca) ? Math.min(1, Math.max(0, it.confianca)) : 0;
-      r.set(i, { contaCodigo: it.conta_codigo, confianca, historico: it.historico, justificativa: it.justificativa });
+      r.set(i, { contaCodigo: it.conta_codigo, confianca, historico: it.historico, justificativa: it.justificativa, operacao: it.operacao });
     }
     for (const i of repetidos) r.delete(i); // resposta ambígua: fica para a próxima rodada
     return r;
