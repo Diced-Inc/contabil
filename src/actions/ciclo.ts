@@ -18,6 +18,7 @@ import { lerGuiaPdf, type Guia as GuiaLida } from "@/lib/das";
 import { emailExtratoPorFora, emailExtratoRecebido, emailGuiaPaga, emailGuiasDisponiveis, type Email } from "@/lib/email";
 import { fmtCnpj, hoje, parseValorBR } from "@/lib/format";
 import { arquivoGuia, rotuloGuia, tipoDetectado, TIPOS_GUIA, type TipoGuia } from "@/lib/guias";
+import { atualizarTituloDaGuia, cancelarTituloDaGuia, criarTituloDaGuia } from "@/lib/guia-titulo";
 import { requireMembro, requireUser } from "@/supabase/server";
 import type { User } from "@supabase/supabase-js";
 
@@ -402,18 +403,35 @@ const guiaSchema = z.object({
   codigoReceita: z.string().trim().max(20).transform((s) => s || null),
 });
 export type DadosGuia = z.input<typeof guiaSchema>;
+const contasGuiaSchema = z.object({ obrigacaoId: z.uuid("Escolha a conta da obrigação."), despesaId: z.uuid("Escolha a conta da despesa.").nullable() }).nullish();
+export type ContasGuia = z.input<typeof contasGuiaSchema>;
+
+/** Erro do título da guia (validação, trigger) como recusa da transição: o mudarCiclo devolve a mensagem em vez de 500. */
+async function obrigacao<T>(fn: () => Promise<T>) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof TransicaoInvalida) throw e;
+    const err = e as { message?: string; cause?: { message?: string } };
+    throw new TransicaoInvalida((err.cause?.message ?? err.message ?? "Erro ao registrar a obrigação da guia.").replace(/^error:s*/i, ""));
+  }
+}
 
 /**
  * Anexa (com `path` do upload) ou edita (com `guiaId`) uma guia do mês. Anexada fica como rascunho até "Concluir mês e enviar guias".
- * Guia paga não muda; mês encerrado não aceita mudanças.
+ * Guia paga não muda; mês encerrado não aceita mudanças. Já no upload a guia vira título a pagar (obrigação) na
+ * competência; editar ajusta o título (estorno + novo, mês aberto).
  */
 export async function salvarGuia(
   empresaId: string,
   competencia: string,
   alvo: { path: string } | { guiaId: string },
   dados: DadosGuia,
-): Promise<Resultado> {
-  await requireUser();
+  contasGuia?: ContasGuia,
+): Promise<Resultado<{ aviso?: string }>> {
+  const user = await requireUser();
+  const cg = contasGuiaSchema.safeParse(contasGuia);
+  if (!cg.success) return { erro: cg.error.issues[0].message };
   if (!uuid.safeParse(empresaId).success || !competenciaSchema.safeParse(competencia).success) return { erro: "Competência inválida." };
   const r = guiaSchema.safeParse(dados);
   if (!r.success) return { erro: r.error.issues[0].message };
@@ -422,30 +440,37 @@ export async function salvarGuia(
     if (erro) return { erro };
   } else if (!uuid.safeParse(alvo.guiaId).success) return { erro: "Guia não encontrada." };
 
+  const titulo: { aviso?: string } = {};
   const m = await mudarCiclo(empresaId, competencia, "editar_guia", async (c, tx) => {
+    const p = { empresaId, competencia, contas: cg.data, usuarioId: user.id };
     if ("path" in alvo) {
-      await tx.insert(guias).values({ ...r.data, cicloId: c.id, empresaId, path: alvo.path }).onConflictDoNothing();
+      const [g] = await tx.insert(guias).values({ ...r.data, cicloId: c.id, empresaId, path: alvo.path }).onConflictDoNothing().returning();
+      if (g) Object.assign(titulo, await obrigacao(() => criarTituloDaGuia(tx, { ...p, guia: g })));
     } else {
       const [g] = await tx
         .update(guias)
         .set(r.data)
         .where(and(eq(guias.id, alvo.guiaId), eq(guias.cicloId, c.id), isNull(guias.pagoEm)))
-        .returning({ id: guias.id });
+        .returning();
       if (!g) throw new TransicaoInvalida("Guia não encontrada ou já paga.");
+      Object.assign(titulo, await obrigacao(() => atualizarTituloDaGuia(tx, { ...p, guia: g })));
     }
     return {};
   });
   if ("erro" in m) return m;
   revalidar(empresaId);
-  return { ok: true };
+  return { ok: true, aviso: titulo.aviso };
 }
 
-/** Remove uma guia que ainda não foi enviada ao cliente (registro e PDF). */
+/** Remove uma guia que ainda não foi enviada ao cliente (registro e PDF) e cancela a obrigação dela (estorno). */
 export async function removerGuia(empresaId: string, guiaId: string): Promise<Resultado> {
-  await requireUser();
+  const user = await requireUser();
   const g = await guiaDa(empresaId, guiaId);
   if (!g) return { erro: "Guia não encontrada." };
   const m = await mudarCiclo(empresaId, g.competencia, "editar_guia", async (c, tx) => {
+    const [rascunho] = await tx.select({ id: guias.id }).from(guias)
+      .where(and(eq(guias.id, guiaId), eq(guias.cicloId, c.id), isNull(guias.enviadoEm)));
+    if (rascunho) await obrigacao(() => cancelarTituloDaGuia(tx, empresaId, guiaId, user.id));
     const [x] = await tx
       .delete(guias)
       .where(and(eq(guias.id, guiaId), eq(guias.cicloId, c.id), isNull(guias.enviadoEm)))
