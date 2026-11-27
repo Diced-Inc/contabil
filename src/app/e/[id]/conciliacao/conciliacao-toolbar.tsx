@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCheck, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Square, Undo2 } from "lucide-react";
+import { Ban, CheckCheck, CircleStop, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { aprovarEmLote, desfazerConciliacao, desfazerEmLote, ignorarEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
 import { Input } from "@/components/ui/input";
@@ -173,7 +173,7 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
                 parar.current = true;
                 setIa((x) => x && { ...x, parando: true });
               }}>
-              <Square />
+              <CircleStop />
               {ia.parando ? "Parando…" : "Parar"}
             </Button>
           )}
