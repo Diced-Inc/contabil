@@ -3,9 +3,11 @@
 import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCheck, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Undo2 } from "lucide-react";
+import { Ban, CheckCheck, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
-import { aprovarEmLote, desfazerConciliacao, desfazerEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
+import { aprovarEmLote, desfazerConciliacao, desfazerEmLote, ignorarEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { ContaOpcao } from "@/components/conta-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +68,8 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
   const sinalMisto = new Set(linhasSel.map((t) => cents(t.valor) > 0)).size > 1;
   const [lote, setLote] = useState(false);
   const [confirmarIa, setConfirmarIa] = useState(false);
+  const [ignorar, setIgnorar] = useState(false);
+  const [motivo, setMotivo] = useState("");
   const porOrigem = (o: string) => linhasSel.filter((t) => t.sugestaoOrigem === o).length;
   const contagem = (o: string | null) => transacoes.filter((t) => t.sugestaoOrigem === o).length;
 
@@ -85,6 +89,16 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
       if (r.erros.length) toast.error(`${r.erros.length} com erro`, { description: r.erros.slice(0, 5).join("\n") });
       setSel(new Set());
       setConfirmarIa(false);
+      router.refresh();
+    });
+
+  const ignorarSelecionadas = () =>
+    iniciar(async () => {
+      const r = await ignorarEmLote(empresaId, selecionadas, motivo);
+      if (r.ignoradas) toast.success(`${r.ignoradas} ignoradas`);
+      if (r.erros.length) toast.error(`${r.erros.length} com erro`, { description: r.erros.slice(0, 5).join("\n") });
+      setSel(new Set());
+      setIgnorar(false);
       router.refresh();
     });
 
@@ -110,6 +124,10 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
             title={sinalMisto ? "Selecione só entradas ou só saídas" : undefined}>
             <ListChecks />
             Classificar selecionadas ({selecionadas.length})
+          </Button>
+          <Button variant="outline" onClick={() => (setMotivo(""), setIgnorar(true))} disabled={pendente || selecionadas.length === 0}>
+            <Ban />
+            Ignorar selecionadas ({selecionadas.length})
           </Button>
           <Button variant="outline" onClick={sugerir} disabled={pendente}>
             <Sparkles />
@@ -187,6 +205,25 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
         onClose={() => setLote(false)}
         onDone={() => setSel(new Set())}
       />
+      <Dialog open={ignorar} onOpenChange={(o) => !o && !pendente && setIgnorar(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ignorar {selecionadas.length} {selecionadas.length === 1 ? "transação" : "transações"}?</DialogTitle>
+            <DialogDescription>Não geram lançamento. Podem ser reativadas na aba Ignoradas.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="motivo-lote">Motivo (opcional)</Label>
+            <Input id="motivo-lote" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: saldo do dia, não é movimentação" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIgnorar(false)} disabled={pendente}>Cancelar</Button>
+            <Button disabled={pendente} onClick={ignorarSelecionadas}>
+              <Ban />
+              {pendente ? "Ignorando..." : "Ignorar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={confirmarIa} onOpenChange={(o) => !o && setConfirmarIa(false)}>
         <DialogContent>
           <DialogHeader>

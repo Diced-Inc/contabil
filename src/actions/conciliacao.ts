@@ -113,6 +113,26 @@ export async function ignorarTransacao(empresaId: string, transacaoId: string, m
   return executar(empresaId, () => db.transaction((tx) => alterarIgnorada(tx, empresaId, transacaoId, true, motivo?.trim())));
 }
 
+/** Ignora várias pendentes (ex.: linhas "SALDO TOTAL DISPONÍVEL DIA" do extrato); cada uma na sua transação do banco. */
+export async function ignorarEmLote(empresaId: string, transacaoIds: string[], motivo?: string): Promise<{ ignoradas: number; erros: string[] }> {
+  await requireUser();
+  if (!empresaValida(empresaId)) return { ignoradas: 0, erros: ["Empresa inválida."] };
+  const ids = z.array(z.uuid()).safeParse(transacaoIds);
+  if (!ids.success || !ids.data.length) return { ignoradas: 0, erros: ["Nenhuma transação selecionada."] };
+  let ignoradas = 0;
+  const erros: string[] = [];
+  for (const id of new Set(ids.data)) {
+    try {
+      await db.transaction((tx) => alterarIgnorada(tx, empresaId, id, true, motivo?.trim().slice(0, 500)));
+      ignoradas++;
+    } catch (e) {
+      erros.push(`${id.slice(0, 8)}: ${msg(e)}`);
+    }
+  }
+  revalidatePath(`/e/${empresaId}`, "layout");
+  return { ignoradas, erros };
+}
+
 export async function reativarTransacao(empresaId: string, transacaoId: string): Promise<EstadoForm> {
   if (!uuid.safeParse(transacaoId).success) return { erro: "Transação inválida." };
   return executar(empresaId, () => db.transaction((tx) => alterarIgnorada(tx, empresaId, transacaoId, false)));
