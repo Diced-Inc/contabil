@@ -319,7 +319,7 @@ export function lancamentosDireta(p: {
 
 export type TituloRankeavel = { contraparte: string; descricao?: string; saldo: string; vencimento: string | null; competencia: string };
 /** Memo de pagamento de guia de imposto (DAS, DARF, "RECEITA FED"...). */
-export const MEMO_IMPOSTO = /(das|darf|receita fedw*|simples nacional|pgdasw*|dctfweb|sefaz|tributo)/i;
+export const MEMO_IMPOSTO = /\b(das|darf|receita fed\w*|simples nacional|pgdas\w*|dctfweb|sefaz|tributos?)\b/i;
 const tokens = (s: string) => new Set(norm(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
 const dias = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
 

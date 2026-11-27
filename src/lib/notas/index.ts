@@ -15,8 +15,13 @@ export type OrigemNota = "nfe" | "nfse";
 export type NotaLida = {
   origem: OrigemNota;
   layout: "NF-e" | "NFS-e Nacional" | "NFS-e ABRASF";
-  /** Chave contra duplicidade: NF-e 44 posições; NFS-e nacional a chave de acesso (50); ABRASF emitente||número. */
+  /**
+   * Chave contra duplicidade, a mesma para XML e cadastro manual: emitente|série|número (sem zeros à esquerda).
+   * NFS-e não tem série (fica vazia).
+   */
   chave: string;
+  /** Chave de acesso do XML (NF-e 44 posições, NFS-e nacional 50), quando houver. */
+  chaveAcesso: string | null;
   numero: string; serie: string | null;
   /** "YYYY-MM-DD" */
   emissao: string;
@@ -76,7 +81,7 @@ function descontos(bruto: number, incond: number, cond: number, avisos: string[]
 function lerNfe(raiz: No): NotaLida {
   const inf = buscar(raiz, "infNFe")!;
   const ide = no(inf, "ide");
-  const chave = documento((inf.attrs.Id ?? "").replace(/^NFe/, "")) || documento(txt(buscar(raiz, "infProt"), "chNFe"));
+  const chaveAcesso = documento((inf.attrs.Id ?? "").replace(/^NFe/, "")) || documento(txt(buscar(raiz, "infProt"), "chNFe")) || null;
   const tot = no(inf, "total", "ICMSTot");
   const rt = no(inf, "total", "retTrib");
   const retencoes = ret([["pis", c(txt(rt, "vRetPIS"))], ["cofins", c(txt(rt, "vRetCOFINS"))], ["csll", c(txt(rt, "vRetCSLL"))], ["irrf", c(txt(rt, "vIRRF"))], ["inss", c(txt(rt, "vRetPrev"))]]);
@@ -90,7 +95,8 @@ function lerNfe(raiz: No): NotaLida {
   if (txt(ide, "tpNF") === "0") avisos.push("NF-e de entrada (tpNF 0): o emitente registrou uma entrada; confira a direção.");
   const dest = no(inf, "dest");
   return {
-    origem: "nfe", layout: "NF-e", chave, numero: txt(ide, "nNF"), serie: txt(ide, "serie") || null, emissao,
+    origem: "nfe", layout: "NF-e", chave: chaveDocumento(docDe(no(inf, "emit")), txt(ide, "serie") || null, txt(ide, "nNF")), chaveAcesso,
+    numero: txt(ide, "nNF"), serie: txt(ide, "serie") || null, emissao,
     competencia: emissao ? primeiroDiaDoMes(emissao) : "",
     emitente: { documento: docDe(no(inf, "emit")), nome: txt(no(inf, "emit"), "xNome") },
     destinatario: dest ? { documento: docDe(dest) || documento(txt(dest, "idEstrangeiro")), nome: txt(dest, "xNome") } : null,
@@ -145,7 +151,7 @@ function lerNfseNacional(raiz: No): NotaLida {
   const compet = data(txt(dps, "dCompet"));
   return {
     origem: "nfse", layout: "NFS-e Nacional",
-    chave: documento((inf.attrs.Id ?? "").replace(/^NFS/, "")) || chaveDocumento(prestDoc, null, txt(inf, "nNFSe")),
+    chave: chaveDocumento(prestDoc, null, txt(inf, "nNFSe")), chaveAcesso: documento((inf.attrs.Id ?? "").replace(/^NFS/, "")) || null,
     numero: txt(inf, "nNFSe"), serie: null, emissao, competencia: primeiroDiaDoMes(compet || emissao),
     emitente: { documento: prestDoc, nome: (txt(dps, "tpEmit") === "1" || !txt(dps, "tpEmit") ? txt(emit, "xNome") : "") || txt(prest, "xNome") },
     destinatario: toma ? { documento: docDe(toma), nome: txt(toma, "xNome") } : null,
@@ -177,7 +183,7 @@ function lerAbrasf(inf: No): NotaLida {
   const compet = data(txt(decl, "Competencia") || txt(inf, "Competencia"));
   const numero = txt(inf, "Numero");
   return {
-    origem: "nfse", layout: "NFS-e ABRASF", chave: chaveDocumento(prestDoc, null, numero), numero, serie: null, emissao,
+    origem: "nfse", layout: "NFS-e ABRASF", chave: chaveDocumento(prestDoc, null, numero), chaveAcesso: null, numero, serie: null, emissao,
     competencia: primeiroDiaDoMes(compet || emissao),
     emitente: { documento: prestDoc, nome: txt(prestador, "RazaoSocial") },
     destinatario: tom ? { documento: docDe(no(tom, "IdentificacaoTomador")), nome: txt(tom, "RazaoSocial") } : null,

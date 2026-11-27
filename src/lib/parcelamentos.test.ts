@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validarPartidas } from "./lancamentos";
-import { divisaoCpLp, montarParcelamento, parcelaSugerida, parcelasDoParcelamento, parcelasParaCurtoPrazo } from "./parcelamentos";
+import { divisaoCpLp, montarParcelamento, parcelaSugerida, parcelasDoParcelamento, parcelasParaCurtoPrazo, validarConsolidacao } from "./parcelamentos";
 import { somarMeses } from "./format";
 
 const base = {
@@ -74,5 +74,20 @@ describe("somarMeses", () => {
     expect(somarMeses("2025-01-31", 1)).toBe("2025-02-28");
     expect(somarMeses("2024-01-31", 1)).toBe("2024-02-29");
     expect(somarMeses("2025-11-15", 3)).toBe("2026-02-15");
+  });
+});
+
+describe("consolidação de obrigações em aberto", () => {
+  const t = (id: string, saldo: number, extra: Partial<{ tipo: string; status: string; contaId: string }> = {}) =>
+    ({ id, descricao: `DAS ${id}`, tipo: "pagar", status: "aberto", contaId: "simples", saldo, ...extra });
+  it("soma dos saldos igual ao principal, na conta do principal", () => {
+    expect(() => validarConsolidacao([t("a", 60_000), t("b", 40_000, { status: "parcial" })], "simples", 100_000)).not.toThrow();
+    expect(() => validarConsolidacao([], "simples", 100_000)).not.toThrow();
+  });
+  it("recusa soma diferente, outra conta, quitado ou a receber", () => {
+    expect(() => validarConsolidacao([t("a", 60_000)], "simples", 100_000)).toThrow(/somam 600.00/);
+    expect(() => validarConsolidacao([t("a", 100_000, { contaId: "inss" })], "simples", 100_000)).toThrow(/outra conta/);
+    expect(() => validarConsolidacao([t("a", 100_000, { status: "quitado" })], "simples", 100_000)).toThrow(/em aberto/);
+    expect(() => validarConsolidacao([t("a", 100_000, { tipo: "receber" })], "simples", 100_000)).toThrow(/em aberto/);
   });
 });

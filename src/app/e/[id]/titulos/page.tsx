@@ -12,7 +12,7 @@ import { fmtData, fmtValor } from "@/lib/format";
 import { contrapartidasLembradas } from "@/lib/notas/registro";
 import { contasDeContrapartida } from "@/lib/operacoes";
 import type { TipoTitulo } from "@/lib/titulos";
-import { listarMesesFechados } from "../conciliacao/queries";
+import { listarMesesFechados, listarTitulosAbertos } from "../conciliacao/queries";
 import { getEmpresa } from "../empresa";
 import { listarContasAnaliticas } from "../lancamentos/queries";
 import { NotaDialog } from "./nota-dialog";
@@ -39,10 +39,12 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
   const aba: Aba = sp.tipo === "pagar" ? "pagar" : sp.tipo === "parcelamentos" ? "parcelamentos" : "receber";
   const tipo: TipoTitulo = aba === "pagar" ? "pagar" : "receber";
   const empresa = await getEmpresa(id);
-  const [lista, todas, fechados, lembradas, parcelamentos] = await Promise.all([
+  const [lista, todas, fechados, lembradas, parcelamentos, abertos] = await Promise.all([
     aba === "parcelamentos" ? Promise.resolve([]) : listarTitulos(id, tipo), listarContasAnaliticas(id), listarMesesFechados(id),
     contrapartidasLembradas(db, id), aba === "parcelamentos" ? listarParcelamentos(id) : Promise.resolve([]),
+    aba === "parcelamentos" ? listarTitulosAbertos(id) : Promise.resolve([]),
   ]);
+  const obrigacoes = abertos.filter((t) => t.imposto).map((t) => ({ id: t.id, descricao: t.descricao, contaId: t.contaId, saldo: t.saldo, vencimento: t.vencimento }));
   const contas = contasDeContrapartida(todas, tipo);
   const lanc = (lid: string | null, numero: number | null) =>
     lid && (
@@ -81,7 +83,7 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
         </nav>
       </div>
       {aba === "parcelamentos" ? (
-        <Parcelamentos empresaId={id} lista={parcelamentos} contas={todas} fechados={fechados} />
+        <Parcelamentos empresaId={id} lista={parcelamentos} contas={todas} fechados={fechados} obrigacoes={obrigacoes} />
       ) : lista.length === 0 ? (
         <EmptyState
           icon={Receipt}

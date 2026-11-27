@@ -413,7 +413,7 @@ async function obrigacao<T>(fn: () => Promise<T>) {
   } catch (e) {
     if (e instanceof TransicaoInvalida) throw e;
     const err = e as { message?: string; cause?: { message?: string } };
-    throw new TransicaoInvalida((err.cause?.message ?? err.message ?? "Erro ao registrar a obrigação da guia.").replace(/^error:s*/i, ""));
+    throw new TransicaoInvalida((err.cause?.message ?? err.message ?? "Erro ao registrar a obrigação da guia.").replace(/^error:\s*/i, ""));
   }
 }
 

@@ -1,11 +1,13 @@
 /** Parcelamento no banco: registrar, transferir LP → CP e cancelar (regras puras em ./parcelamentos). */
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { lancamentos, parcelamentoLancamentos, parcelamentos, titulos } from "@/db/schema";
+import { baixas, lancamentos, parcelamentoLancamentos, parcelamentos, titulos } from "@/db/schema";
 import { cents, fmtCompetencia, fmtData, fromCents, hoje, primeiroDiaDoMes, somarMeses } from "./format";
 import { criarLancamento, dataNoMesAberto, estornarLancamento, mesesFechados } from "./lancamentos";
-import { montarParcelamento, PARCELAS_CP, parcelasParaCurtoPrazo, type MovimentoCurtoPrazo, type ParcelamentoInput } from "./parcelamentos";
-import { contaAnalitica, criarTitulo, somasBaixas } from "./titulos";
+import {
+  montarParcelamento, PARCELAS_CP, parcelasParaCurtoPrazo, validarConsolidacao, type MovimentoCurtoPrazo, type ParcelamentoInput,
+} from "./parcelamentos";
+import { contaAnalitica, criarTitulo, recalcularStatus, somasBaixas } from "./titulos";
 
 const exigirMesAberto = async (tx: Tx, empresaId: string, data: string, acao: string) => {
   if ((await mesesFechados(tx, empresaId)).has(primeiroDiaDoMes(data)))
@@ -25,6 +27,15 @@ export async function criarParcelamento(tx: Tx, input: ParcelamentoInput) {
     const c = await contaAnalitica(tx, input.empresaId, id);
     if (!/^3\./.test(c.codigo) || c.papel) throw new Error(`${c.codigo} ${c.nome}: multa e juros são despesa (classe 3)`);
   }
+  // obrigações consolidadas: travadas em ordem de id (como a baixa) e conferidas antes de lançar
+  const ids = [...new Set(input.titulosIds ?? [])];
+  const consolidadas = ids.length
+    ? await tx.select().from(titulos).where(and(inArray(titulos.id, ids), eq(titulos.empresaId, input.empresaId))).orderBy(titulos.id).for("update")
+    : [];
+  if (consolidadas.length !== ids.length) throw new Error("Obrigação consolidada não encontrada");
+  const somas = await somasBaixas(tx, ids);
+  const saldos = consolidadas.map((t) => ({ ...t, saldo: cents(t.valor) - (somas.get(t.id) ?? 0) }));
+  validarConsolidacao(saldos, principal.id, cents(input.principal));
   const [parc] = await tx.insert(parcelamentos).values({
     empresaId: input.empresaId, descricao: input.descricao, principal: fromCents(cents(input.principal)), multa: fromCents(cents(input.multa || 0)),
     juros: fromCents(cents(input.juros || 0)), nParcelas: input.nParcelas, valorParcela: fromCents(cents(input.valorParcela)),
@@ -34,6 +45,11 @@ export async function criarParcelamento(tx: Tx, input: ParcelamentoInput) {
     empresaId: input.empresaId, data: input.data, historico: m.historico, origem: "manual", usuarioId: input.usuarioId, partidas: m.partidas,
   });
   await tx.insert(parcelamentoLancamentos).values({ parcelamentoId: parc.id, lancamentoId: l.id, tipo: "reconhecimento" });
+  if (saldos.length) {
+    // baixa sem banco: o débito do principal no reconhecimento quita as obrigações substituídas
+    await tx.insert(baixas).values(saldos.map((t) => ({ tituloId: t.id, transacaoId: null, lancamentoId: l.id, valor: fromCents(t.saldo), createdBy: input.usuarioId ?? null })));
+    await recalcularStatus(tx, ids);
+  }
   for (const x of m.parcelas)
     await criarTitulo(tx, {
       empresaId: input.empresaId, tipo: "pagar", contraparte: input.contraparte || "Receita Federal",
@@ -99,6 +115,16 @@ export async function cancelarParcelamento(tx: Tx, empresaId: string, id: string
   const somas = await somasBaixas(tx, ts.map((t) => t.id));
   if ([...somas.values()].some((s) => s > 0) || ts.some((t) => t.status !== "aberto" && t.status !== "cancelado"))
     throw new Error("Há parcela baixada na conciliação: desfaça as baixas antes de cancelar o parcelamento");
+  // reabre as obrigações que o parcelamento tinha consolidado (baixa sem banco no reconhecimento)
+  const reconhecimentos = await tx.select({ id: parcelamentoLancamentos.lancamentoId }).from(parcelamentoLancamentos)
+    .where(and(eq(parcelamentoLancamentos.parcelamentoId, id), eq(parcelamentoLancamentos.tipo, "reconhecimento")));
+  if (reconhecimentos.length) {
+    const lids = reconhecimentos.map((r) => r.id);
+    const afetados = await tx.selectDistinct({ id: baixas.tituloId }).from(baixas).where(inArray(baixas.lancamentoId, lids));
+    if (afetados.length) await tx.select({ id: titulos.id }).from(titulos).where(inArray(titulos.id, afetados.map((a) => a.id))).orderBy(titulos.id).for("update");
+    const rs = await tx.delete(baixas).where(inArray(baixas.lancamentoId, lids)).returning({ tituloId: baixas.tituloId });
+    await recalcularStatus(tx, rs.map((r) => r.tituloId));
+  }
   const ls = await tx.select({ id: lancamentos.id, data: lancamentos.data })
     .from(parcelamentoLancamentos)
     .innerJoin(lancamentos, eq(lancamentos.id, parcelamentoLancamentos.lancamentoId))

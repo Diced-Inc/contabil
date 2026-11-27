@@ -16,8 +16,8 @@ const rets = (n: { retencoes: { tipo: string; valor: string }[] }) => Object.fro
 describe("NF-e modelo 55", () => {
   const n = lerNota(fx("nfe_55_duplicatas.xml"));
   it("chave, número, partes, datas e valores", () => {
-    expect(n.chave).toBe("23260311222333000181550010000012341123456780");
-    expect(n.chave).toHaveLength(44);
+    expect(n.chaveAcesso).toBe("23260311222333000181550010000012341123456780");
+    expect(n.chave).toBe(chaveDocumento(ACME, "1", "1234"));
     expect([n.layout, n.numero, n.serie, n.emissao, n.competencia]).toEqual(["NF-e", "1234", "1", "2026-03-15", "2026-03-01"]);
     expect(n.emitente).toEqual({ documento: ACME, nome: "ACME COMERCIO & SERVICOS LTDA" });
     expect(n.destinatario?.documento).toBe(CLIENTE);
@@ -37,7 +37,8 @@ describe("NF-e modelo 55", () => {
 describe("NFS-e Padrão Nacional", () => {
   const n = lerNota(fx("nfse_nacional_v100.xml"));
   it("chave de acesso, prestador, tomador, competência", () => {
-    expect(n.chave).toBe("42054072211222333000181000000000012326031234567890");
+    expect(n.chaveAcesso).toBe("42054072211222333000181000000000012326031234567890");
+    expect(n.chave).toBe(chaveDocumento(ACME, null, "123"));
     expect([n.layout, n.numero, n.emissao, n.competencia]).toEqual(["NFS-e Nacional", "123", "2026-03-10", "2026-03-01"]);
     expect(n.emitente).toEqual({ documento: ACME, nome: "ACME SOFTWARE LTDA" });
     expect(n.destinatario).toEqual({ documento: CLIENTE, nome: "CLIENTE EXEMPLO S.A." });
@@ -151,6 +152,8 @@ describe("parcelas e datas", () => {
   });
   it("chave manual sem zeros à esquerda bate com o XML", () => {
     expect(chaveDocumento("11.222.333/0001-81", "001", "000123")).toBe(chaveDocumento(ACME, "1", "123"));
+    // NF-e cadastrada à mão (emitente, série 1, nº 1234) e o XML dela: mesma chave
+    expect(lerNota(fx("nfe_55_duplicatas.xml")).chave).toBe(chaveDocumento("11.222.333/0001-81", "001", "1234"));
   });
 });
 

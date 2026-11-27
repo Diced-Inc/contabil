@@ -74,8 +74,6 @@ export async function cancelarTituloAction(empresaId: string, tituloId: string):
 const parteSchema = z.object({ documento: z.string().trim().max(20).transform(documento), nome: z.string().trim().max(200) });
 const notaSchema = z.object({
   origem: z.enum(["manual", "nfe", "nfse"]),
-  /** XML: a chave lida; manual: montada aqui (emitente|série|número). */
-  chave: z.string().trim().max(80).optional(),
   numero: z.string().trim().min(1, "Informe o número da nota.").max(30),
   serie: z.string().trim().max(10).nullish().transform((s) => s || null),
   emissao: data,
@@ -122,7 +120,8 @@ export async function registrarNotas(empresaId: string, notas: NotaInput[]): Pro
     const n = r.data;
     const tipo = direcaoDaNota(n, cnpj);
     if (!tipo) { out.push({ erro: "A empresa não é emitente nem destinatária desta nota (CNPJ)." }); continue; }
-    const chave = n.origem === "manual" || !n.chave ? chaveDocumento(n.emitente.documento || n.emitente.nome, n.serie, n.numero) : n.chave;
+    // mesma chave para XML e cadastro manual: a nota registrada de um jeito não entra de novo pelo outro
+    const chave = chaveDocumento(n.emitente.documento || n.emitente.nome, n.serie, n.numero);
     try {
       const ts = await db.transaction((tx) => registrarNota(tx, {
         empresaId, origem: n.origem, tipo, chave, numero: n.numero, serie: n.serie, emissao: n.emissao, competencia: n.competencia,
@@ -149,6 +148,7 @@ const parcelamentoSchema = z.object({
   contaPrincipalId: z.uuid("Escolha a conta do principal."),
   contaMultaId: uuid.nullable(), contaJurosId: uuid.nullable(),
   contaCpId: z.uuid("Escolha a conta de curto prazo."), contaLpId: z.uuid("Escolha a conta de longo prazo."),
+  titulosIds: z.array(z.uuid()).max(200).optional(),
 });
 export type ParcelamentoForm = z.input<typeof parcelamentoSchema>;
 

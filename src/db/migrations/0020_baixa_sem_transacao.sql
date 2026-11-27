@@ -1,0 +1,1 @@
+ALTER TABLE "baixas" ALTER COLUMN "transacao_id" DROP NOT NULL;

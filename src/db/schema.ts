@@ -243,7 +243,8 @@ export const parcelamentoLancamentos = pgTable("parcelamento_lancamentos", {
 export const baixas = pgTable("baixas", {
   id: id(),
   tituloId: uuid("titulo_id").notNull().references(() => titulos.id),
-  transacaoId: uuid("transacao_id").notNull().references(() => transacoesBancarias.id),
+  /** Null: baixa sem banco (título consolidado num parcelamento: lancamento_id é o reconhecimento do parcelamento). */
+  transacaoId: uuid("transacao_id").references(() => transacoesBancarias.id),
   lancamentoId: uuid("lancamento_id").notNull().references(() => lancamentos.id),
   valor: money("valor").notNull(),
   juros: money("juros").notNull().default("0"),

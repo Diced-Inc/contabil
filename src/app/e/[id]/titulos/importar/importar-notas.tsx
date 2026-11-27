@@ -123,7 +123,7 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
   const registrar = () => iniciar(async () => {
     const envio = prontas.filter((l) => typeof montar(l) !== "string");
     const notas: NotaInput[] = envio.map((l) => ({
-      origem: l.nota.origem, chave: l.nota.chave, numero: l.nota.numero, serie: l.nota.serie, emissao: l.nota.emissao,
+      origem: l.nota.origem, numero: l.nota.numero, serie: l.nota.serie, emissao: l.nota.emissao,
       competencia: l.competencia, emitente: l.nota.emitente, destinatario: l.nota.destinatario, bruto: l.nota.bruto,
       retencoes: l.nota.retencoes.map((r, i) => ({ ...r, contaId: l.contasRet[i] ?? null })), contaResultadoId: l.contaId ?? "",
       parcelas: parcelasDaNota(l.nota).parcelas, descricao: rotuloNota(l.nota.origem, l.nota.numero, l.nota.serie),

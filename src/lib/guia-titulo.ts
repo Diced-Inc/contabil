@@ -38,7 +38,7 @@ export function ajusteGuia(antes: EstadoObrigacao, depois: EstadoObrigacao, ctx:
   const reconhecer = cents(antes.valor) !== cents(depois.valor) || antes.obrigacaoId !== depois.obrigacaoId || antes.despesaId !== depois.despesaId;
   const vencimento = antes.vencimento !== depois.vencimento;
   if (!reconhecer && !vencimento) return "nada" as const;
-  if (ctx.temBaixa) throw new Error("Esta guia já foi baixada na conciliação: desfaça a baixa antes de mudar a guia");
+  if (ctx.temBaixa) throw new Error("Esta guia já foi baixada (na conciliação ou consolidada num parcelamento): desfaça a baixa ou cancele o parcelamento antes de mudar a guia");
   if (!reconhecer) return "vencimento" as const;
   if (ctx.mesFechado) throw new Error(`O mês ${fmtCompetencia(ctx.competencia)} está fechado: reabra-o em Fechamento para mudar a obrigação da guia`);
   return "reconhecer" as const;
@@ -99,10 +99,11 @@ export async function atualizarTituloDaGuia(tx: Tx, p: {
   const t = await tituloDaGuia(tx, p.guia.id);
   if (!t || t.status === "cancelado") return criarTituloDaGuia(tx, p);
   const fechados = await mesesFechados(tx, p.empresaId);
-  const contas = await resolverContasGuia(tx, p.empresaId, p.guia, p.contas);
   const antes: EstadoObrigacao = {
     valor: t.valor, vencimento: t.vencimento, obrigacaoId: t.contaId ?? "", despesaId: await despesaDoReconhecimento(tx, t.lancamentoId),
   };
+  // sem contas na edição (mês fechado no diálogo): valem as do próprio título, não as do mapa do tributo
+  const contas = p.contas ?? (t.contaId ? { obrigacaoId: t.contaId, despesaId: antes.despesaId } : await resolverContasGuia(tx, p.empresaId, p.guia));
   const [b] = await tx.select({ id: baixas.id }).from(baixas).where(eq(baixas.tituloId, t.id)).limit(1);
   const d = dadosTituloGuia(p.guia, p.competencia);
   const acao = ajusteGuia(antes, { valor: p.guia.valor, vencimento: p.guia.vencimento, ...contas }, {
@@ -138,6 +139,6 @@ export async function cancelarTituloDaGuia(tx: Tx, empresaId: string, guiaId: st
   const t = await tituloDaGuia(tx, guiaId);
   if (!t || t.status === "cancelado") return;
   const [b] = await tx.select({ id: baixas.id }).from(baixas).where(eq(baixas.tituloId, t.id)).limit(1);
-  if (b) throw new Error("Esta guia já foi baixada na conciliação: desfaça a baixa antes de remover a guia");
+  if (b) throw new Error("Esta guia já foi baixada (na conciliação ou consolidada num parcelamento): desfaça a baixa ou cancele o parcelamento antes de remover a guia");
   await cancelarTitulo(tx, empresaId, t.id, usuarioId, { origens: ["guia"], mesAberto: true });
 }

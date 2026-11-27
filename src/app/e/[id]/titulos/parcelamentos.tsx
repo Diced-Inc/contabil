@@ -10,6 +10,7 @@ import { ContaSelect, type ContaOpcao } from "@/components/conta-select";
 import { EmptyState, TablePanel } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -27,20 +28,23 @@ import type { ParcelamentoLinha } from "./queries";
 const reais = (s: string) => fromCents(cents(parseValorBR(s) || 0));
 const por = (contas: ContaOpcao[], prefixo: string, re: RegExp) => acharConta(contas, { prefixo, re })?.id ?? null;
 
-export function Parcelamentos({ empresaId, lista, contas, fechados }: {
-  empresaId: string; lista: ParcelamentoLinha[]; contas: ContaOpcao[]; fechados: string[];
+/** Obrigação de imposto em aberto (título de guia) que um parcelamento pode consolidar. */
+export type ObrigacaoAberta = { id: string; descricao: string; contaId: string | null; saldo: string; vencimento: string | null };
+
+export function Parcelamentos({ empresaId, lista, contas, fechados, obrigacoes }: {
+  empresaId: string; lista: ParcelamentoLinha[]; contas: ContaOpcao[]; fechados: string[]; obrigacoes: ObrigacaoAberta[];
 }) {
   const acoes = (
     <div className="flex flex-wrap gap-2">
       <TransferirCurtoPrazo empresaId={empresaId} contas={contas} fechados={fechados} />
-      <NovoParcelamento empresaId={empresaId} contas={contas} fechados={fechados} />
+      <NovoParcelamento empresaId={empresaId} contas={contas} fechados={fechados} obrigacoes={obrigacoes} />
     </div>
   );
   if (!lista.length)
     return (
       <EmptyState icon={Landmark} title="Nenhum parcelamento"
         hint="Registre a dívida consolidada (principal, multa e juros): ela vai para Parcelamentos de Tributos no curto e no longo prazo, com um título por parcela."
-        action={<NovoParcelamento empresaId={empresaId} contas={contas} fechados={fechados} />} />
+        action={<NovoParcelamento empresaId={empresaId} contas={contas} fechados={fechados} obrigacoes={obrigacoes} />} />
     );
   return (
     <div className="grid gap-3">
@@ -90,7 +94,7 @@ export function Parcelamentos({ empresaId, lista, contas, fechados }: {
   );
 }
 
-function NovoParcelamento({ empresaId, contas, fechados }: { empresaId: string; contas: ContaOpcao[]; fechados: string[] }) {
+function NovoParcelamento({ empresaId, contas, fechados, obrigacoes }: { empresaId: string; contas: ContaOpcao[]; fechados: string[]; obrigacoes: ObrigacaoAberta[] }) {
   const [aberta, setAberta] = useState(false);
   const [chave, setChave] = useState(0);
   return (
@@ -106,14 +110,14 @@ function NovoParcelamento({ empresaId, contas, fechados }: { empresaId: string; 
             A dívida consolidada vai para Parcelamentos de Tributos: as próximas {PARCELAS_CP} parcelas no curto prazo e o resto no longo prazo.
           </DialogDescription>
         </DialogHeader>
-        <FormParcelamento key={chave} empresaId={empresaId} contas={contas} fechados={fechados} onFeito={() => setAberta(false)} />
+        <FormParcelamento key={chave} empresaId={empresaId} contas={contas} fechados={fechados} obrigacoes={obrigacoes} onFeito={() => setAberta(false)} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function FormParcelamento({ empresaId, contas, fechados, onFeito }: {
-  empresaId: string; contas: ContaOpcao[]; fechados: string[]; onFeito: () => void;
+function FormParcelamento({ empresaId, contas, fechados, obrigacoes, onFeito }: {
+  empresaId: string; contas: ContaOpcao[]; fechados: string[]; obrigacoes: ObrigacaoAberta[]; onFeito: () => void;
 }) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
@@ -126,13 +130,23 @@ function FormParcelamento({ empresaId, contas, fechados, onFeito }: {
   const [primeiro, setPrimeiro] = useState("");
   const [data, setData] = useState(hoje());
   const [jaReconhecido, setJaReconhecido] = useState(true);
-  const obrigacoes = contas.filter((c) => /^2\.1\./.test(c.codigo) && !c.papel && /a recolher/.test(norm(c.nome)));
+  const aRecolher = contas.filter((c) => /^2\.1\./.test(c.codigo) && !c.papel && /a recolher/.test(norm(c.nome)));
   const despesas = contas.filter((c) => /^3\./.test(c.codigo) && !c.papel);
   const [contaPrincipal, setContaPrincipal] = useState<string | null>(por(contas, "2.1", /^simples nacional a recolher$/));
   const [contaMulta, setContaMulta] = useState<string | null>(por(contas, "3.2", /^outras despesas financeiras$/));
   const [contaJuros, setContaJuros] = useState<string | null>(por(contas, "3.2", /^juros passivos$/));
   const [contaCp, setContaCp] = useState<string | null>(por(contas, "2.1", /^parcelamentos? de (tributos|impostos)$/));
   const [contaLp, setContaLp] = useState<string | null>(por(contas, "2.2", /^parcelamentos? de (tributos|impostos)( de)? longo prazo$/));
+  const [consolidar, setConsolidar] = useState<string[]>([]);
+  const naConta = jaReconhecido ? obrigacoes.filter((o) => o.contaId === contaPrincipal) : [];
+  const selecionadas = naConta.filter((o) => consolidar.includes(o.id));
+  const somaSel = selecionadas.reduce((x, o) => x + cents(o.saldo), 0);
+  const marcar = (id: string, c: boolean) => {
+    const ids = c ? [...consolidar, id] : consolidar.filter((x) => x !== id);
+    setConsolidar(ids);
+    const soma = naConta.filter((o) => ids.includes(o.id)).reduce((x, o) => x + cents(o.saldo), 0);
+    if (soma) setPrincipal(valorParaInput(fromCents(soma)));
+  };
   const total = cents(reais(principal)) + cents(reais(multa)) + cents(reais(juros));
   const n = Math.trunc(Number(nParcelas) || 0);
   const input = {
@@ -140,11 +154,14 @@ function FormParcelamento({ empresaId, contas, fechados, onFeito }: {
     valorParcela: valorParcela.trim() ? reais(valorParcela) : fromCents(parcelaSugerida(total, n)),
     primeiroVencimento: primeiro, data, contaPrincipalId: contaPrincipal ?? "", contaMultaId: cents(reais(multa)) ? contaMulta : null,
     contaJurosId: cents(reais(juros)) ? contaJuros : null, contaCpId: contaCp ?? "", contaLpId: contaLp ?? "",
+    titulosIds: selecionadas.map((o) => o.id),
   };
   const calc = (() => {
     try {
       if (!primeiro) throw new Error("Informe o 1º vencimento.");
       if (!contaPrincipal || !contaCp || !contaLp) throw new Error("Escolha as contas do principal e do parcelamento (curto e longo prazo).");
+      if (selecionadas.length && somaSel !== cents(input.principal))
+        throw new Error(`As obrigações marcadas somam R$ ${fmtValor(fromCents(somaSel))}; o principal precisa ser igual.`);
       const m = montarParcelamento(input);
       const ultima = m.parcelas.at(-1)!;
       const resumo = `${m.parcelas.length} parcelas: ${m.parcelas.length > 1 ? `${m.parcelas.length - 1} de R$ ${fmtValor(input.valorParcela)} e a última de ` : ""}R$ ${fmtValor(fromCents(ultima.valor))} (vence ${fmtData(ultima.vencimento)}). Curto prazo R$ ${fmtValor(fromCents(m.cp))}, longo prazo R$ ${fmtValor(fromCents(m.lp))}.`;
@@ -207,13 +224,25 @@ function FormParcelamento({ empresaId, contas, fechados, onFeito }: {
             </button>
           ))}
         </div>
-        <ContaSelect contas={jaReconhecido ? obrigacoes : despesas} value={contaPrincipal} onChange={setContaPrincipal}
+        <ContaSelect contas={jaReconhecido ? aRecolher : despesas} value={contaPrincipal} onChange={setContaPrincipal}
           placeholder={jaReconhecido ? "Imposto a recolher original" : "Despesa do tributo"} />
         <p className="text-xs text-muted-foreground">
           {jaReconhecido
             ? "O débito tira a dívida da conta a recolher original (a obrigação já estava no razão)."
             : "Use quando o tributo nunca foi reconhecido na competência dele."}
         </p>
+        {naConta.length > 0 && (
+          <div className="grid gap-1 rounded-lg border p-2">
+            <p className="text-xs font-medium">Obrigações em aberto nesta conta: marque as que o parcelamento substitui (ficam quitadas por ele)</p>
+            {naConta.map((o) => (
+              <label key={o.id} className="flex items-center gap-2 text-sm">
+                <Checkbox checked={consolidar.includes(o.id)} onCheckedChange={(c) => marcar(o.id, !!c)} />
+                <span className="min-w-0 flex-1 truncate">{o.descricao}{o.vencimento && <span className="text-muted-foreground"> · vence {fmtData(o.vencimento)}</span>}</span>
+                <span className="tabular-nums">R$ {fmtValor(o.saldo)}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </fieldset>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-2">

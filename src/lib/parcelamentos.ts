@@ -61,10 +61,29 @@ export function parcelasParaCurtoPrazo<T extends ParcelaAberta>(ps: T[], contaLp
   return ps.filter((x) => x.contaId === contaLpId && x.saldo > 0 && !!x.vencimento && x.vencimento <= limite);
 }
 
+/**
+ * Obrigações em aberto que o parcelamento consolida (ex.: o título da guia do DAS não pago): todas a pagar, na conta do
+ * principal, com saldo; a soma dos saldos é o principal. Elas são baixadas pelo reconhecimento do parcelamento.
+ */
+export function validarConsolidacao(
+  ts: { id: string; tipo: string; status: string; contaId: string | null; saldo: number; descricao: string }[],
+  contaPrincipalId: string, principal: number,
+) {
+  for (const t of ts) {
+    if (t.tipo !== "pagar" || (t.status !== "aberto" && t.status !== "parcial") || t.saldo <= 0) throw new Error(`${t.descricao}: não está em aberto`);
+    if (t.contaId !== contaPrincipalId) throw new Error(`${t.descricao}: está em outra conta, não na do principal`);
+  }
+  const soma = ts.reduce((s, t) => s + t.saldo, 0);
+  if (ts.length && soma !== principal)
+    throw new Error(`As obrigações consolidadas somam ${fromCents(soma)}; o principal é ${fromCents(principal)}`);
+}
+
 export type ParcelamentoInput = {
   empresaId: string; descricao: string; principal: string; multa: string; juros: string; nParcelas: number; valorParcela: string;
   primeiroVencimento: string; data: string; contaPrincipalId: string; contaMultaId: string | null; contaJurosId: string | null;
   contaCpId: string; contaLpId: string; contraparte?: string; usuarioId?: string | null;
+  /** Títulos em aberto (guias) que o parcelamento substitui: baixados pelo reconhecimento. */
+  titulosIds?: string[];
 };
 
 /** Parcelas, divisão CP/LP e partidas do parcelamento (puro: a prévia do cliente usa o mesmo). */
