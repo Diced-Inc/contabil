@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { cents, somarMeses } from "../format";
 import { validarPartidas } from "../lancamentos";
 import { partidasTitulo } from "../operacoes";
-import { chaveDocumento, contraparteDaNota, dataDaNota, direcaoDaNota, lerNota, parcelasDaNota, parcelasIguais } from "./index";
+import { chaveDocumento, contraparteDaNota, dataDaNota, direcaoDaNota, lerNota, marcarDuplicadas, parcelasDaNota, parcelasIguais } from "./index";
 import { decodificarXml, lerXml, txt } from "./xml";
 import { lerZip } from "./zip";
 
@@ -92,6 +92,16 @@ describe("NFS-e ABRASF", () => {
   it("XML da nota escapado dentro da resposta do webservice", () => {
     const escapado = fx("abrasf_204_compnfse.xml").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     expect(lerNota(`<s:Envelope xmlns:s="x"><s:Body><outputXML>${escapado}</outputXML></s:Body></s:Envelope>`).liquido).toBe("7785.00");
+  });
+});
+
+describe("duplicidade", () => {
+  it("chave já registrada ou repetida no lote: a primeira do lote passa", () => {
+    expect(marcarDuplicadas(["a", "b", "a", "c", "b"], new Set(["c"]))).toEqual([false, false, true, true, true]);
+  });
+  it("a mesma nota em XML e em .zip gera a mesma chave", () => {
+    const xml = fx("nfe_55_duplicatas.xml");
+    expect(lerNota(xml).chave).toBe(lerNota(xml.replace(/\n\s*/g, "")).chave);
   });
 });
 

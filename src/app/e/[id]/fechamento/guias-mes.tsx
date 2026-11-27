@@ -154,17 +154,20 @@ function GuiaForm({ empresaId, competencia, hoje, contas, mesFechado, slot, guia
   const [erros, setErros] = useState<Erros>({});
   const [pendente, iniciar] = useTransition();
   const escolha = useRef(0); // ignora a leitura de um arquivo que já foi trocado
-  // contas da obrigação: as do título (edição), as escolhidas, ou as do mapa do tributo (mudam com tipo/código)
-  const [contasEscolhidas, setContasEscolhidas] = useState<{ obrigacaoId: string | null; despesaId: string | null } | null>(
-    guia?.obrigacao ? { obrigacaoId: guia.obrigacao.obrigacaoId, despesaId: guia.obrigacao.despesaId } : null);
+  // contas da obrigação: as do título (edição) ou as escolhidas valem para o tipo/código em que foram feitas; mudou o
+  // tipo ou o código, volta ao mapa do tributo. O modo é explícito: conta de despesa faltando não vira "já registrada".
+  const chaveMapa = `${tipo}|${codigo.trim()}`;
+  const [escolhida, setEscolhida] = useState<EscolhaObrigacao | null>(() => guia?.obrigacao ? {
+    chave: `${guia.tipo}|${guia.codigoReceita ?? ""}`, obrigacaoId: guia.obrigacao.obrigacaoId, despesaId: guia.obrigacao.despesaId,
+    modo: guia.obrigacao.despesaId ? "despesa" : "ja_registrada",
+  } : null);
   const mapa = contasDaGuia(tipo, codigo);
-  const padrao = {
-    obrigacaoId: acharConta(contas, mapa?.obrigacao)?.id ?? null,
-    despesaId: mapa?.modo === "despesa" ? acharConta(contas, mapa.despesa)?.id ?? null : null,
+  const atual: EscolhaObrigacao = escolhida?.chave === chaveMapa ? escolhida : {
+    chave: chaveMapa, obrigacaoId: acharConta(contas, mapa?.obrigacao)?.id ?? null, despesaId: acharConta(contas, mapa?.despesa)?.id ?? null,
+    modo: mapa?.modo ?? "despesa",
   };
-  const efetivas = contasEscolhidas ?? padrao;
   // conta que o servidor cria sob demanda (ex.: PIS/COFINS/CSLL retidos): ainda sem id aqui
-  const criaObrigacao = !efetivas.obrigacaoId && !contasEscolhidas && !!mapa?.obrigacao.criar;
+  const criaObrigacao = !atual.obrigacaoId && escolhida?.chave !== chaveMapa && !!mapa?.obrigacao.criar;
   const valorOk = lerValor(valor);
   const lendo = leitura?.estado === "lendo";
   const id = (c: string) => `guia-${guia?.id ?? slot ?? "outra"}-${c}`;
@@ -216,10 +219,11 @@ function GuiaForm({ empresaId, competencia, hoje, contas, mesFechado, slot, guia
       if (!vencimento) e.vencimento = "Informe a data de vencimento.";
       setErros(e);
       if (Object.keys(e).length || !valorOk) return;
-      if (!mesFechado && !efetivas.obrigacaoId && !criaObrigacao) return setErro("Escolha a conta da obrigação (imposto a recolher) desta guia.");
+      if (!mesFechado && !atual.obrigacaoId && !criaObrigacao) return setErro("Escolha a conta da obrigação (imposto a recolher) desta guia.");
+      if (!mesFechado && atual.modo === "despesa" && !atual.despesaId && !criaObrigacao) return setErro("Escolha a conta da despesa ou marque “Obrigação já registrada”.");
       const r = await salvarGuia(empresaId, competencia, guia ? { guiaId: guia.id } : { path: path! }, {
         tipo, descricao, valor: valorOk, vencimento, codigoReceita: codigo,
-      }, efetivas.obrigacaoId && !mesFechado ? { obrigacaoId: efetivas.obrigacaoId, despesaId: efetivas.despesaId } : null);
+      }, atual.obrigacaoId && !mesFechado ? { obrigacaoId: atual.obrigacaoId, despesaId: atual.modo === "despesa" ? atual.despesaId : null } : null);
       if ("erro" in r) return setErro(r.erro);
       const nome = rotuloGuia({ tipo, descricao: descricao.trim() || null });
       if (r.aviso) toast.warning(guia ? "Guia atualizada." : `${nome} anexado.`, { description: r.aviso });
@@ -333,8 +337,8 @@ function GuiaForm({ empresaId, competencia, hoje, contas, mesFechado, slot, guia
         </div>
       </div>
       <Obrigacao contas={contas} competencia={competencia} valor={valorOk} mesFechado={mesFechado} tributo={mapa?.tributo}
-        nota={mapa?.nota} efetivas={efetivas} criaObrigacao={criaObrigacao ? mapa?.obrigacao.criar?.nome : undefined}
-        baixada={!!guia?.obrigacao?.baixada} onChange={setContasEscolhidas} />
+        nota={mapa?.nota} atual={atual} criaObrigacao={criaObrigacao ? mapa?.obrigacao.criar?.nome : undefined}
+        baixada={!!guia?.obrigacao?.baixada} onChange={(p) => setEscolhida({ ...atual, ...p })} />
       <DialogFooter>
         <DialogClose render={<Button variant="outline" type="button" />} disabled={pendente}>
           Cancelar
@@ -352,19 +356,22 @@ function GuiaForm({ empresaId, competencia, hoje, contas, mesFechado, slot, guia
  * Obrigação da guia (título a pagar na competência): conta a recolher, despesa (ou obrigação já registrada, sem
  * lançamento) e a prévia D/C. Tributo desconhecido pelo código: o contador escolhe.
  */
-function Obrigacao({ contas, competencia, valor, mesFechado, tributo, nota, efetivas, criaObrigacao, baixada, onChange }: {
+type EscolhaObrigacao = { chave: string; obrigacaoId: string | null; despesaId: string | null; modo: "despesa" | "ja_registrada" };
+
+function Obrigacao({ contas, competencia, valor, mesFechado, tributo, nota, atual, criaObrigacao, baixada, onChange }: {
   contas: ContaOpcao[]; competencia: string; valor: string | null; mesFechado: boolean; tributo?: string; nota?: string;
-  efetivas: { obrigacaoId: string | null; despesaId: string | null }; criaObrigacao?: string; baixada: boolean;
-  onChange: (c: { obrigacaoId: string | null; despesaId: string | null }) => void;
+  atual: EscolhaObrigacao; criaObrigacao?: string; baixada: boolean;
+  onChange: (c: Partial<EscolhaObrigacao>) => void;
 }) {
   const passivo = contas.filter((c) => /^2\.[12]\./.test(c.codigo) && !c.papel);
   const despesas = contas.filter((c) => /^[13]\./.test(c.codigo) && !c.papel && !c.codigo.startsWith("1.1.1"));
-  const jaRegistrada = !efetivas.despesaId;
+  const jaRegistrada = atual.modo === "ja_registrada";
   const previa = montarPrevia(() => {
     if (!valor) throw new Error("Informe o valor da guia para ver o lançamento.");
-    if (!efetivas.obrigacaoId) throw new Error(criaObrigacao ? `A conta “${criaObrigacao}” será criada ao salvar.` : "Escolha a conta da obrigação.");
+    if (!atual.obrigacaoId) throw new Error(criaObrigacao ? `A conta “${criaObrigacao}” será criada ao salvar.` : "Escolha a conta da obrigação.");
     if (jaRegistrada) throw new Error("Obrigação já registrada: só o título, sem lançamento (a baixa debita a conta a recolher).");
-    return [{ data: fimDoMes(competencia), competencia, historico: `Título a pagar: ${tributo ?? "guia"}`, partidas: partidasTitulo("pagar", efetivas.obrigacaoId, efetivas.despesaId!, valor) }];
+    if (!atual.despesaId) throw new Error("Escolha a conta da despesa.");
+    return [{ data: fimDoMes(competencia), competencia, historico: `Título a pagar: ${tributo ?? "guia"}`, partidas: partidasTitulo("pagar", atual.obrigacaoId, atual.despesaId, valor) }];
   });
   if (mesFechado)
     return <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">Mês fechado: a guia entra, mas a obrigação não é registrada em Títulos.</p>;
@@ -376,17 +383,20 @@ function Obrigacao({ contas, competencia, valor, mesFechado, tributo, nota, efet
       {nota && <p className="text-xs text-muted-foreground">{nota}</p>}
       <div className="grid gap-2">
         <Label>Obrigação (crédito)</Label>
-        <ContaSelect contas={passivo} value={efetivas.obrigacaoId} onChange={(id) => onChange({ ...efetivas, obrigacaoId: id })}
+        <ContaSelect contas={passivo} value={atual.obrigacaoId} onChange={(id) => onChange({ obrigacaoId: id })}
           placeholder={criaObrigacao ? `${criaObrigacao} (será criada)` : "Imposto a recolher"} />
       </div>
       <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={jaRegistrada} onCheckedChange={(c) => onChange({ ...efetivas, despesaId: c ? null : acharConta(contas, { prefixo: "3.2", re: /^impostos e taxas$/ })?.id ?? despesas.find((d) => /^3\.2/.test(d.codigo) && /impost/.test(norm(d.nome)))?.id ?? null })} />
+        <Checkbox checked={jaRegistrada} onCheckedChange={(c) => onChange({
+          modo: c ? "ja_registrada" : "despesa",
+          despesaId: atual.despesaId ?? acharConta(contas, { prefixo: "3.2", re: /^impostos e taxas$/ })?.id ?? despesas.find((d) => /^3\.2/.test(d.codigo) && /impost/.test(norm(d.nome)))?.id ?? null,
+        })} />
         Obrigação já registrada (retenção na nota/folha): sem despesa
       </label>
       {!jaRegistrada && (
         <div className="grid gap-2">
           <Label>Despesa (débito)</Label>
-          <ContaSelect contas={despesas} value={efetivas.despesaId} onChange={(id) => onChange({ ...efetivas, despesaId: id })} />
+          <ContaSelect contas={despesas} value={atual.despesaId} onChange={(id) => onChange({ despesaId: id })} />
         </div>
       )}
       <PreviaLancamentos previa={previa} contas={contas} />

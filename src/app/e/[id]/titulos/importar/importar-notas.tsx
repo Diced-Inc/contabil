@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtCompetencia, fmtData, fmtValor, primeiroDiaDoMes } from "@/lib/format";
 import {
-  contraparteDaNota, dataDaNota, direcaoDaNota, lerNota, parcelasDaNota, rotuloNota, type Direcao, type NotaLida,
+  contraparteDaNota, dataDaNota, direcaoDaNota, lerNota, marcarDuplicadas, parcelasDaNota, rotuloNota, type Direcao, type NotaLida,
 } from "@/lib/notas";
 import { decodificarXml } from "@/lib/notas/xml";
 import { lerZip } from "@/lib/notas/zip";
@@ -81,11 +81,10 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
       else fora.push({ arquivo: f.name, motivo: "Formato não suportado (use .xml ou .zip)" });
     }
     const existentes = new Set(await chavesJaRegistradas(empresaId, [...new Set(lidas.map((l) => l.nota.chave))]));
-    const vistas = new Set<string>();
+    const dups = marcarDuplicadas(lidas.map((l) => l.nota.chave), existentes);
     const novas: Linha[] = lidas.map(({ arquivo, nota }, i) => {
       const direcao = direcaoDaNota(nota, cnpj);
-      const duplicada = existentes.has(nota.chave) || vistas.has(nota.chave);
-      vistas.add(nota.chave);
+      const duplicada = dups[i];
       return {
         id: `${i}-${arquivo}`, arquivo, nota, direcao, competencia: nota.competencia.slice(0, 7), contaId: contaPadrao(contas, lembradas, direcao, nota),
         contasRet: {}, marcada: !!direcao && !duplicada, duplicada, aberta: false,

@@ -261,3 +261,13 @@ export function dataDaNota(emissao: string, competencia: string) {
 
 export const rotuloNota = (origem: OrigemNota | "manual", numero: string, serie: string | null) =>
   `${origem === "nfse" ? "NFS-e" : origem === "nfe" ? "NF-e" : "NF"} ${numero}${serie ? `/${serie}` : ""}`;
+
+/** Duplicada: chave já registrada na empresa ou repetida no próprio lote (a primeira ocorrência vale). */
+export function marcarDuplicadas(chaves: string[], registradas: ReadonlySet<string>) {
+  const vistas = new Set<string>();
+  return chaves.map((c) => {
+    const dup = registradas.has(c) || vistas.has(c);
+    vistas.add(c);
+    return dup;
+  });
+}

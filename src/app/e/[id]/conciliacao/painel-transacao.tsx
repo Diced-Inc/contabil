@@ -149,7 +149,8 @@ function operacaoInicial(t: TransacaoLinha, ctx: ContextoPainel, entrada: boolea
   const v = Math.abs(cents(t.valor));
   const exato = ctx.titulos.find((x) => x.tipo === (entrada ? "receber" : "pagar") && cents(x.saldo) === v);
   if (exato) return exato.imposto ? "baixa_imposto" : entrada ? "baixa_receber" : "baixa_pagar";
-  if (!entrada && MEMO_IMPOSTO.test(t.memo) && ctx.titulos.some((x) => x.imposto)) return "baixa_imposto";
+  // memo de guia (DAS, DARF...) só decide sem sugestão de regra/IA: "das" também é palavra comum ("CASA DAS TINTAS")
+  if (!entrada && !t.sugestaoOrigem && MEMO_IMPOSTO.test(t.memo) && ctx.titulos.some((x) => x.imposto)) return "baixa_imposto";
   const contas = ctx.contas;
   if (t.sugestaoOperacao && operacoesPara(entrada).includes(t.sugestaoOperacao)) return t.sugestaoOperacao;
   return operacaoDaConta(contas.find((c) => c.id === t.sugestaoContaId), entrada) ?? (entrada ? "receita_direta" : "despesa_direta");
