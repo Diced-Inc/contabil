@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+  <infNFSe Id="NFS42054072211222333000181000000000012326031234567890">
+    <xLocEmi>Florianópolis</xLocEmi>
+    <xLocPrestacao>Florianópolis</xLocPrestacao>
+    <nNFSe>123</nNFSe>
+    <cLocIncid>4205407</cLocIncid>
+    <xLocIncid>Florianópolis</xLocIncid>
+    <xTribNac>Elaboração de programas de computadores, inclusive de jogos eletrônicos.</xTribNac>
+    <verAplic>SefinNac_Pre_1.0.0</verAplic>
+    <ambGer>2</ambGer>
+    <tpEmis>1</tpEmis>
+    <procEmi>1</procEmi>
+    <cStat>100</cStat>
+    <dhProc>2026-03-10T14:32:05-03:00</dhProc>
+    <nDFSe>456789</nDFSe>
+    <emit>
+      <CNPJ>11222333000181</CNPJ>
+      <IM>12345</IM>
+      <xNome>ACME SOFTWARE LTDA</xNome>
+      <enderNac>
+        <xLgr>Rua das Flores</xLgr>
+        <nro>100</nro>
+        <xBairro>Centro</xBairro>
+        <cMun>4205407</cMun>
+        <UF>SC</UF>
+        <CEP>88010000</CEP>
+      </enderNac>
+      <email>fiscal@acme.example</email>
+    </emit>
+    <valores>
+      <vBC>10000.00</vBC>
+      <pAliqAplic>5.00</pAliqAplic>
+      <vISSQN>500.00</vISSQN>
+      <vTotalRet>2215.00</vTotalRet>
+      <vLiq>7785.00</vLiq>
+    </valores>
+    <DPS versao="1.01">
+      <infDPS Id="DPS420540721122233300018100001000000000000045">
+        <tpAmb>1</tpAmb>
+        <dhEmi>2026-03-10T14:30:00-03:00</dhEmi>
+        <verAplic>ERP 2.3</verAplic>
+        <serie>1</serie>
+        <nDPS>45</nDPS>
+        <dCompet>2026-03-01</dCompet>
+        <tpEmit>1</tpEmit>
+        <cLocEmi>4205407</cLocEmi>
+        <prest>
+          <CNPJ>11222333000181</CNPJ>
+          <IM>12345</IM>
+          <email>fiscal@acme.example</email>
+          <regTrib>
+            <opSimpNac>1</opSimpNac>
+            <regEspTrib>0</regEspTrib>
+          </regTrib>
+        </prest>
+        <toma>
+          <CNPJ>44555666000181</CNPJ>
+          <xNome>CLIENTE EXEMPLO S.A.</xNome>
+          <end>
+            <endNac>
+              <cMun>4205407</cMun>
+              <CEP>88015000</CEP>
+            </endNac>
+            <xLgr>Avenida Beira-Mar Norte</xLgr>
+            <nro>2000</nro>
+            <xBairro>Agronômica</xBairro>
+          </end>
+        </toma>
+        <serv>
+          <locPrest>
+            <cLocPrestacao>4205407</cLocPrestacao>
+          </locPrest>
+          <cServ>
+            <cTribNac>010101</cTribNac>
+            <xDescServ>Desenvolvimento de software sob encomenda - competência 03/2026</xDescServ>
+            <cNBS>115021000</cNBS>
+          </cServ>
+        </serv>
+        <valores>
+          <vServPrest>
+            <vServ>10000.00</vServ>
+          </vServPrest>
+          <trib>
+            <tribMun>
+              <tribISSQN>1</tribISSQN>
+              <tpRetISSQN>2</tpRetISSQN>
+            </tribMun>
+            <tribFed>
+              <piscofins>
+                <CST>01</CST>
+                <vBCPisCofins>10000.00</vBCPisCofins>
+                <pAliqPis>1.65</pAliqPis>
+                <pAliqCofins>7.60</pAliqCofins>
+                <vPis>165.00</vPis>
+                <vCofins>760.00</vCofins>
+                <tpRetPisCofins>3</tpRetPisCofins>
+              </piscofins>
+              <vRetCP>1100.00</vRetCP>
+              <vRetIRRF>150.00</vRetIRRF>
+              <vRetCSLL>465.00</vRetCSLL>
+            </tribFed>
+            <totTrib>
+              <vTotTrib>
+                <vTotTribFed>2390.00</vTotTribFed>
+                <vTotTribEst>0.00</vTotTribEst>
+                <vTotTribMun>500.00</vTotTribMun>
+              </vTotTrib>
+            </totTrib>
+          </trib>
+        </valores>
+      </infDPS>
+    </DPS>
+  </infNFSe>
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/><Reference URI="#ID"><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/><DigestValue>AAAA</DigestValue></Reference></SignedInfo><SignatureValue>AAAA</SignatureValue><KeyInfo><X509Data><X509Certificate>AAAA</X509Certificate></X509Data></KeyInfo></Signature>
+</NFSe>
