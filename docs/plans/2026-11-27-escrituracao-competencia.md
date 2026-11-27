@@ -87,6 +87,10 @@ Restrições do banco (`0001_triggers.sql`): partida só em analítica da empres
 6. A outra conta bancária da TAVAPPS será cadastrada em breve; por ora, **opção manual para zerar** a transitória de
    transferências (lançamento manual com prévia, estornável depois) — entra na fase 1.
 
+7. (27/11, após a fase 2) Recebimento com competência **posterior** ao mês do banco não vira receita nem Clientes:
+   vai para **Adiantamentos de Clientes** (e pagamento antecipado → Adiantamentos a Fornecedores). Na fase 3: um clique
+   no painel + compensação do adiantamento quando o título/NF daquela contraparte for lançado.
+
 ## Decisões pendentes (Bruno/Marcelo) — respondidas acima
 1. Importação de NF: XML NF-e, NFS-e (portal/padrão nacional) ou só cadastro manual na 1ª versão.
 2. Guia do portal vira título de imposto automaticamente? No upload ou no envio ao cliente?
