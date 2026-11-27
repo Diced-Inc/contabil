@@ -11,6 +11,7 @@ import { detectarCsv, parseCsv, type DeteccaoCsv, type ExtratoCsv, type Mapeamen
 import { atribuirFitids } from "@/lib/dedup";
 import { extrairExtratoPdf, type ExtratoIA } from "@/lib/extrato-ia";
 import { normalizarIdOfx, parseOfx, type OfxExtrato } from "@/lib/ofx";
+import { linhaDeSaldo, MOTIVO_SALDO_DIA } from "@/lib/saldo-dia";
 import { requireUser } from "@/supabase/server";
 import type { EstadoForm } from "./empresas";
 
@@ -102,7 +103,10 @@ function dataDoSaldo(ext: OfxExtrato) {
   return ext.dataSaldo ?? ext.dtEnd ?? ext.transacoes.reduce<string | null>((m, t) => (!m || t.data > m ? t.data : m), null);
 }
 
-export type ResultadoArquivo = { erro: string } | { ok: true; novas: number; repetidas: number; ids: string[]; importacaoId: string };
+/** `ids`: novas pendentes (vão para a sugestão); `saldos`: linhas de saldo do dia gravadas já ignoradas. */
+export type ResultadoArquivo =
+  | { erro: string }
+  | { ok: true; novas: number; repetidas: number; saldos: number; ids: string[]; importacaoId: string };
 type ContaBancaria = NonNullable<Awaited<ReturnType<typeof getContaBancaria>>>;
 
 /** Conta da empresa, ativa; ou a mensagem de erro. */
@@ -133,9 +137,12 @@ type Gravacao = {
   transacoes: { fitid: string; data: string; valor: string; memo: string; tipo: string | null }[];
 };
 
-/** Grava a importação e as transações novas (FITID repetido na conta é ignorado) numa transação de banco. */
+/**
+ * Grava a importação e as transações novas (FITID repetido na conta é ignorado) numa transação de banco.
+ * Linha de saldo do dia entra já ignorada (com motivo): não é movimento e não vai para regras/IA; dá para reativar.
+ */
 async function gravarImportacao(conta: ContaBancaria, g: Gravacao): Promise<ResultadoArquivo> {
-  const { impId, novosIds } = await db.transaction(async (tx) => {
+  const { impId, novosIds, saldos } = await db.transaction(async (tx) => {
     const [imp] = await tx
       .insert(importacoes)
       .values({
@@ -151,6 +158,7 @@ async function gravarImportacao(conta: ContaBancaria, g: Gravacao): Promise<Resu
       })
       .returning({ id: importacoes.id });
     const ids: string[] = [];
+    let saldos = 0;
     for (let i = 0; i < g.transacoes.length; i += LOTE) {
       const inseridas = await tx
         .insert(transacoesBancarias)
@@ -163,16 +171,18 @@ async function gravarImportacao(conta: ContaBancaria, g: Gravacao): Promise<Resu
             valor: t.valor,
             memo: t.memo,
             tipoOfx: t.tipo,
+            ...(linhaDeSaldo(t.memo) && { status: "ignorada" as const, sugestaoJustificativa: MOTIVO_SALDO_DIA }),
           })),
         )
         .onConflictDoNothing({ target: [transacoesBancarias.contaBancariaId, transacoesBancarias.fitid] })
-        .returning({ id: transacoesBancarias.id });
-      ids.push(...inseridas.map((t) => t.id));
+        .returning({ id: transacoesBancarias.id, status: transacoesBancarias.status });
+      for (const t of inseridas) if (t.status === "ignorada") saldos++; else ids.push(t.id);
     }
-    await tx.update(importacoes).set({ qtdNovas: ids.length }).where(eq(importacoes.id, imp.id));
-    return { impId: imp.id, novosIds: ids };
+    await tx.update(importacoes).set({ qtdNovas: ids.length + saldos }).where(eq(importacoes.id, imp.id));
+    return { impId: imp.id, novosIds: ids, saldos };
   });
-  return { ok: true, novas: novosIds.length, repetidas: g.transacoes.length - novosIds.length, ids: novosIds, importacaoId: impId };
+  const novas = novosIds.length + saldos;
+  return { ok: true, novas, repetidas: g.transacoes.length - novas, saldos, ids: novosIds, importacaoId: impId };
 }
 
 /** Importa um OFX (uma requisição por arquivo, por causa do limite de corpo da Vercel). A sugestão roda depois, em sugerirAposImportacao. */

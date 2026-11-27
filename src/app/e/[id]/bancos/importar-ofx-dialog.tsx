@@ -31,7 +31,7 @@ type Status =
   | { s: "analisando" }
   | { s: "extraindo" }
   | { s: "aguardando"; msg: string }
-  | { s: "ok"; novas: number; repetidas: number }
+  | { s: "ok"; novas: number; repetidas: number; saldos: number }
   | { s: "erro"; msg: string };
 type Item = { arquivo: File; tipo: Tipo | null; status: Status };
 
@@ -59,7 +59,12 @@ function StatusTexto({ st }: { st: Status }) {
   if (st.s === "analisando") return <span className="text-muted-foreground">Analisando...</span>;
   if (st.s === "extraindo") return <span className="text-muted-foreground">Extraindo com IA...</span>;
   if (st.s === "aguardando") return <span className="text-warning">{st.msg}</span>;
-  if (st.s === "ok") return <span className="text-success">{st.novas} novas, {st.repetidas} repetidas</span>;
+  if (st.s === "ok")
+    return (
+      <span className="text-success">
+        {st.novas} novas, {st.repetidas} repetidas{st.saldos > 0 && `, ${st.saldos} saldos do dia ignorados`}
+      </span>
+    );
   return (
     <span className="text-destructive">
       {st.msg}
@@ -151,6 +156,7 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar, inici
     setFeitos(0);
     const ids: string[] = [];
     const importacoesOk: string[] = [];
+    let saldos = 0;
     // Sequencial de propósito: arquivos da mesma conta em paralelo disputariam lock no banco,
     // e um CSV mapeado (e salvo) agora vale para os próximos do mesmo layout.
     for (const [idx, item] of itens.entries()) {
@@ -171,7 +177,8 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar, inici
         else {
           ids.push(...r.ids);
           importacoesOk.push(r.importacaoId);
-          set({ s: "ok", novas: r.novas, repetidas: r.repetidas });
+          saldos += r.saldos;
+          set({ s: "ok", novas: r.novas, repetidas: r.repetidas, saldos: r.saldos });
         }
       } catch (e) {
         setPasso(null);
@@ -179,18 +186,19 @@ function Form({ empresaId, contas, fase, setFase, passo, setPasso, fechar, inici
       }
       setFeitos((n) => n + 1);
     }
+    const ignoradas = saldos ? ` ${saldos} linhas de saldo do dia ignoradas.` : "";
     if (ids.length) {
       try {
         const s = await sugerirAposImportacao(empresaId, ids);
         const faltam = s.restantes ? ` ${s.restantes} sem sugestão — use Sugerir com IA na conciliação.` : "";
-        toast.success(`${ids.length} transações novas.`, {
+        toast.success(`${ids.length} transações novas.${ignoradas}`, {
           description: `Sugestões: ${s.regras} por regra, ${s.transferencias} transferências, ${s.ia} por IA.${faltam}`,
         });
         if (s.erros.length) toast.warning(`Falhas na sugestão: ${s.erros.join("; ")}`);
       } catch (e) {
         toast.warning(`Falha na sugestão: ${(e as Error).message}`);
       }
-    }
+    } else if (saldos) toast.success(`Nenhuma movimentação nova.${ignoradas}`);
     if (importacoesOk.length) onImportado?.(importacoesOk);
     setFase("fim");
   }
