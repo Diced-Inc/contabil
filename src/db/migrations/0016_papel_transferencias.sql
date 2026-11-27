@@ -1,0 +1,1 @@
+ALTER TYPE "public"."papel_conta" ADD VALUE 'transferencias';

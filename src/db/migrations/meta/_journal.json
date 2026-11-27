@@ -113,6 +113,13 @@
       "when": 1795448771258,
       "tag": "0015_licitacoes_categoria",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795804340685,
+      "tag": "0016_papel_transferencias",
+      "breakpoints": true
     }
   ]
 }

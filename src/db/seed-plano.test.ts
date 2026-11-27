@@ -14,6 +14,6 @@ describe("PLANO_ITG1000", () => {
   it("papéis únicos e presentes", () => {
     const papeis = PLANO_ITG1000.map((r) => r[4]).filter(Boolean);
     expect(new Set(papeis).size).toBe(papeis.length);
-    expect(papeis.sort()).toEqual(["clientes", "fornecedores", "lucros_acumulados", "prejuizos_acumulados"]);
+    expect(papeis.sort()).toEqual(["clientes", "fornecedores", "lucros_acumulados", "prejuizos_acumulados", "transferencias"]);
   });
 });

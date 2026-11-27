@@ -64,4 +64,5 @@ export const PAPEIS = {
   prejuizos_acumulados: "Prejuízos acumulados",
   clientes: "Clientes",
   fornecedores: "Fornecedores",
+  transferencias: "Transferências entre contas",
 } as const;

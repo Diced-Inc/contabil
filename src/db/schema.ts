@@ -13,7 +13,9 @@ export const grupoDreEnum = pgEnum("grupo_dre", [
   "receita_bruta", "deducoes", "custos", "despesas_operacionais", "receitas_financeiras",
   "despesas_financeiras", "outras_receitas", "outras_despesas", "tributos_lucro",
 ]);
-export const papelEnum = pgEnum("papel_conta", ["lucros_acumulados", "prejuizos_acumulados", "clientes", "fornecedores"]);
+export const papelEnum = pgEnum("papel_conta", [
+  "lucros_acumulados", "prejuizos_acumulados", "clientes", "fornecedores", "transferencias",
+]);
 export const statusTransacaoEnum = pgEnum("status_transacao", ["pendente", "classificada", "transferencia", "ignorada"]);
 export const origemSugestaoEnum = pgEnum("origem_sugestao", ["regra", "ia", "transferencia"]);
 export const origemLancEnum = pgEnum("origem_lancamento", ["manual", "conciliacao", "apuracao", "estorno"]);
