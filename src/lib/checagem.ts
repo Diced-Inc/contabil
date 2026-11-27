@@ -296,7 +296,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   } else {
     itens.push({
       id: "resultado-zerado", titulo: `Exercício ${ano} ainda não apurado`, status: "ok",
-      detalhe: `Exercício ${ano} ainda não apurado: o Balanço é provisório até a apuração.`,
+      detalhe: "O Balanço é provisório até a apuração do resultado.",
     });
   }
 
