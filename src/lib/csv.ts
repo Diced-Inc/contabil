@@ -40,7 +40,8 @@ const SEPARADORES: Separador[] = [";", ",", "\t"];
 const PALAVRAS_CABECALHO = /data|valor|hist|descri/i;
 const temBom = (b: Uint8Array) => b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf;
 
-function decodificar(buf: Uint8Array): { texto: string; encoding: Encoding } {
+/** UTF-8 se o arquivo for UTF-8 válido (com ou sem BOM), senão Windows-1252; vale para CSV e OFX (cabeçalho do OFX mente). */
+export function decodificar(buf: Uint8Array): { texto: string; encoding: Encoding } {
   try {
     return { texto: new TextDecoder("utf-8", { fatal: true }).decode(temBom(buf) ? buf.subarray(3) : buf), encoding: "utf8" };
   } catch {

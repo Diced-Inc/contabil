@@ -1,14 +1,11 @@
+import { decodificar } from "./csv";
+
 export type OfxTransacao = { fitid: string; data: string; valor: string; memo: string; tipo: string | null };
 export type OfxExtrato = {
   bankId: string; acctId: string; dtStart: string | null; dtEnd: string | null;
   saldoFinal: string | null; dataSaldo: string | null; transacoes: OfxTransacao[];
 };
 
-function decode(buf: Buffer): string {
-  const head = buf.subarray(0, 600).toString("latin1");
-  const utf8 = /ENCODING:UTF-8|encoding="UTF-8"|CHARSET:UTF-8/i.test(head);
-  return buf.toString(utf8 ? "utf8" : "latin1");
-}
 function tag(src: string, name: string): string | null {
   const m = src.match(new RegExp(`<${name}>([^<\r\n]*)`, "i"));
   return m ? m[1].trim() : null;
@@ -26,7 +23,8 @@ function parseAmount(s: string | null): string {
 }
 
 export function parseOfx(buf: Buffer): OfxExtrato {
-  const src = decode(buf);
+  // Itaú manda UTF-8 com cabeçalho CHARSET:1252: decide pelos bytes, não pelo cabeçalho.
+  const src = decodificar(buf).texto;
   if (/<CCSTMTRS>/i.test(src)) throw new Error("Extrato de cartão de crédito não é suportado nesta versão");
   const body = src.match(/<STMTRS>([\s\S]*?)(<\/STMTRS>|$)/i)?.[1];
   if (!body) throw new Error("Arquivo não contém extrato bancário (STMTRS)");

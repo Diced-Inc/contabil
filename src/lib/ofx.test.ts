@@ -48,6 +48,16 @@ describe("parseOfx", () => {
     const r = parseOfx(Buffer.from(txt.replace("</BANKTRANLIST>", extra + "</BANKTRANLIST>"), "latin1"));
     expect(r.transacoes.map((t) => t.fitid)).toEqual(["2026010501", "2026010501#2", "2026010501#3"]);
   });
+  it("UTF-8 com cabeçalho CHARSET:1252 (Itaú) e 1252 de verdade dão o mesmo memo, sem decodificar duas vezes", () => {
+    const base = sgml.toString("latin1").replace("<MEMO>TARIFA BANCÁRIA", "<MEMO>SALDO TOTAL DISPON#VEL DIA");
+    expect(base).toContain("CHARSET:1252");
+    const [antes, depois] = base.split("#");
+    const comBytes = (meio: number[]) => Buffer.concat([Buffer.from(antes, "latin1"), Buffer.from(meio), Buffer.from(depois, "latin1")]);
+    const utf8 = parseOfx(comBytes([0xc3, 0x8d])); // Í em UTF-8
+    const cp1252 = parseOfx(comBytes([0xcd])); // Í em Windows-1252
+    expect(utf8.transacoes[1].memo).toBe("SALDO TOTAL DISPONÍVEL DIA");
+    expect(cp1252.transacoes[1].memo).toBe("SALDO TOTAL DISPONÍVEL DIA");
+  });
 });
 
 it("normalizarIdOfx ignora zeros à esquerda e pontuação", () => {
