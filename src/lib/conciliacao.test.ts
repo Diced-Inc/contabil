@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agruparContrapartidas, dataNoMesAberto, partidasClassificacao } from "./conciliacao";
+import { agruparContrapartidas, dataNoMesAberto, partidasClassificacao, partidasZerarTransitoria } from "./conciliacao";
 import { padraoComum } from "./classificacao/regras";
 import { validarPartidas } from "./lancamentos";
 
@@ -67,5 +67,18 @@ describe("dataNoMesAberto", () => {
   it("hoje também fechado: pede para reabrir", () => {
     expect(() => dataNoMesAberto("2026-09-15", "2026-09-30", fechados, "reclassificar"))
       .toThrow("Reabra o mês 09/2026 em Fechamento para reclassificar");
+  });
+});
+
+describe("partidasZerarTransitoria", () => {
+  it("saldo credor (TAVAPPS): D transitória / C contrapartida pelo valor absoluto", () => {
+    expect(partidasZerarTransitoria(-41498989, "T", "B")).toEqual([{ contaId: "T", debito: "414989.89" }, { contaId: "B", credito: "414989.89" }]);
+  });
+  it("saldo devedor: D contrapartida / C transitória", () => {
+    expect(partidasZerarTransitoria(1050, "T", "B")).toEqual([{ contaId: "B", debito: "10.50" }, { contaId: "T", credito: "10.50" }]);
+  });
+  it("zerada ou contrapartida = transitória: erro", () => {
+    expect(() => partidasZerarTransitoria(0, "T", "B")).toThrow(/zerada/);
+    expect(() => partidasZerarTransitoria(100, "T", "T")).toThrow(/diferente/);
   });
 });

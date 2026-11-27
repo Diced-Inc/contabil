@@ -9,8 +9,9 @@ import { aplicarTemplate, valorDoPadrao } from "@/lib/classificacao/regras";
 import { sugerirPendentes, type ResultadoSugestao } from "@/lib/classificacao/pipeline";
 import {
   alterarIgnorada, baixarTituloPorTransacao, classificarTransacao, desfazerConciliacao as desfazer, ErroSemTitulo, inserirRegra,
-  reclassificarTransacao, transferirEntreContas,
+  parearTransferenciaSemPar, previaZerarTransitoria, reclassificarTransacao, transferirEntreContas, zerarTransitoria,
 } from "@/lib/conciliacao";
+import { NOME_OUTRA_CONTA } from "@/lib/classificacao/transferencias";
 import { contaDeTitulo } from "@/lib/sem-titulo";
 import { cents, fmtCompetencia, fmtData, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
@@ -315,4 +316,71 @@ export async function sugerirComIA(empresaId: string): Promise<ResultadoSugestao
   const r = await sugerirPendentes(empresaId);
   revalidatePath(`/e/${empresaId}`, "layout");
   return r;
+}
+
+export async function parearSemPar(empresaId: string, input: { transacaoId: string; parId: string }): Promise<EstadoForm> {
+  const r = z.object({ transacaoId: uuid, parId: z.uuid("Selecione a transação par.") }).safeParse(input);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  return executar(empresaId, (usuarioId) => db.transaction((tx) => parearTransferenciaSemPar(tx, { ...r.data, empresaId, usuarioId })));
+}
+
+const dataSchema = z.iso.date("Informe a data.");
+
+/** Saldo (centavos) da conta de transferências na data, para a prévia do "Zerar manualmente". */
+export async function previaZerarTransferencias(empresaId: string, data: string): Promise<{ erro?: string; saldo?: number; contaId?: string }> {
+  await requireUser();
+  const d = dataSchema.safeParse(data);
+  if (!empresaValida(empresaId) || !d.success) return { erro: "Data inválida." };
+  try {
+    const p = await db.transaction((tx) => previaZerarTransitoria(tx, empresaId, d.data));
+    return { saldo: p.saldo, contaId: p.id };
+  } catch (e) {
+    return { erro: msg(e) };
+  }
+}
+
+const zerarSchema = z.object({
+  contaId: z.uuid("Selecione a contrapartida."),
+  data: dataSchema,
+  historico: z.string().trim().min(3, "Histórico deve ter ao menos 3 caracteres."),
+  saldoEsperado: z.number().int(),
+});
+
+/** Lançamento manual que zera a transitória contra a conta escolhida (prévia confirmada em `saldoEsperado`). */
+export async function zerarTransferencias(empresaId: string, input: z.input<typeof zerarSchema>): Promise<EstadoForm & { numero?: number }> {
+  const r = zerarSchema.safeParse(input);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  let numero: number | undefined;
+  const res = await executar(empresaId, async (usuarioId) => {
+    numero = (await db.transaction((tx) => zerarTransitoria(tx, { ...r.data, empresaId, usuarioId }))).numero;
+  });
+  return { ...res, numero };
+}
+
+/** Cria (ou devolve, se já existe) a analítica "Bancos – Outra Conta (a cadastrar)" no próximo código livre de 1.1.1. */
+export async function criarContaOutroBanco(empresaId: string): Promise<{ erro?: string; conta?: { id: string; codigo: string; nome: string } }> {
+  await requireUser();
+  if (!empresaValida(empresaId)) return { erro: "Empresa inválida." };
+  try {
+    const conta = await db.transaction(async (tx) => {
+      const sel = { id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome };
+      const [ja] = await tx.select(sel).from(planoContas)
+        .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.nome, NOME_OUTRA_CONTA)));
+      if (ja) return ja;
+      const [pai] = await tx.select(sel).from(planoContas)
+        .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.codigo, "1.1.1"), eq(planoContas.tipo, "sintetica")))
+        .for("update");
+      if (!pai) throw new Error("Grupo 1.1.1 (Caixa e Equivalentes) não encontrado: crie a conta no plano de contas");
+      const filhos = await tx.select({ codigo: planoContas.codigo }).from(planoContas).where(eq(planoContas.parentId, pai.id));
+      const n = Math.max(0, ...filhos.map((f) => Number(f.codigo.split(".").at(-1)) || 0)) + 1;
+      const [c] = await tx.insert(planoContas).values({
+        empresaId, parentId: pai.id, codigo: `1.1.1.${String(n).padStart(2, "0")}`, nome: NOME_OUTRA_CONTA, natureza: "D", tipo: "analitica",
+      }).returning(sel);
+      return c;
+    });
+    revalidatePath(`/e/${empresaId}`, "layout");
+    return { conta };
+  } catch (e) {
+    return { erro: msg(e) };
+  }
 }

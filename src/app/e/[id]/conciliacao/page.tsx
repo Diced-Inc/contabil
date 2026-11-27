@@ -1,17 +1,22 @@
 import { Suspense, type ReactNode } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { CircleCheckBig, EyeOff, ListChecks, Search } from "lucide-react";
+import { ArrowLeftRight, CircleCheckBig, EyeOff, ListChecks, Search } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Carregando, EmptyState, FilterField, PageHeader, Toolbar } from "@/components/page-header";
+import { parearTransferencias, pareceTransferenciaPropria } from "@/lib/classificacao/transferencias";
 import { hoje, isoData, primeiroDiaDoMes } from "@/lib/format";
 import { ImportarOfxDialog } from "../bancos/importar-ofx-dialog";
 import { getEmpresa } from "../empresa";
 import { listarContasAnaliticas } from "../lancamentos/queries";
 import { ConciliacaoLista, Conciliadas, Ignoradas } from "./conciliacao-toolbar";
-import { contarConciliadas, listarConciliadas, listarContasBancarias, listarTitulosAbertos, listarTransacoes } from "./queries";
+import {
+  contarConciliadas, listarConciliadas, listarContasBancarias, listarTitulosAbertos, listarTransacoes, listarTransferenciasSemPar,
+  saldoTransitoria, type SemParLinha, type TransacaoLinha,
+} from "./queries";
+import { TransferenciasSemPar } from "./transferencias-sem-par";
 
 // Server actions desta página rodam o pipeline de sugestão (IA).
 export const maxDuration = 300;
@@ -20,7 +25,7 @@ const selectCls =
   "h-9 cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 const ORIGENS = { regra: "Regra", transferencia: "Transferência", ia: "IA", sem: "Sem sugestão" } as const;
 const str = (s: unknown) => (typeof s === "string" ? s.trim() : "");
-const VER = ["pendentes", "ignoradas", "conciliadas"] as const;
+const VER = ["pendentes", "ignoradas", "conciliadas", "transferencias"] as const;
 type Ver = (typeof VER)[number];
 const fimDoMes = (d: string) => new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).toISOString().slice(0, 10);
 const DESCRICAO = "Revise as transações importadas: classifique, baixe títulos, case transferências ou ignore.";
@@ -29,7 +34,7 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
   await connection();
   const { id } = await params;
   const sp = await searchParams;
-  await getEmpresa(id);
+  const empresa = await getEmpresa(id);
   const ver: Ver = VER.find((v) => v === sp.ver) ?? "pendentes";
   const f = {
     conta: str(sp.conta), de: isoData(sp.de) ?? "", ate: isoData(sp.ate) ?? "", q: str(sp.q).toLowerCase(),
@@ -39,11 +44,12 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
     f.de = primeiroDiaDoMes(hoje());
     f.ate = fimDoMes(hoje());
   }
-  const [pendentes, ignoradas, nConciliadas, bancos] = await Promise.all([
+  const [pendentes, ignoradas, nConciliadas, bancos, semPar] = await Promise.all([
     listarTransacoes(id, "pendente"),
     listarTransacoes(id, "ignorada"),
     contarConciliadas(id, f),
     listarContasBancarias(id),
+    listarTransferenciasSemPar(id),
   ]);
   // ponytail: filtro em memória; levar para o SQL se a fila passar de alguns milhares
   const filtrar = (ts: typeof pendentes) =>
@@ -55,6 +61,9 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
         (!f.q || t.memo.toLowerCase().includes(f.q)) &&
         (!f.origem || (f.origem === "sem" ? !t.sugestaoOrigem : t.sugestaoOrigem === f.origem)),
     );
+  const filtrarSemPar = (ts: SemParLinha[]) =>
+    ts.filter((t) => (!f.conta || t.contaBancariaId === f.conta) && (!f.de || t.data >= f.de) && (!f.ate || t.data <= f.ate)
+      && (!f.q || t.memo.toLowerCase().includes(f.q)));
   const filtrando = !!(f.conta || f.de || f.ate || f.q || f.origem);
   const importar = <ImportarOfxDialog empresaId={id} contas={bancos} />;
   const aba = (v: Ver, rotulo: string, n: number) => (
@@ -85,6 +94,7 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
         {aba("pendentes", "Pendentes", pendentes.length)}
         {aba("conciliadas", "Conciliadas", nConciliadas)}
         {aba("ignoradas", "Ignoradas", ignoradas.length)}
+        {aba("transferencias", "Transferências sem par", semPar.length)}
       </nav>
       <Toolbar>
         <form className="contents">
@@ -122,7 +132,15 @@ async function Conciliacao({ params, searchParams }: PageProps<"/e/[id]/concilia
           </Button>
         </form>
       </Toolbar>
-      {ver === "conciliadas" ? (
+      {ver === "transferencias" ? (
+        <ListaTransferencias
+          empresaId={id}
+          ate={f.ate || hoje()}
+          semPar={filtrarSemPar(semPar)}
+          pendentes={pendentes}
+          suspeitas={filtrar(pendentes).filter((t) => pareceTransferenciaPropria(t.memo, empresa))}
+        />
+      ) : ver === "conciliadas" ? (
         <ListaConciliadas
           empresaId={id}
           filtros={f}
@@ -174,6 +192,45 @@ async function ListaPendentes({ empresaId, transacoes, todas, vazio }: {
       titulos={titulosAbertos}
       vazio={vazio}
     />
+  );
+}
+
+/** Transitória, classificadas nela sem par (com o par, se apareceu) e pendentes que parecem transferência própria. */
+async function ListaTransferencias({ empresaId, ate, semPar, pendentes, suspeitas }: {
+  empresaId: string; ate: string; semPar: SemParLinha[]; pendentes: TransacaoLinha[]; suspeitas: TransacaoLinha[];
+}) {
+  await connection();
+  const [transitoria, contas, titulosAbertos] = await Promise.all([
+    saldoTransitoria(empresaId, ate), listarContasAnaliticas(empresaId), listarTitulosAbertos(empresaId),
+  ]);
+  if (!transitoria)
+    return (
+      <EmptyState icon={ArrowLeftRight} title="Sem conta de transferências"
+        hint="Marque uma conta analítica com o papel Transferências entre contas no plano de contas." />
+    );
+  const candidatas = [...semPar, ...pendentes];
+  const porId = new Map(candidatas.map((t) => [t.id, t]));
+  const pares = new Map(parearTransferencias(candidatas).flatMap(([a, b]) => [[a, b], [b, a]] as const));
+  const comPar = semPar.map((t) => {
+    const p = porId.get(pares.get(t.id) ?? "");
+    return { ...t, par: p ? { id: p.id, data: p.data, contaBancariaNome: p.contaBancariaNome, valor: p.valor, memo: p.memo } : null };
+  });
+  return (
+    <>
+      <TransferenciasSemPar empresaId={empresaId} transitoria={transitoria} ate={ate} semPar={comPar} contas={contas} />
+      <h2 className="mb-1 text-sm font-semibold">Pendentes que parecem transferência própria</h2>
+      <p className="mb-3 text-xs text-muted-foreground">
+        CNPJ ou nome da empresa no memo. Case com a outra conta na aba Transferência do painel; sem a outra conta, classifique na conta de transferências.
+      </p>
+      <ConciliacaoLista
+        empresaId={empresaId}
+        transacoes={suspeitas}
+        todas={pendentes}
+        contas={contas}
+        titulos={titulosAbertos}
+        vazio={<EmptyState icon={CircleCheckBig} title="Nenhuma pendente parecida" hint="Nenhuma transação pendente com o CNPJ ou o nome da empresa no memo." />}
+      />
+    </>
   );
 }
 

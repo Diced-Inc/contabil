@@ -1,10 +1,10 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { contasBancarias, lancamentos, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
-import { cents, fromCents, hoje, primeiroDiaDoMes } from "./format";
+import { contasBancarias, lancamentos, partidas, planoContas, regras, titulos, transacoesBancarias } from "@/db/schema";
+import { cents, fmtCompetencia, fmtData, fmtValor, fromCents, hoje, primeiroDiaDoMes } from "./format";
 import { criarLancamento, dataNoMesAberto, estornarLancamento, mesesFechados, type PartidaInput } from "./lancamentos";
 import { contaDeTitulo, MSG_CONFIRMAR_CLIENTES } from "./sem-titulo";
-import { baixarTitulo } from "./titulos";
+import { baixarTitulo, contaPorPapel } from "./titulos";
 
 export { dataNoMesAberto, mesesFechados };
 
@@ -210,4 +210,67 @@ export function agruparContrapartidas<T extends PartidaConciliada>(linhas: T[]) 
     if (contaId) item.contras.push({ contaId, codigo: codigo ?? "", nome: nome ?? "", valor: fromCents(Math.abs(cents(debito ?? 0) - cents(credito ?? 0))) });
   }
   return [...porTx.values()];
+}
+
+/** Saldo (D − C, centavos) da conta até a data, inclusive. */
+async function saldoContaAte(tx: Tx, contaId: string, data: string) {
+  const [r] = await tx
+    .select({ s: sql<string>`coalesce(sum(${partidas.debito} - ${partidas.credito}), 0)::text` })
+    .from(partidas)
+    .innerJoin(lancamentos, eq(lancamentos.id, partidas.lancamentoId))
+    .where(and(eq(partidas.contaId, contaId), lte(lancamentos.data, data)));
+  return cents(r.s);
+}
+
+/** Zera a transitória: saldo credor → D transitória / C contrapartida; devedor → D contrapartida / C transitória. */
+export function partidasZerarTransitoria(saldo: number, transitoriaId: string, contraId: string): PartidaInput[] {
+  if (saldo === 0) throw new Error("A conta de transferências já está zerada nessa data");
+  if (transitoriaId === contraId) throw new Error("Escolha uma contrapartida diferente da conta de transferências");
+  const v = fromCents(Math.abs(saldo));
+  return saldo < 0
+    ? [{ contaId: transitoriaId, debito: v }, { contaId: contraId, credito: v }]
+    : [{ contaId: contraId, debito: v }, { contaId: transitoriaId, credito: v }];
+}
+
+/** Conta de papel transferências e o saldo dela (centavos) na data. */
+export async function previaZerarTransitoria(tx: Tx, empresaId: string, data: string) {
+  const t = await contaPorPapel(tx, empresaId, "transferencias");
+  return { ...t, saldo: await saldoContaAte(tx, t.id, data) };
+}
+
+/**
+ * "Zerar manualmente" enquanto a outra conta bancária não é cadastrada: um lançamento manual (estornável depois) que
+ * leva o saldo da transitória na data para `contaId`. `saldoEsperado` é o da prévia confirmada; se mudou, recusa.
+ */
+export async function zerarTransitoria(tx: Tx, input: {
+  empresaId: string; contaId: string; data: string; historico: string; saldoEsperado: number; usuarioId?: string | null;
+}) {
+  if ((await mesesFechados(tx, input.empresaId)).has(primeiroDiaDoMes(input.data)))
+    throw new Error(`O mês ${fmtCompetencia(input.data)} está fechado: escolha uma data em mês aberto ou reabra o mês em Fechamento`);
+  const t = await previaZerarTransitoria(tx, input.empresaId, input.data);
+  await exigirContas(tx, input.empresaId, [input.contaId]);
+  if (t.saldo !== input.saldoEsperado)
+    throw new Error(`O saldo da conta de transferências em ${fmtData(input.data)} mudou para R$ ${fmtValor(fromCents(t.saldo))}: revise a prévia`);
+  return criarLancamento(tx, {
+    empresaId: input.empresaId, data: input.data, historico: input.historico, origem: "manual", usuarioId: input.usuarioId,
+    partidas: partidasZerarTransitoria(t.saldo, t.id, input.contaId),
+  });
+}
+
+/**
+ * Casa uma transação classificada na transitória (sem par) com o par que apareceu: desfaz a(s) classificada(s) na
+ * transitória (estorno no mês aberto, regra de desfazerConciliacao) e registra a transferência entre os dois bancos.
+ */
+export async function parearTransferenciaSemPar(tx: Tx, input: { empresaId: string; transacaoId: string; parId: string; usuarioId?: string | null }) {
+  const t = await contaPorPapel(tx, input.empresaId, "transferencias");
+  for (const id of [input.transacaoId, input.parId].sort()) {
+    const x = await travar(tx, input.empresaId, id);
+    if (x.status === "pendente") continue;
+    if (x.status !== "classificada" || !x.lancamentoId) throw new Error("Uma das transações já está conciliada de outro jeito: desfaça antes");
+    const [p] = await tx.select({ id: partidas.id }).from(partidas)
+      .where(and(eq(partidas.lancamentoId, x.lancamentoId), eq(partidas.contaId, t.id))).limit(1);
+    if (!p) throw new Error("Só dá para parear transação pendente ou classificada na conta de transferências");
+    await desfazerConciliacao(tx, input.empresaId, id, input.usuarioId, "parear a transferência");
+  }
+  return transferirEntreContas(tx, input);
 }
