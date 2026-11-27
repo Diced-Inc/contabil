@@ -176,12 +176,24 @@ export function partidasClassificacao(valorTx: string, contaBancoId: string, con
   return entrada ? [{ contaId: contaBancoId, debito: banco }, ...lados] : [...lados, { contaId: contaBancoId, credito: banco }];
 }
 
-/** Reconhecimento do título: receber D Clientes / C resultado; pagar D resultado / C Fornecedores. */
-export function partidasTitulo(tipo: TipoTitulo, contaPapelId: string, contaResultadoId: string, valor: string): PartidaInput[] {
-  const v = fromCents(cents(valor));
+export type Retencao = { contaId: string; valor: string };
+
+/**
+ * Reconhecimento do título: receber D Clientes (líquido) + D retenções a compensar / C resultado (bruto); pagar
+ * D resultado (bruto) / C retenções a recolher + C Fornecedores (líquido). Sem retenção, bruto = líquido = `valor`.
+ */
+export function partidasTitulo(
+  tipo: TipoTitulo, contaPapelId: string, contaResultadoId: string, valor: string, retencoes: Retencao[] = [],
+): PartidaInput[] {
+  const liquido = cents(valor);
+  if (!(liquido > 0)) throw new Error("Valor do título deve ser maior que zero");
+  const rs = retencoes.filter((r) => cents(r.valor) !== 0);
+  if (rs.some((r) => !(cents(r.valor) > 0))) throw new Error("Retenção precisa ser maior que zero");
+  const bruto = liquido + rs.reduce((x, r) => x + cents(r.valor), 0);
+  const f = fromCents;
   return tipo === "receber"
-    ? [{ contaId: contaPapelId, debito: v }, { contaId: contaResultadoId, credito: v }]
-    : [{ contaId: contaResultadoId, debito: v }, { contaId: contaPapelId, credito: v }];
+    ? [{ contaId: contaPapelId, debito: f(liquido) }, ...rs.map((r) => ({ contaId: r.contaId, debito: f(cents(r.valor)) })), { contaId: contaResultadoId, credito: f(bruto) }]
+    : [{ contaId: contaResultadoId, debito: f(bruto) }, ...rs.map((r) => ({ contaId: r.contaId, credito: f(cents(r.valor)) })), { contaId: contaPapelId, credito: f(liquido) }];
 }
 
 export const historicoTitulo = (tipo: TipoTitulo, contraparte: string, descricao: string) =>
@@ -193,28 +205,37 @@ export function historicoBaixa(tipo: TipoTitulo, ts: { contraparte: string; desc
   return `Baixa de ${ts.length} títulos ${lado}: ${[...new Set(ts.map((t) => t.contraparte))].join(", ")}`;
 }
 
-/** Quanto abater de cada título: `valor` sai do título; o banco movimenta valor + juros − desconto. */
-export type ItemBaixa = { valor: string; juros?: string; desconto?: string };
+/**
+ * Quanto abater de cada título: `valor` sai do título; o banco movimenta valor + juros − desconto. `contaId`: conta
+ * patrimonial do título (imposto a recolher, parcelamento); sem ela, a conta de papel do tipo.
+ */
+export type ItemBaixa = { valor: string; juros?: string; desconto?: string; contaId?: string | null };
 const c0 = (s?: string) => cents(s || 0);
 export const bancoDoItem = (i: ItemBaixa) => c0(i.valor) + c0(i.juros) - c0(i.desconto);
 export const totalBaixa = (itens: ItemBaixa[]) => itens.reduce((s, i) => s + bancoDoItem(i), 0);
 
 /**
- * Um lançamento para a baixa de um ou mais títulos pela mesma transação.
+ * Um lançamento para a baixa de um ou mais títulos pela mesma transação, uma partida por conta de título.
  * receber: D Banco total + D Desconto / C Clientes Σvalor + C Juros; pagar: D Fornecedores Σvalor + D Juros / C Desconto + C Banco total.
  */
 export function partidasBaixas(p: {
-  tipo: TipoTitulo; contaBancoId: string; contaPapelId: string; itens: ItemBaixa[];
+  tipo: TipoTitulo; contaBancoId: string; contaPapelId: string | null; itens: ItemBaixa[];
   contaJurosId?: string | null; contaDescontoId?: string | null;
 }): PartidaInput[] {
   if (!p.itens.length) throw new Error("Escolha ao menos um título");
   let valor = 0, juros = 0, desconto = 0;
+  const porConta = new Map<string, number>();
   for (const i of p.itens) {
     const v = c0(i.valor), j = c0(i.juros), d = c0(i.desconto);
     if (!(v > 0) || j < 0 || d < 0 || Number.isNaN(v + j + d)) throw new Error("Valor a abater precisa ser maior que zero; juros e desconto, zero ou mais");
     if (d >= v + j) throw new Error("Desconto não pode ser maior que o valor baixado");
+    const conta = i.contaId || p.contaPapelId;
+    if (!conta) throw new Error(`Marque a conta de papel ${p.tipo === "receber" ? "Clientes" : "Fornecedores"} no plano de contas`);
+    porConta.set(conta, (porConta.get(conta) ?? 0) + v);
     valor += v; juros += j; desconto += d;
   }
+  const titulosD = [...porConta].map(([contaId, v]) => ({ contaId, debito: fromCents(v) }));
+  const titulosC = [...porConta].map(([contaId, v]) => ({ contaId, credito: fromCents(v) }));
   if (juros && !p.contaJurosId) throw new Error("Informe a conta dos juros/multa");
   if (desconto && !p.contaDescontoId) throw new Error("Informe a conta do desconto");
   const banco = valor + juros - desconto;
@@ -223,12 +244,12 @@ export function partidasBaixas(p: {
     return [
       { contaId: p.contaBancoId, debito: f(banco) },
       ...(desconto ? [{ contaId: p.contaDescontoId!, debito: f(desconto) }] : []),
-      { contaId: p.contaPapelId, credito: f(valor) },
+      ...titulosC,
       ...(juros ? [{ contaId: p.contaJurosId!, credito: f(juros) }] : []),
     ];
   }
   return [
-    { contaId: p.contaPapelId, debito: f(valor) },
+    ...titulosD,
     ...(juros ? [{ contaId: p.contaJurosId!, debito: f(juros) }] : []),
     ...(desconto ? [{ contaId: p.contaDescontoId!, credito: f(desconto) }] : []),
     { contaId: p.contaBancoId, credito: f(banco) },
@@ -294,6 +315,8 @@ export function lancamentosDireta(p: {
 // ---------- títulos sugeridos ----------
 
 export type TituloRankeavel = { contraparte: string; descricao?: string; saldo: string; vencimento: string | null; competencia: string };
+/** Memo de pagamento de guia de imposto (DAS, DARF, "RECEITA FED"...). */
+export const MEMO_IMPOSTO = /(das|darf|receita fedw*|simples nacional|pgdasw*|dctfweb|sefaz|tributo)/i;
 const tokens = (s: string) => new Set(norm(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
 const dias = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
 
@@ -315,7 +338,7 @@ export function rankearTitulos<T extends TituloRankeavel>(ts: T[], alvo: { valor
     .map((t) => {
       const s = cents(t.saldo);
       const exato = s === v;
-      const nome = similaridadeNome(t.contraparte, alvo.memo);
+      const nome = Math.max(similaridadeNome(t.contraparte, alvo.memo), t.descricao ? similaridadeNome(t.descricao, alvo.memo) : 0);
       const score = (exato ? 0 : 10 + Math.min(Math.abs(s - v) / Math.max(v, 1), 5) * 3)
         + Math.min(dias(t.vencimento ?? t.competencia, alvo.data), 120) / 60 - nome * 2;
       return { ...t, exato, nomeParecido: nome >= 0.5, score };

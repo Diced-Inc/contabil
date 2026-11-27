@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique, index,
+  pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { MotivoEncerramento } from "@/lib/ciclo";
@@ -25,6 +25,7 @@ export const tipoMatchEnum = pgEnum("tipo_match", ["memo_contem", "documento", "
 export const sinalEnum = pgEnum("sinal", ["entrada", "saida", "qualquer"]);
 export const tipoTituloEnum = pgEnum("tipo_titulo", ["receber", "pagar"]);
 export const statusTituloEnum = pgEnum("status_titulo", ["aberto", "parcial", "quitado", "cancelado"]);
+export const origemTituloEnum = pgEnum("origem_titulo", ["manual", "nfe", "nfse", "guia", "parcelamento"]);
 export const acaoLogEnum = pgEnum("acao_log", ["criado", "alterado", "estornado", "fechamento", "reabertura", "apuracao"]);
 export const papelMembroEnum = pgEnum("papel_membro", ["cliente"]);
 export const statusCicloEnum = pgEnum("status_ciclo", [
@@ -185,10 +186,55 @@ export const titulos = pgTable("titulos", {
   valor: money("valor").notNull(),
   competencia: date("competencia").notNull(),
   vencimento: date("vencimento"),
+  /** Reconhecimento, só deste título (cancelar estorna). Null = obrigação já registrada (guia de retenção) ou parcela. */
   lancamentoId: uuid("lancamento_id").references(() => lancamentos.id),
   status: statusTituloEnum("status").notNull().default("aberto"),
+  origem: origemTituloEnum("origem").notNull().default("manual"),
+  /** Conta patrimonial do título (Clientes, Fornecedores, imposto a recolher, parcelamento CP/LP); null = papel do tipo. */
+  contaId: uuid("conta_id").references(() => planoContas.id),
+  contraparteDocumento: text("contraparte_documento"),
+  /** NF-e: chave de 44 dígitos; NFS-e nacional: chave de acesso; ABRASF/manual: emitente|série|número. */
+  documentoChave: text("documento_chave"),
+  /** Duplicata da NF ou parcela do parcelamento (1..n). */
+  parcela: integer("parcela"),
+  guiaId: uuid("guia_id").references(() => guias.id, { onDelete: "set null" }),
+  parcelamentoId: uuid("parcelamento_id").references(() => parcelamentos.id),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex("titulos_guia_uq").on(t.guiaId),
+  // duplicatas da mesma nota dividem a chave; cancelado não conta (a nota pode ser importada de novo)
+  uniqueIndex("titulos_documento_chave_uq").on(t.empresaId, t.documentoChave, sql`coalesce(${t.parcela}, 0)`)
+    .where(sql`${t.documentoChave} is not null and ${t.status} <> 'cancelado'`),
+]);
+
+/**
+ * Parcelamento de tributos: dívida consolidada (principal + multa + juros) em parcelas mensais; uma parcela = um título
+ * a pagar (origem parcelamento) na conta CP ou LP. Os lançamentos (reconhecimento, transferências LP→CP, cancelamento)
+ * ficam em parcelamento_lancamentos.
+ */
+export const parcelamentos = pgTable("parcelamentos", {
+  id: id(),
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  descricao: text("descricao").notNull(),
+  principal: money("principal").notNull(),
+  multa: money("multa").notNull().default("0"),
+  juros: money("juros").notNull().default("0"),
+  nParcelas: integer("n_parcelas").notNull(),
+  valorParcela: money("valor_parcela").notNull(),
+  primeiroVencimento: date("primeiro_vencimento").notNull(),
+  data: date("data").notNull(),
+  contaCpId: uuid("conta_cp_id").notNull().references(() => planoContas.id),
+  contaLpId: uuid("conta_lp_id").notNull().references(() => planoContas.id),
+  status: text("status").$type<"ativo" | "cancelado">().notNull().default("ativo"),
+  createdBy: uuid("created_by"),
   createdAt: createdAt(),
 });
+
+export const parcelamentoLancamentos = pgTable("parcelamento_lancamentos", {
+  parcelamentoId: uuid("parcelamento_id").notNull().references(() => parcelamentos.id),
+  lancamentoId: uuid("lancamento_id").notNull().unique().references(() => lancamentos.id),
+  tipo: text("tipo").$type<"reconhecimento" | "reclassificacao" | "cancelamento">().notNull(),
+}, (t) => [index("parcelamento_lancamentos_parc_idx").on(t.parcelamentoId)]);
 
 /**
  * Baixa de título por transação do extrato (N:M): `valor` abate o título; o banco movimentou valor + juros − desconto.
@@ -342,6 +388,7 @@ export type Lancamento = typeof lancamentos.$inferSelect;
 export type Partida = typeof partidas.$inferSelect;
 export type Regra = typeof regras.$inferSelect;
 export type Titulo = typeof titulos.$inferSelect;
+export type Parcelamento = typeof parcelamentos.$inferSelect;
 
 export const lancamentosRelations = relations(lancamentos, ({ many }) => ({ partidas: many(partidas) }));
 export const partidasRelations = relations(partidas, ({ one }) => ({

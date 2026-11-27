@@ -36,6 +36,16 @@ export function lerAno(s: unknown) {
 /** Escapa `\`, `%` e `_` para usar o texto literal num `ilike`. */
 export const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => "\\" + c);
 export const primeiroDiaDoMes = (d: string) => d.slice(0, 7) + "-01";
+/** "2026-10-15" → "2026-10-31". */
+export const fimDoMes = (d: string) =>
+  `${d.slice(0, 7)}-${String(new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate()).padStart(2, "0")}`;
+/** Soma meses a "YYYY-MM-DD", com o dia limitado ao fim do mês ("2026-01-31" + 1 → "2026-02-28"). */
+export function somarMeses(d: string, n: number) {
+  const m = Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7)) - 1 + n;
+  const mes = `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`;
+  const fim = fimDoMes(`${mes}-01`);
+  return `${mes}-${String(Math.min(Number(d.slice(8, 10)), Number(fim.slice(8, 10)))).padStart(2, "0")}`;
+}
 export const somenteDigitos = (s: string) => s.replace(/\D/g, "");
 export function fmtCnpj(c: string) { return c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"); }
 export function fmtCpf(c: string) { return c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4"); }
