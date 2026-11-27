@@ -127,7 +127,7 @@ export function ConciliacaoLista({ empresaId, transacoes, todas, contas, titulos
         if (rodada === 0) total = r.ia + r.restantes;
         setIa((x) => x && { ...x, feitas: soma.ia, total });
         router.refresh();
-        if (!restantes || restantes >= anterior) break; // acabou, ou a rodada não avançou (erro repetido, IA fora)
+        if (!restantes || !r.ia || restantes >= anterior) break; // acabou, ou a rodada não avançou (erro repetido, IA fora)
         if (parar.current) {
           interrompido = true;
           break;
