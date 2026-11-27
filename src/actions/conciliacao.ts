@@ -8,7 +8,7 @@ import { contasBancarias, planoContas, transacoesBancarias } from "@/db/schema";
 import { aplicarTemplate, valorDoPadrao } from "@/lib/classificacao/regras";
 import { sugerirPendentes, type ResultadoSugestao } from "@/lib/classificacao/pipeline";
 import {
-  alterarIgnorada, baixarTitulosPorTransacao, classificarTransacao, contaSobDemanda, desfazerConciliacao as desfazer, ErroSemTitulo,
+  adiantarTransacao, alterarIgnorada, baixarTitulosPorTransacao, classificarTransacao, contaSobDemanda, desfazerConciliacao as desfazer, ErroSemTitulo,
   inserirRegra, lancarDireta, parearTransferenciaSemPar, previaZerarTransitoria, reclassificarTransacao, reconhecerEBaixar,
   transferirEntreContas, zerarTransitoria,
 } from "@/lib/conciliacao";
@@ -160,6 +160,21 @@ export async function lancarDiretaAction(empresaId: string, input: DiretaInput):
   return separada && res.ok
     ? { ...res, aviso: `Reconhecido em ${fmtCompetencia(r.data.competencia)} (título criado em Títulos) e baixado na data do extrato.` }
     : res;
+}
+
+const adiantamentoSchema = z.object({
+  transacaoId: uuid,
+  contraparte: z.string().trim().min(1, "Informe a contraparte (cliente ou fornecedor).").max(200),
+  documento: z.string().trim().max(20).optional().transform((s) => s?.replace(/[^0-9A-Za-z]/g, "").toUpperCase() || null),
+  historico: z.string().trim().min(3, "Histórico deve ter ao menos 3 caracteres."),
+});
+export type AdiantamentoInput = z.input<typeof adiantamentoSchema>;
+
+/** Receita/despesa ainda não reconhecida: adiantamento de cliente (entrada) ou a fornecedor (saída), com a contraparte. */
+export async function registrarAdiantamentoAction(empresaId: string, input: AdiantamentoInput): Promise<EstadoForm> {
+  const r = adiantamentoSchema.safeParse(input);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  return executar(empresaId, (usuarioId) => db.transaction((tx) => adiantarTransacao(tx, { ...r.data, empresaId, usuarioId })));
 }
 
 export async function marcarTransferencia(empresaId: string, input: { transacaoId: string; parId: string }): Promise<EstadoForm> {

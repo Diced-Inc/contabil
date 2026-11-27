@@ -3,7 +3,9 @@ import { db } from "@/db";
 import { listarContasComSaldo, type ContaComSaldo } from "@/app/e/[id]/bancos/queries";
 import { listarTransferenciasSemPar } from "@/app/e/[id]/conciliacao/queries";
 import { carregarEstado, mesesDoAno } from "./fechamento";
-import { cents, fmtCompetencia, fmtData, fmtValor, hoje, primeiroDiaDoMes } from "./format";
+import { cents, fmtCompetencia, fmtData, fmtValor, fromCents, hoje, primeiroDiaDoMes } from "./format";
+import { adiantamentosAntigos, DIAS_ADIANTAMENTO_ANTIGO } from "./adiantamentos";
+import { listarAdiantamentos } from "./adiantamentos-registro";
 import { balanco, type TotaisBalanco } from "./relatorios/balanco";
 import { saldos, type LinhaSaldo } from "./relatorios/saldos";
 import { contaDeTitulo } from "./sem-titulo";
@@ -212,6 +214,28 @@ export function itemSaldoBanco(b: BancoConferido, base: string, fim: string): It
   };
 }
 
+/** Alerta (revisão, não erro): adiantamentos com saldo há mais de 90 dias, que talvez já devessem ter sido compensados. */
+export function itemAdiantamentosAntigos(
+  ads: { tipo: "cliente" | "fornecedor"; contraparte: string; data: string; saldo: number }[], hojeISO: string, base: string,
+): ItemChecagem {
+  const antigos = adiantamentosAntigos(ads, hojeISO);
+  const link = `${base}/titulos?tipo=adiantamentos`;
+  return {
+    id: "adiantamentos-antigos",
+    titulo: antigos.length
+      ? `Adiantamentos de clientes/a fornecedores em aberto há mais de ${DIAS_ADIANTAMENTO_ANTIGO} dias`
+      : `Nenhum adiantamento em aberto há mais de ${DIAS_ADIANTAMENTO_ANTIGO} dias`,
+    status: antigos.length ? "alerta" : "ok",
+    detalhe: antigos.length
+      ? `${antigos.length} adiantamento(s) sem compensação: confira se a nota/título da contraparte já foi registrado.`
+      : "Os adiantamentos em aberto são recentes.",
+    link: antigos.length ? link : undefined,
+    itens: antigos.map((a) => ({
+      texto: `${fmtData(a.data)} · ${a.tipo === "cliente" ? "de cliente" : "a fornecedor"} · ${a.contraparte} · R$ ${fmtValor(fromCents(a.saldo))}`, link,
+    })),
+  };
+}
+
 /** Checagens de consistência do exercício `ano` (até hoje, se for o ano corrente). */
 export async function checar(empresaId: string, ano: number): Promise<ItemChecagem[]> {
   const ini = `${ano}-01-01`;
@@ -219,7 +243,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   const fim = dez < hoje() ? dez : hoje();
   const base = `/e/${empresaId}`;
 
-  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos, inicio, semPar] = await Promise.all([
+  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos, inicio, semPar, ads] = await Promise.all([
     balanco(empresaId, ano),
     listarContasComSaldo(empresaId, fim),
     carregarEstado(db, empresaId),
@@ -257,12 +281,15 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
            WHERE cb.empresa_id = ${empresaId})),
         (SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date FROM empresas WHERE id = ${empresaId}))::text AS d`),
     listarTransferenciasSemPar(empresaId, fim),
+    listarAdiantamentos(db, empresaId),
   ]);
 
   const itens: ItemChecagem[] = [];
 
   // 1. Balanço e regras patrimoniais (inclui a natureza invertida, por grupo e sem limite)
   itens.push(...regrasPatrimoniais(linhas, { base, ano, totais: bal.atual, semPar }));
+
+  itens.push(itemAdiantamentosAntigos(ads, hoje(), base));
 
   // 2. Bancos
   for (const b of bancos.filter((b) => b.ativa)) itens.push(itemSaldoBanco(b, base, fim));

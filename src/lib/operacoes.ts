@@ -31,6 +31,13 @@ export const OPERACOES = {
     rotulo: "Baixa de imposto", sinal: "saida", grupo: "Títulos",
     explica: "D Imposto a recolher / C Banco: quita a obrigação já registrada na competência.",
   },
+  adiantamento: {
+    rotulo: "Adiantamento (receita/despesa ainda não reconhecida)", sinal: "ambos", grupo: "Títulos",
+    explica: {
+      entrada: "D Banco / C Adiantamentos de Clientes: recebido antes da receita; compense depois com o título do cliente.",
+      saida: "D Adiantamentos a Fornecedores / C Banco: pago antes da despesa; compense depois com o título do fornecedor.",
+    },
+  },
   transferencia: {
     rotulo: "Transferência entre contas próprias", sinal: "ambos", grupo: "Movimentos",
     explica: "D Banco de destino / C Banco de origem. Sem o par no extrato, a outra ponta fica na conta de transferências.",
@@ -102,6 +109,7 @@ export function contaServe(op: Operacao, c: ContaComPapel, entrada: boolean): bo
     case "baixa_receber": return c.papel === "clientes";
     case "baixa_pagar": return c.papel === "fornecedores";
     case "baixa_imposto": return contaDeTitulo(c) === "impostos";
+    case "adiantamento": return !c.papel && (entrada ? em(c, "2") && /^adiantamentos? de clientes?$/.test(n) : em(c, "1") && /^adiantamentos? a fornecedor(es)?$/.test(n));
     case "transferencia": return c.papel === "transferencias";
     case "adiantamento_socio": return em(c, "1") && /socio/.test(n);
     case "distribuicao_lucros": return em(c, "2") && /lucro/.test(n) && !/prejuizo/.test(n);
@@ -136,17 +144,18 @@ export function operacaoDaConta(c: ContaComPapel | null | undefined, entrada: bo
   if (!c) return null;
   const ordem: Operacao[] = [
     "transferencia", "baixa_receber", "baixa_pagar", "baixa_imposto", "a_identificar", "adiantamento_socio",
-    "distribuicao_lucros", "emprestimo", "receita_direta", "despesa_direta", "estorno",
+    "distribuicao_lucros", "emprestimo", "adiantamento", "receita_direta", "despesa_direta", "estorno",
   ];
   return ordem.find((op) => permitida(op, entrada) && contaServe(op, c, entrada)) ?? "outra";
 }
 
 /**
  * Operação que a IA sugeriu, se fizer sentido para o sinal e a conta; senão a derivada da conta.
- * A IA nunca sugere baixa a receber (não sabe se há título; Clientes nem está na lista dela).
+ * A IA nunca sugere baixa a receber (não sabe se há título; Clientes nem está na lista dela) nem adiantamento (precisa da
+ * contraparte, que o contador confirma).
  */
 export function operacaoSugerida(op: unknown, c: ContaComPapel | null | undefined, entrada: boolean): Operacao | null {
-  if (ehOperacao(op) && op !== "baixa_receber" && permitida(op, entrada) && c && contaServe(op, c, entrada)) return op;
+  if (ehOperacao(op) && op !== "baixa_receber" && op !== "adiantamento" && permitida(op, entrada) && c && contaServe(op, c, entrada)) return op;
   return operacaoDaConta(c, entrada);
 }
 
@@ -280,7 +289,7 @@ export function statusPorBaixas(valorTitulo: string | number, somaBaixas: number
 export function dataReconhecimento(competencia: string, dataBanco: string) {
   const c = primeiroDiaDoMes(competencia), b = primeiroDiaDoMes(dataBanco);
   if (c > b)
-    throw new Error("Competência depois do mês do extrato é adiantamento: use Outra classificação em Adiantamentos de Clientes/a Fornecedores");
+    throw new Error("Competência depois do mês do extrato: a receita/despesa ainda não aconteceu. Registre como adiantamento (de cliente ou a fornecedor) e compense quando o título for reconhecido");
   return b === c ? dataBanco : c;
 }
 

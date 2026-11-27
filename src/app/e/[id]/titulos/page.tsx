@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Carregando, EmptyState, PageHeader, TablePanel } from "@/components/page-header";
-import { fmtData, fmtValor } from "@/lib/format";
+import { cents, fmtData, fmtValor } from "@/lib/format";
 import { contrapartidasLembradas } from "@/lib/notas/registro";
 import { contasDeContrapartida } from "@/lib/operacoes";
 import type { TipoTitulo } from "@/lib/titulos";
@@ -17,11 +17,14 @@ import { getEmpresa } from "../empresa";
 import { listarContasAnaliticas } from "../lancamentos/queries";
 import { NotaDialog } from "./nota-dialog";
 import { Parcelamentos } from "./parcelamentos";
-import { listarParcelamentos, listarTitulos, type TituloLinha } from "./queries";
+import { listarCompensacoes, listarParcelamentos, listarTitulos, type TituloLinha } from "./queries";
 import { CancelarTituloDialog, TituloDialog } from "./titulo-dialog";
+import { AdiantamentosLista, CompensarDialog, type AdiantamentoView } from "./adiantamentos";
+import { adiantamentosDoTitulo } from "@/lib/adiantamentos";
+import { listarAdiantamentos } from "@/lib/adiantamentos-registro";
 
-type Aba = TipoTitulo | "parcelamentos";
-const ABAS: Record<Aba, string> = { receber: "A receber", pagar: "A pagar", parcelamentos: "Parcelamentos" };
+type Aba = TipoTitulo | "parcelamentos" | "adiantamentos";
+const ABAS: Record<Aba, string> = { receber: "A receber", pagar: "A pagar", parcelamentos: "Parcelamentos", adiantamentos: "Adiantamentos" };
 const STATUS = {
   aberto: <Badge variant="warning">Aberto</Badge>,
   parcial: <Badge variant="info">Parcial</Badge>,
@@ -36,14 +39,20 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
   await connection();
   const { id } = await params;
   const sp = await searchParams;
-  const aba: Aba = sp.tipo === "pagar" ? "pagar" : sp.tipo === "parcelamentos" ? "parcelamentos" : "receber";
+  const aba: Aba = sp.tipo === "pagar" || sp.tipo === "parcelamentos" || sp.tipo === "adiantamentos" ? sp.tipo : "receber";
   const tipo: TipoTitulo = aba === "pagar" ? "pagar" : "receber";
   const empresa = await getEmpresa(id);
-  const [lista, todas, fechados, lembradas, parcelamentos, abertos] = await Promise.all([
-    aba === "parcelamentos" ? Promise.resolve([]) : listarTitulos(id, tipo), listarContasAnaliticas(id), listarMesesFechados(id),
+  const porTitulo = aba === "receber" || aba === "pagar";
+  const [lista, todas, fechados, lembradas, parcelamentos, abertos, ads, compensacoes] = await Promise.all([
+    porTitulo ? listarTitulos(id, tipo) : Promise.resolve([]), listarContasAnaliticas(id), listarMesesFechados(id),
     contrapartidasLembradas(db, id), aba === "parcelamentos" ? listarParcelamentos(id) : Promise.resolve([]),
     aba === "parcelamentos" ? listarTitulosAbertos(id) : Promise.resolve([]),
+    listarAdiantamentos(db, id), aba === "adiantamentos" ? listarCompensacoes(id) : Promise.resolve([]),
   ]);
+  const adiantamentos: AdiantamentoView[] = ads.map((a) => ({
+    id: a.id, tipo: a.tipo, contraparte: a.contraparte, contraparteDocumento: a.contraparteDocumento, valor: a.valor, data: a.data,
+    contaId: a.contaId, lancamentoId: a.lancamentoId, saldo: a.saldo,
+  }));
   const obrigacoes = abertos.filter((t) => t.imposto).map((t) => ({ id: t.id, descricao: t.descricao, contaId: t.contaId, saldo: t.saldo, vencimento: t.vencimento }));
   const contas = contasDeContrapartida(todas, tipo);
   const lanc = (lid: string | null, numero: number | null) =>
@@ -59,7 +68,7 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
         Importar XML
       </Link>
       <NotaDialog empresaId={id} cnpj={empresa.cnpj} contas={todas} fechados={fechados} lembradas={lembradas} tipoInicial={tipo} />
-      {aba !== "parcelamentos" && <TituloDialog key={tipo} empresaId={id} tipo={tipo} contas={contas} />}
+      {porTitulo && <TituloDialog key={tipo} empresaId={id} tipo={tipo} contas={contas} />}
     </>
   );
 
@@ -82,7 +91,9 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
           ))}
         </nav>
       </div>
-      {aba === "parcelamentos" ? (
+      {aba === "adiantamentos" ? (
+        <AdiantamentosLista empresaId={id} adiantamentos={adiantamentos} compensacoes={compensacoes} />
+      ) : aba === "parcelamentos" ? (
         <Parcelamentos empresaId={id} lista={parcelamentos} contas={todas} fechados={fechados} obrigacoes={obrigacoes} />
       ) : lista.length === 0 ? (
         <EmptyState
@@ -137,7 +148,20 @@ async function Titulos({ params, searchParams }: PageProps<"/e/[id]/titulos">) {
                       ))}
                     </span>
                   </TableCell>
-                  <TableCell>{t.status === "aberto" && CANCELA_AQUI.has(t.origem) && <CancelarTituloDialog empresaId={id} titulo={t} />}</TableCell>
+                  <TableCell>
+                    <span className="flex items-center gap-1">
+                      {(t.status === "aberto" || t.status === "parcial") && (() => {
+                        const doTitulo = adiantamentosDoTitulo({ tipo, contraparte: t.contraparte, contraparteDocumento: t.contraparteDocumento }, adiantamentos);
+                        return doTitulo.length > 0 && (
+                          <CompensarDialog empresaId={id} adiantamentos={doTitulo} contas={todas} fechados={fechados} titulo={{
+                            id: t.id, tipo, contraparte: t.contraparte, descricao: t.descricao, competencia: t.competencia,
+                            saldo: cents(t.valor) - cents(t.baixado), contaId: t.contaId,
+                          }} />
+                        );
+                      })()}
+                      {t.status === "aberto" && CANCELA_AQUI.has(t.origem) && <CancelarTituloDialog empresaId={id} titulo={t} />}
+                    </span>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

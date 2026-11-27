@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { lancamentos, parcelamentos, planoContas, titulos } from "@/db/schema";
+import { baixas, lancamentos, parcelamentos, planoContas, titulos } from "@/db/schema";
 import type { TipoTitulo } from "@/lib/titulos";
 
 export type TituloLinha = Awaited<ReturnType<typeof listarTitulos>>[number];
@@ -24,6 +24,7 @@ export function listarTitulos(empresaId: string, tipo: TipoTitulo) {
       status: titulos.status,
       origem: titulos.origem,
       parcela: titulos.parcela,
+      contaId: titulos.contaId,
       contaCodigo: contaTitulo.codigo,
       contaNome: contaTitulo.nome,
       lancamentoId: titulos.lancamentoId,
@@ -61,4 +62,20 @@ export function listarParcelamentos(empresaId: string) {
     .from(parcelamentos)
     .where(eq(parcelamentos.empresaId, empresaId))
     .orderBy(desc(parcelamentos.createdAt));
+}
+
+export type CompensacaoLinha = Awaited<ReturnType<typeof listarCompensacoes>>[number];
+
+/** Compensações de adiantamento (baixas sem banco), com o título e o lançamento. */
+export function listarCompensacoes(empresaId: string) {
+  return db
+    .select({
+      lancamentoId: baixas.lancamentoId, numero: lancamentos.numero, data: lancamentos.data, adiantamentoId: baixas.adiantamentoId,
+      valor: baixas.valor, tituloId: titulos.id, contraparte: titulos.contraparte, descricao: titulos.descricao,
+    })
+    .from(baixas)
+    .innerJoin(titulos, eq(titulos.id, baixas.tituloId))
+    .innerJoin(lancamentos, eq(lancamentos.id, baixas.lancamentoId))
+    .where(and(eq(titulos.empresaId, empresaId), isNotNull(baixas.adiantamentoId)))
+    .orderBy(asc(lancamentos.data));
 }

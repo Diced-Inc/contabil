@@ -102,7 +102,7 @@ function Form({ empresaId, cnpj, contas, fechados, lembradas, tipoInicial, onFei
     }]);
     if ("erro" in res) return void toast.error(res.erro);
     if ("duplicada" in res) return void toast.error("Esta nota já está registrada (mesmo emitente, série e número).");
-    toast.success(res.titulos > 1 ? `Nota registrada: ${res.titulos} títulos.` : "Nota registrada.");
+    toast.success(res.titulos > 1 ? `Nota registrada: ${res.titulos} títulos.` : "Nota registrada.", { description: res.adiantamento ? "Há adiantamento em aberto desta contraparte: use Compensar na linha do título." : undefined });
     onFeito();
     router.refresh();
   });

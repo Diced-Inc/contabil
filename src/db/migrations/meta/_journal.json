@@ -148,6 +148,13 @@
       "when": 1795818905601,
       "tag": "0020_baixa_sem_transacao",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795819206498,
+      "tag": "0021_adiantamentos",
+      "breakpoints": true
     }
   ]
 }

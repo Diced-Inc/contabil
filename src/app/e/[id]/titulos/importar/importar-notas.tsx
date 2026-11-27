@@ -138,7 +138,10 @@ export function ImportarNotas({ empresaId, cnpj, contas, fechados, lembradas }: 
       return { ...l, resultado: { ok: false, texto: r.erro } };
     }));
     const ok = rs.filter((r) => "ok" in r).length, dup = rs.filter((r) => "duplicada" in r).length, err = rs.length - ok - dup;
-    toast[err ? "error" : "success"](`${ok} nota(s) registrada(s)${dup ? `, ${dup} duplicada(s) pulada(s)` : ""}${err ? `, ${err} com erro` : ""}.`);
+    const comAdiant = rs.filter((r) => "ok" in r && r.adiantamento).length;
+    toast[err ? "error" : "success"](`${ok} nota(s) registrada(s)${dup ? `, ${dup} duplicada(s) pulada(s)` : ""}${err ? `, ${err} com erro` : ""}.`, {
+      description: comAdiant ? `${comAdiant} com adiantamento em aberto da contraparte: compense em Títulos.` : undefined,
+    });
     router.refresh();
   });
 

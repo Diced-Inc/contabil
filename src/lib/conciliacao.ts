@@ -9,6 +9,7 @@ import {
 } from "./operacoes";
 import { contaDeTitulo, MSG_CONFIRMAR_CLIENTES } from "./sem-titulo";
 import { baixarTitulos, contaPorPapel, criarTitulo, removerBaixas } from "./titulos";
+import { registrarAdiantamento, soltarAdiantamento } from "./adiantamentos-registro";
 
 export { dataNoMesAberto, mesesFechados, partidasClassificacao, type Contrapartida };
 export type NovaRegra = {
@@ -65,6 +66,7 @@ export async function classificarTransacao(tx: Tx, input: {
   const contas = await exigirContas(tx, input.empresaId, input.partidas.map((p) => p.contaId));
   if (!input.confirmarSemTitulo && contas.some((c) => contaDeTitulo(c) === "clientes")) throw new ErroSemTitulo();
   const op = input.operacao;
+  if (op === "adiantamento") throw new Error("Adiantamento guarda a contraparte para a compensação: use Registrar adiantamento");
   if (op) {
     const entrada = cents(t.valor) > 0;
     const fora = contas.find((c) => !contaServe(op, c, entrada));
@@ -78,6 +80,22 @@ export async function classificarTransacao(tx: Tx, input: {
   });
   await marcar(tx, t.id, { status: "classificada", lancamentoId: l.id });
   if (input.criarRegra) await inserirRegra(tx, input.empresaId, input.criarRegra, input.partidas[0].contaId, input.historico);
+  return l;
+}
+
+/**
+ * Adiantamento pela transação: entrada D Banco / C Adiantamentos de Clientes, saída D Adiantamentos a Fornecedores /
+ * C Banco, guardando a contraparte (nome e CPF/CNPJ) para compensar depois com o título dela.
+ */
+export async function adiantarTransacao(tx: Tx, input: {
+  empresaId: string; transacaoId: string; contraparte: string; documento?: string | null; historico: string; usuarioId?: string | null;
+}) {
+  const t = await travarPendente(tx, input.empresaId, input.transacaoId);
+  const l = await registrarAdiantamento(tx, {
+    empresaId: input.empresaId, transacao: { id: t.id, data: t.data, valor: t.valor, contaBanco: t.contaBanco },
+    contraparte: input.contraparte, documento: input.documento, historico: input.historico, usuarioId: input.usuarioId,
+  });
+  await marcar(tx, t.id, { status: "classificada", lancamentoId: l.id });
   return l;
 }
 
@@ -227,6 +245,7 @@ export async function desfazerConciliacao(
   const data = dataNoMesAberto(orig.data, hoje(), await mesesFechados(tx, empresaId), acao);
   await tx.select({ id: transacoesBancarias.id }).from(transacoesBancarias)
     .where(eq(transacoesBancarias.lancamentoId, lancId)).for("update");
+  await soltarAdiantamento(tx, lancId);
   await estornarLancamento(tx, lancId, data, usuarioId);
   await tx.update(transacoesBancarias).set({
     status: "pendente", lancamentoId: null, transferenciaParId: null, sugestaoContaId: null, sugestaoConfianca: null,

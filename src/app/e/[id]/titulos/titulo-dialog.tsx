@@ -33,10 +33,10 @@ function Form({ empresaId, tipo, contas, setAberta }: {
   contas: ContaOpcao[];
   setAberta: (aberta: boolean) => void;
 }) {
-  const [estado, enviar, pendente] = useActionState<EstadoForm, FormData>(criarTituloAction.bind(null, empresaId), {});
+  const [estado, enviar, pendente] = useActionState<EstadoForm & { aviso?: string }, FormData>(criarTituloAction.bind(null, empresaId), {});
   useEffect(() => {
     if (estado.ok) {
-      toast.success("Título criado.");
+      toast.success("Título criado.", { description: estado.aviso });
       setAberta(false);
     }
   }, [estado, setAberta]);

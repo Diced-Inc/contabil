@@ -246,12 +246,34 @@ export const baixas = pgTable("baixas", {
   /** Null: baixa sem banco (título consolidado num parcelamento: lancamento_id é o reconhecimento do parcelamento). */
   transacaoId: uuid("transacao_id").references(() => transacoesBancarias.id),
   lancamentoId: uuid("lancamento_id").notNull().references(() => lancamentos.id),
+  /** Compensação com adiantamento (sem banco): o adiantamento que quitou o título. */
+  adiantamentoId: uuid("adiantamento_id").references(() => adiantamentos.id),
   valor: money("valor").notNull(),
   juros: money("juros").notNull().default("0"),
   desconto: money("desconto").notNull().default("0"),
   createdBy: uuid("created_by"),
   createdAt: createdAt(),
 }, (t) => [index("baixas_titulo_idx").on(t.tituloId), index("baixas_lancamento_idx").on(t.lancamentoId)]);
+
+/**
+ * Recebimento antes da receita (adiantamento de cliente, passivo) ou pagamento antes da despesa (adiantamento a
+ * fornecedor, ativo), lançado pela conciliação. Compensado depois com o título da contraparte (baixas.adiantamento_id);
+ * saldo = valor − compensações.
+ */
+export const adiantamentos = pgTable("adiantamentos", {
+  id: id(),
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  tipo: text("tipo").$type<"cliente" | "fornecedor">().notNull(),
+  contraparte: text("contraparte").notNull(),
+  contraparteDocumento: text("contraparte_documento"),
+  valor: money("valor").notNull(),
+  data: date("data").notNull(),
+  contaId: uuid("conta_id").notNull().references(() => planoContas.id),
+  lancamentoId: uuid("lancamento_id").notNull().unique().references(() => lancamentos.id),
+  transacaoId: uuid("transacao_id").references(() => transacoesBancarias.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by"),
+  createdAt: createdAt(),
+}, (t) => [index("adiantamentos_empresa_idx").on(t.empresaId)]);
 
 export const fechamentos = pgTable("fechamentos", {
   id: id(),

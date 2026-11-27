@@ -8,8 +8,10 @@ import { cn } from "cn";
 import type { EstadoForm } from "@/actions/empresas";
 import {
   aprovarClassificacao, baixarTitulosPelaTransacao, criarContaAIdentificar, ignorarTransacao, lancarDiretaAction, marcarTransferencia,
-  reclassificar, reconhecerEBaixarAction, type ClassificacaoInput,
+  reclassificar, reconhecerEBaixarAction, registrarAdiantamentoAction, type AdiantamentoInput, type ClassificacaoInput,
 } from "@/actions/conciliacao";
+import { CONTA_ADIANTAMENTO, documentoDoMemo, NOMES_ADIANTAMENTO, partidasAdiantamento, tipoDaEntrada } from "@/lib/adiantamentos";
+import { acharConta } from "@/lib/tributos";
 import { ContaSelect, type ContaOpcao } from "@/components/conta-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -186,6 +188,11 @@ function Conteudo({ t, empresaId, onClose, todas, ctx }: Omit<Props, "transacao"
           imposto={op === "baixa_imposto"} saldosImpostos={ctx.saldosImpostos}
           direto={op !== "baixa_receber" ? (input) => classificar(input, op) : undefined} />
       );
+    if (op === "adiantamento")
+      return (
+        <Adiantamento t={t} contas={contas} fechados={ctx.fechados} pendente={pendente}
+          enviar={(input) => executar(() => registrarAdiantamentoAction(empresaId, input), "Adiantamento registrado.")} />
+      );
     const doGrupo = contasDaOperacao(op, contas, entrada);
     if (op === "a_identificar" && !doGrupo.length)
       return <CriarAIdentificar empresaId={empresaId} entrada={entrada} onCriada={(c) => setContas((cs) => [...cs, c])} />;
@@ -193,6 +200,7 @@ function Conteudo({ t, empresaId, onClose, todas, ctx }: Omit<Props, "transacao"
     return (
       <Classificar key={op} {...comuns} contas={doGrupo} operacao={op} contaInicial={contaPadrao(op, contas, entrada, sugerida)}
         papelId={direta ? papelId : undefined}
+        onAdiantamento={direta ? () => setOp("adiantamento") : undefined}
         onBaixarTitulo={ctx.titulos.some((x) => x.tipo === tipo) ? () => setOp(entrada ? "baixa_receber" : "baixa_pagar") : undefined}
         enviar={(input, separada) =>
           separada
@@ -235,7 +243,9 @@ type Linha = { contaId: string | null; valor: string };
 type EnvioClassificacao = ClassificacaoInput & { contraparte?: string };
 
 function Classificar({ t, contas, todasContas, fechados, pendente, enviar, inicial, onBaixarTitulo, operacao, contaInicial, papelId,
-  saldosImpostos, dataLancamento, historicoInicial }: {
+  saldosImpostos, dataLancamento, historicoInicial, onAdiantamento }: {
+  /** Receita/despesa direta: competência depois do extrato vira adiantamento (decisão do Bruno). */
+  onAdiantamento?: () => void;
   t: TransacaoBase; contas: ContaOpcao[]; todasContas: ContaOpcao[]; fechados: string[]; pendente: boolean;
   /** `separada`: receita/despesa direta com competência em outro mês (reconhece + baixa). */
   enviar: (input: EnvioClassificacao, separada: boolean) => void;
@@ -342,6 +352,22 @@ function Classificar({ t, contas, todasContas, fechados, pendente, enviar, inici
           <Input id="competencia" type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} />
         </div>
       </div>
+      {onAdiantamento && comp > primeiroDiaDoMes(t.data) && (
+        <Alert className={alertaCls}>
+          <TriangleAlert />
+          <AlertTitle>Competência {fmtCompetencia(comp)} é depois do extrato</AlertTitle>
+          <AlertDescription className="grid gap-2">
+            <p>
+              A {entrada ? "receita" : "despesa"} ainda não aconteceu: o {entrada ? "recebimento" : "pagamento"} é um adiantamento
+              {entrada ? " de cliente (passivo)" : " a fornecedor (ativo)"}, compensado quando o título for reconhecido.
+            </p>
+            <Button type="button" variant="outline" size="sm" className="w-fit" onClick={onAdiantamento}>
+              <HandCoins />
+              Registrar como adiantamento {entrada ? "de cliente" : "a fornecedor"}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {separada && comp < primeiroDiaDoMes(t.data) && (
         <div className="grid gap-2 rounded-lg border border-info/25 bg-info-soft/50 p-3">
           <p className="text-xs text-info">
@@ -673,6 +699,54 @@ function Reconhecer({ t, tipo, contas, fechados, papelId, pendente, enviar }: {
       <Button type="submit" disabled={pendente || typeof previa === "string" || contraparte.trim().length === 0 || descricao.trim().length < 3}>
         <FilePlus2 />
         {pendente ? "Lançando..." : "Reconhecer e baixar"}
+      </Button>
+    </form>
+  );
+}
+
+/** Adiantamento de cliente (entrada) ou a fornecedor (saída) com a contraparte, para compensar depois com o título. */
+function Adiantamento({ t, contas, fechados, pendente, enviar }: {
+  t: TransacaoLinha; contas: ContaOpcao[]; fechados: string[]; pendente: boolean;
+  enviar: (input: AdiantamentoInput) => void;
+}) {
+  const entrada = cents(t.valor) > 0;
+  const tipo = tipoDaEntrada(entrada);
+  const [contraparte, setContraparte] = useState(() => contraparteDoMemo(t.memo));
+  const [documento, setDocumento] = useState(() => documentoDoMemo(t.memo) ?? "");
+  const [historico, setHistorico] = useState(() => `${NOMES_ADIANTAMENTO[tipo]}: ${contraparteDoMemo(t.memo)}`);
+  const conta = acharConta(contas, CONTA_ADIANTAMENTO[tipo]);
+  const contaId = conta?.id ?? `nova:${tipo}`;
+  const todas = conta ? contas : [...contas, { id: contaId, codigo: `${CONTA_ADIANTAMENTO[tipo].criar!.pai}.nova`, nome: `${NOMES_ADIANTAMENTO[tipo]} (será criada)` }];
+  const previa = montarPrevia((): LancPrevia[] => [{
+    data: t.data, competencia: primeiroDiaDoMes(t.data), historico, partidas: partidasAdiantamento(tipo, t.contaContabilId, contaId, t.valor),
+  }]);
+  return (
+    <form className="grid gap-3" onSubmit={(e) => {
+      e.preventDefault();
+      enviar({ transacaoId: t.id, contraparte, documento, historico });
+    }}>
+      <div className="grid grid-cols-[1fr_11rem] gap-3">
+        <div className="grid gap-2">
+          <Label htmlFor="ad-contraparte">{entrada ? "Cliente" : "Fornecedor"}</Label>
+          <Input id="ad-contraparte" value={contraparte} onChange={(e) => setContraparte(e.target.value)} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="ad-documento">CPF/CNPJ</Label>
+          <Input id="ad-documento" value={documento} onChange={(e) => setDocumento(e.target.value)} inputMode="numeric" />
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="ad-historico">Histórico</Label>
+        <Input id="ad-historico" value={historico} onChange={(e) => setHistorico(e.target.value)} />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Quando o título {entrada ? "a receber" : "a pagar"} desta contraparte for registrado (nota, título manual), compense em Títulos: D
+        {entrada ? " Adiantamentos de Clientes / C Clientes" : " Fornecedores / C Adiantamentos a Fornecedores"}.
+      </p>
+      <PreviaLancamentos previa={previa} contas={todas} fechados={fechados} />
+      <Button type="submit" disabled={pendente || !contraparte.trim() || historico.trim().length < 3 || typeof previa === "string"}>
+        <HandCoins />
+        {pendente ? "Registrando..." : `Registrar adiantamento ${entrada ? "de cliente" : "a fornecedor"}`}
       </Button>
     </form>
   );

@@ -13,6 +13,8 @@ import { cancelarParcelamento, criarParcelamento, transferirParaCurtoPrazo } fro
 import { cancelarTitulo, criarTitulo } from "@/lib/titulos";
 import { TIPOS_RETENCAO } from "@/lib/tributos";
 import { requireUser } from "@/supabase/server";
+import { adiantamentosDoTitulo } from "@/lib/adiantamentos";
+import { compensarAdiantamento, desfazerCompensacao, listarAdiantamentos } from "@/lib/adiantamentos-registro";
 import type { EstadoForm } from "./empresas";
 
 /** Mensagem do trigger/validação, sem SQL (Drizzle embrulha o erro do Postgres em `cause`). */
@@ -40,7 +42,13 @@ const tituloSchema = z.object({
   contaResultadoId: z.uuid("Selecione a contrapartida."),
 });
 
-export async function criarTituloAction(empresaId: string, _prev: EstadoForm, form: FormData): Promise<EstadoForm> {
+/** Há adiantamento em aberto da contraparte (do tipo do título)? A tela avisa para compensar. */
+async function temAdiantamento(empresaId: string, tipo: "receber" | "pagar", parte: { contraparte: string; contraparteDocumento?: string | null }) {
+  return adiantamentosDoTitulo({ ...parte, tipo }, await listarAdiantamentos(db, empresaId)).length > 0;
+}
+const AVISO_ADIANTAMENTO = "Há adiantamento em aberto desta contraparte: compense em Títulos (botão Compensar na linha do título).";
+
+export async function criarTituloAction(empresaId: string, _prev: EstadoForm, form: FormData): Promise<EstadoForm & { aviso?: string }> {
   const user = await requireUser();
   const str = (k: string) => (form.get(k) as string | null) ?? "";
   const r = tituloSchema.safeParse(Object.fromEntries(
@@ -55,7 +63,7 @@ export async function criarTituloAction(empresaId: string, _prev: EstadoForm, fo
     return { erro: mensagem(e, "Erro ao gravar o título.") };
   }
   revalidatePath(`/e/${empresaId}`, "layout");
-  return { ok: true };
+  return { ok: true, aviso: (await temAdiantamento(empresaId, r.data.tipo, { contraparte: r.data.contraparte })) ? AVISO_ADIANTAMENTO : undefined };
 }
 
 export async function cancelarTituloAction(empresaId: string, tituloId: string): Promise<EstadoForm> {
@@ -87,7 +95,7 @@ const notaSchema = z.object({
   descricao: z.string().trim().max(200).nullish(),
 });
 export type NotaInput = z.input<typeof notaSchema>;
-export type ResultadoNota = { ok: true; titulos: number } | { duplicada: true } | { erro: string };
+export type ResultadoNota = { ok: true; titulos: number; adiantamento?: boolean } | { duplicada: true } | { erro: string };
 
 async function cnpjDa(empresaId: string) {
   const [e] = await db.select({ cnpj: empresas.cnpj }).from(empresas).where(eq(empresas.id, empresaId));
@@ -128,7 +136,8 @@ export async function registrarNotas(empresaId: string, notas: NotaInput[]): Pro
         contraparte: contraparteDaNota(n, tipo), bruto: fromCents(cents(n.bruto)), retencoes: n.retencoes,
         contaResultadoId: n.contaResultadoId, parcelas: n.parcelas, descricao: n.descricao, usuarioId: user.id,
       }));
-      out.push({ ok: true, titulos: ts.length });
+      const parte = contraparteDaNota(n, tipo);
+      out.push({ ok: true, titulos: ts.length, adiantamento: await temAdiantamento(empresaId, tipo, { contraparte: parte.nome, contraparteDocumento: parte.documento }) });
     } catch (e) {
       out.push(e instanceof NotaDuplicada || ehUnica(e) ? { duplicada: true } : { erro: mensagem(e, "Erro ao registrar a nota.") });
     }
@@ -194,6 +203,40 @@ export async function cancelarParcelamentoAction(empresaId: string, id: string):
     await db.transaction((tx) => cancelarParcelamento(tx, empresaId, id, user.id));
   } catch (e) {
     return { erro: mensagem(e, "Erro ao cancelar o parcelamento.") };
+  }
+  revalidatePath(`/e/${empresaId}`, "layout");
+  return { ok: true };
+}
+
+// ---------- adiantamentos ----------
+
+const compensarSchema = z.object({
+  tituloId: z.uuid("Título inválido."), adiantamentoId: z.uuid("Escolha o adiantamento."),
+  valor: z.string().optional().transform((v) => (v?.trim() ? parseValorBR(v) : null))
+    .pipe(z.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inválido (use até 2 casas decimais).").nullable()),
+});
+
+/** Compensa o título com o adiantamento da contraparte (total ou parcial), na competência do título. */
+export async function compensarAdiantamentoAction(empresaId: string, input: z.input<typeof compensarSchema>): Promise<EstadoForm> {
+  const user = await requireUser();
+  const r = compensarSchema.safeParse(input);
+  if (!r.success) return { erro: r.error.issues[0].message };
+  try {
+    await db.transaction((tx) => compensarAdiantamento(tx, { ...r.data, empresaId, usuarioId: user.id }));
+  } catch (e) {
+    return { erro: mensagem(e, "Erro ao compensar.") };
+  }
+  revalidatePath(`/e/${empresaId}`, "layout");
+  return { ok: true };
+}
+
+export async function desfazerCompensacaoAction(empresaId: string, lancamentoId: string): Promise<EstadoForm> {
+  const user = await requireUser();
+  if (!uuid.safeParse(lancamentoId).success) return { erro: "Compensação inválida." };
+  try {
+    await db.transaction((tx) => desfazerCompensacao(tx, empresaId, lancamentoId, user.id));
+  } catch (e) {
+    return { erro: mensagem(e, "Erro ao desfazer a compensação.") };
   }
   revalidatePath(`/e/${empresaId}`, "layout");
   return { ok: true };
