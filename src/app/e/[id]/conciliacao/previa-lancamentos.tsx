@@ -34,7 +34,8 @@ export function PreviaLancamentos({ previa, contas, fechados = [], extra }: {
         <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">{previa}</p>
       ) : (
         previa.map((l, i) => {
-          const fechado = fechados.includes(primeiroDiaDoMes(l.data));
+          // mesma regra do trigger periodo_fechado: data ou competência em mês fechado
+          const fechado = [l.data, l.competencia].map(primeiroDiaDoMes).find((m) => fechados.includes(m));
           return (
             <div key={i} className={cn("overflow-hidden rounded-lg border text-sm", fechado && "border-danger/40")}>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-muted/50 px-3 py-1.5 text-xs">
@@ -60,7 +61,7 @@ export function PreviaLancamentos({ previa, contas, fechados = [], extra }: {
               {fechado && (
                 <p className="flex items-center gap-1.5 border-t bg-danger-soft px-3 py-1.5 text-xs text-danger">
                   <CalendarX2 className="size-3.5" />
-                  Mês {fmtCompetencia(l.data)} fechado: reabra-o em Fechamento antes de aprovar.
+                  Mês {fmtCompetencia(fechado)} fechado: reabra-o em Fechamento antes de aprovar.
                 </p>
               )}
             </div>

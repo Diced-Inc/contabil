@@ -8,7 +8,7 @@ import { detalheConta } from "@/actions/relatorios";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fmtData, fmtSaldoDC, fmtValor } from "@/lib/format";
+import { fmtCompetencia, fmtData, fmtSaldoDC, fmtValor } from "@/lib/format";
 import { correr, semEstornos } from "@/lib/relatorios/movimentos";
 
 type Alvo = { contaId: string; titulo: string; de: string; ate: string };
@@ -70,6 +70,7 @@ function Conteudo({ empresaId, alvo, dados: bruto }: { empresaId: string; alvo: 
             <TableHeader>
               <TableRow>
                 <TableHead className="w-20">Data</TableHead>
+                <TableHead className="w-16" title="Competência">Comp.</TableHead>
                 <TableHead className="w-12">Nº</TableHead>
                 <TableHead>Histórico</TableHead>
                 <TableHead>Contrap.</TableHead>
@@ -80,17 +81,18 @@ function Conteudo({ empresaId, alvo, dados: bruto }: { empresaId: string; alvo: 
             </TableHeader>
             <TableBody>
               <TableRow className="bg-muted/40 font-semibold hover:bg-muted/40">
-                <TableCell colSpan={6} className="py-1.5">Saldo anterior</TableCell>
+                <TableCell colSpan={7} className="py-1.5">Saldo anterior</TableCell>
                 <TableCell className="py-1.5 text-right">{fmtSaldoDC(dados.saldoAnterior, dados.conta.natureza)}</TableCell>
               </TableRow>
               {dados.movimentos.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nenhum movimento no período.</TableCell>
+                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">Nenhum movimento no período.</TableCell>
                 </TableRow>
               ) : (
                 dados.movimentos.map((m, i) => (
                   <TableRow key={`${m.lancamentoId}-${i}`}>
                     <TableCell className="py-1.5">{fmtData(m.data)}</TableCell>
+                    <TableCell className="py-1.5">{fmtCompetencia(m.competencia)}</TableCell>
                     <TableCell className="py-1.5">
                       <Link href={`/e/${empresaId}/lancamentos/${m.lancamentoId}`} className="text-primary underline-offset-2 hover:underline">
                         {m.numero}
@@ -109,7 +111,7 @@ function Conteudo({ empresaId, alvo, dados: bruto }: { empresaId: string; alvo: 
             </TableBody>
             <TableFooter className="border-t-2 border-t-foreground/70">
               <TableRow>
-                <TableCell colSpan={6} className="py-1.5">Saldo final</TableCell>
+                <TableCell colSpan={7} className="py-1.5">Saldo final</TableCell>
                 <TableCell className="py-1.5 text-right">{fmtSaldoDC(dados.saldoFinal, dados.conta.natureza)}</TableCell>
               </TableRow>
             </TableFooter>

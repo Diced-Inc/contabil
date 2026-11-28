@@ -29,8 +29,9 @@ export function EstornarDialog({ empresaId, lancamentoId, numero, dataSugerida }
         <DialogHeader>
           <DialogTitle>Estornar lançamento {numero}</DialogTitle>
           <DialogDescription>
-            Cria um lançamento com as partidas invertidas na data escolhida e marca este como estornado. A data sugerida é a do
-            lançamento enquanto o mês dele estiver aberto; com o mês fechado, hoje. Mês fechado não aceita estorno: reabra-o em Fechamento.
+            Cria um lançamento com as partidas invertidas na data escolhida, na competência do original (com ela fechada, no mês da data),
+            e marca este como estornado. A data sugerida é a do lançamento enquanto o mês dele estiver aberto; com o mês fechado, hoje.
+            Mês fechado não aceita estorno: reabra-o em Fechamento.
           </DialogDescription>
         </DialogHeader>
         <form action={enviar} className="grid gap-4">

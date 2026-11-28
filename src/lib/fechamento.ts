@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { apuracoes, fechamentos, lancamentoLog, lancamentos } from "@/db/schema";
+import { apuracoes, fechamentos, lancamentoLog } from "@/db/schema";
 import { partidasApuracao, saldosDeResultado } from "./apuracao";
 import { fmtCompetencia, primeiroDiaDoMes } from "./format";
 import { criarLancamento, estornarLancamento } from "./lancamentos";
@@ -20,7 +20,7 @@ export function mesAnterior(c: string) {
 
 export type EstadoFechamento = {
   fechados: Map<string, { fechadoEm: Date; fechadoPor: string | null }>;
-  /** Data do lançamento mais antigo em mês aberto (null se não houver). */
+  /** Mês (1º dia) mais antigo com lançamento, pela data ou pela competência, ainda aberto (null se não houver). */
   primeiroAberto: string | null;
   apurados: Set<number>;
 };
@@ -28,14 +28,12 @@ export type EstadoFechamento = {
 export async function carregarEstado(exec: Exec, empresaId: string): Promise<EstadoFechamento> {
   const [fs, [{ min }], aps] = await Promise.all([
     exec.select().from(fechamentos).where(eq(fechamentos.empresaId, empresaId)),
-    exec
-      .select({ min: sql<string | null>`min(${lancamentos.data})` })
-      .from(lancamentos)
-      .where(and(
-        eq(lancamentos.empresaId, empresaId),
-        sql`NOT EXISTS (SELECT 1 FROM ${fechamentos} f WHERE f.empresa_id = ${lancamentos.empresaId}
-          AND f.competencia = date_trunc('month', ${lancamentos.data})::date)`,
-      )),
+    // mesma regra do trigger periodo_fechado: o mês conta pela data e pela competência
+    exec.execute<{ min: string | null }>(sql`
+      SELECT min(m)::text AS min FROM (
+        SELECT date_trunc('month', data)::date AS m FROM lancamentos WHERE empresa_id = ${empresaId}
+        UNION SELECT competencia FROM lancamentos WHERE empresa_id = ${empresaId}
+      ) x WHERE NOT EXISTS (SELECT 1 FROM fechamentos f WHERE f.empresa_id = ${empresaId} AND f.competencia = x.m)`),
     exec.select({ exercicio: apuracoes.exercicio }).from(apuracoes).where(eq(apuracoes.empresaId, empresaId)),
   ]);
   return {

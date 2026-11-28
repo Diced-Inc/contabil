@@ -1,0 +1,1 @@
+ALTER TYPE "public"."origem_lancamento" ADD VALUE 'abertura';

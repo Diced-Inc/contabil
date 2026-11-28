@@ -1,13 +1,14 @@
 import { and, asc, eq, gte, lte } from "drizzle-orm";
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import { lancamentos, partidas } from "@/db/schema";
+import { primeiroDiaDoMes } from "@/lib/format";
 
-/** Lançamentos do período (inclusive estornados e estornos) com partidas e contas, por data e número. */
-export function diario(empresaId: string, de: string, ate: string) {
-  return db.query.lancamentos.findMany({
-    columns: { id: true, numero: true, data: true, historico: true, documento: true, status: true },
-    where: and(eq(lancamentos.empresaId, empresaId), gte(lancamentos.data, de), lte(lancamentos.data, ate)),
-    orderBy: [asc(lancamentos.data), asc(lancamentos.numero)],
+/** Lançamentos com competência no período (inclusive estornados e estornos), com partidas e contas; ordem competência, data, nº. */
+export function diario(empresaId: string, de: string, ate: string, exec: typeof db | Tx = db) {
+  return exec.query.lancamentos.findMany({
+    columns: { id: true, numero: true, data: true, competencia: true, historico: true, documento: true, status: true },
+    where: and(eq(lancamentos.empresaId, empresaId), gte(lancamentos.competencia, primeiroDiaDoMes(de)), lte(lancamentos.competencia, ate)),
+    orderBy: [asc(lancamentos.competencia), asc(lancamentos.data), asc(lancamentos.numero)],
     with: {
       partidas: {
         columns: { id: true, debito: true, credito: true },

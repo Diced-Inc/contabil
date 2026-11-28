@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Valor } from "@/components/valor";
 import { cents, fmtData, fromCents } from "@/lib/format";
 import { aplicarTemplate, padraoComum, SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classificacao/regras";
-import { partidasClassificacao } from "@/lib/operacoes";
+import { lancamentosDireta } from "@/lib/operacoes";
 import { avisosSemTitulo } from "@/lib/sem-titulo";
 import { AvisoSemTitulo } from "./aviso-sem-titulo";
 import { montarPrevia, PreviaLancamentos } from "./previa-lancamentos";
@@ -62,10 +62,11 @@ function Conteudo({ empresaId, transacoes: ts, contas, fechados, onClose, onDone
   // um lançamento por transação, igual ao servidor (classificarEmLote → classificarTransacao)
   const previa = montarPrevia(() => {
     if (!contaId) throw new Error("Escolha a contrapartida para ver as partidas.");
-    return ts.slice(0, MAX_PREVIA).map((t) => ({
-      data: t.data, competencia: porMes ? `${t.data.slice(0, 7)}-01` : `${competencia}-01`,
-      historico: aplicarTemplate(historico, t).trim() || "Conciliação bancária",
-      partidas: partidasClassificacao(t.valor, t.contaContabilId, [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }]),
+    // competência em outro mês: reconhecimento + baixa no extrato (classificarEmLote → lancarDireta)
+    return ts.slice(0, MAX_PREVIA).flatMap((t) => lancamentosDireta({
+      valorTx: t.valor, dataBanco: t.data, contaBancoId: t.contaContabilId, contras: [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }],
+      contaPapelId: contas.find((c) => c.papel === (cents(t.valor) > 0 ? "clientes" : "fornecedores"))?.id ?? null,
+      competencia: porMes ? t.data : `${competencia}-01`, historico: aplicarTemplate(historico, t).trim() || "Conciliação bancária", contraparte: t.memo,
     }));
   });
 

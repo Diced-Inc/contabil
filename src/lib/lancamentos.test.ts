@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validarPartidas } from "./lancamentos";
+import { competenciaDoEstorno, validarPartidas } from "./lancamentos";
 
 const C1 = "11111111-1111-4111-8111-111111111111";
 const C2 = "22222222-2222-4222-8222-222222222222";
@@ -24,5 +24,14 @@ describe("validarPartidas", () => {
     expect(
       validarPartidas([{ contaId: C1, debito: "0.10" }, { contaId: C1, debito: "0.20" }, { contaId: C2, credito: "0.30" }]),
     ).toEqual({ total: 30 });
+  });
+});
+
+describe("competenciaDoEstorno", () => {
+  it("fica na competência do original enquanto ela está aberta", () => {
+    expect(competenciaDoEstorno("2026-03-01", "2026-05-10", new Set())).toBe("2026-03-01");
+  });
+  it("competência do original fechada → mês da data do estorno", () => {
+    expect(competenciaDoEstorno("2026-03-01", "2026-05-10", new Set(["2026-03-01"]))).toBe("2026-05-01");
   });
 });

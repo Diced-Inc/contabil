@@ -259,14 +259,14 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
         AND coalesce(trim(l.documento), '') = '' AND l.data BETWEEN ${ini} AND ${fim}
         AND (SELECT sum(p.debito) FROM partidas p WHERE p.lancamento_id = l.id) >= ${LIMITE_SEM_DOCUMENTO}`),
     db.execute<{ mes: string }>(sql`
-      SELECT DISTINCT date_trunc('month', data)::date::text AS mes FROM lancamentos
-      WHERE empresa_id = ${empresaId} AND data BETWEEN ${ini} AND ${fim}`),
+      SELECT DISTINCT competencia::text AS mes FROM lancamentos
+      WHERE empresa_id = ${empresaId} AND competencia BETWEEN ${ini} AND ${fim}`),
     db.execute<{ mes: string; status: "aprovado" | "estornado"; origem: string; socio: string; prolabore: string }>(sql`
-      SELECT date_trunc('month', l.data)::date::text AS mes, l.status, l.origem,
+      SELECT l.competencia::text AS mes, l.status, l.origem,
         coalesce(sum(p.debito) FILTER (WHERE pc.nome ~* 's[óo]cio'), 0)::text AS socio,
         coalesce(sum(p.debito) FILTER (WHERE pc.nome ~* 'pr[óo][- ]?labore'), 0)::text AS prolabore
       FROM lancamentos l JOIN partidas p ON p.lancamento_id = l.id JOIN plano_contas pc ON pc.id = p.conta_id
-      WHERE l.empresa_id = ${empresaId} AND l.data BETWEEN ${ini} AND ${fim}
+      WHERE l.empresa_id = ${empresaId} AND l.competencia BETWEEN ${ini} AND ${fim}
       GROUP BY 1, 2, 3`),
     db.execute<{ tipo: "receber" | "pagar"; n: number }>(sql`
       SELECT tipo, count(*)::int AS n FROM titulos
@@ -276,7 +276,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
     db.execute<{ d: string }>(sql`
       SELECT coalesce(
         least(
-          (SELECT min(data) FROM lancamentos WHERE empresa_id = ${empresaId}),
+          (SELECT min(least(data, competencia)) FROM lancamentos WHERE empresa_id = ${empresaId} AND origem <> 'abertura'),
           (SELECT min(t.data) FROM transacoes_bancarias t JOIN contas_bancarias cb ON cb.id = t.conta_bancaria_id
            WHERE cb.empresa_id = ${empresaId})),
         (SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date FROM empresas WHERE id = ${empresaId}))::text AS d`),

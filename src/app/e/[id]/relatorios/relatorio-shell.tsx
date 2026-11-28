@@ -111,6 +111,7 @@ export async function RelatorioShell({ titulo, empresa, periodoLabel, dataAssina
           <dl className="shrink-0 text-right text-xs text-muted-foreground tabular-nums">
             <dt className="sr-only">Período</dt>
             <dd className="text-sm font-medium text-foreground">{periodoLabel}</dd>
+            <dd className="mt-0.5">Por competência (mês)</dd>
             <dt className="sr-only">Emissão</dt>
             <dd className="mt-0.5">Emitido em {emitidoEm()}</dd>
           </dl>

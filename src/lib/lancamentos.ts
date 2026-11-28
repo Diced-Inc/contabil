@@ -7,7 +7,7 @@ export type PartidaInput = { contaId: string; debito?: string; credito?: string 
 export type LancamentoInput = {
   empresaId: string; data: string; competencia?: string; dataPagamento?: string | null;
   historico: string; documento?: string | null;
-  origem: "manual" | "conciliacao" | "apuracao" | "estorno"; partidas: PartidaInput[];
+  origem: "manual" | "conciliacao" | "apuracao" | "estorno" | "abertura"; partidas: PartidaInput[];
   usuarioId?: string | null; estornoDeId?: string | null;
 };
 export type EdicaoInput = Omit<LancamentoInput, "origem" | "estornoDeId">;
@@ -62,7 +62,8 @@ export async function criarLancamento(tx: Tx, input: LancamentoInput) {
   if (input.origem !== "estorno" && input.origem !== "apuracao") {
     await exigirContasValidas(tx, input.empresaId, input.partidas);
   }
-  const competencia = input.competencia ?? primeiroDiaDoMes(input.data);
+  // sempre o 1º dia do mês (CHECK lancamentos_competencia_mes); em branco = mês da data
+  const competencia = primeiroDiaDoMes(input.competencia ?? input.data);
   const [l] = await tx.insert(lancamentos).values({
     empresaId: input.empresaId, data: input.data, competencia,
     dataPagamento: input.dataPagamento ?? null, historico: input.historico, documento: input.documento ?? null,
@@ -99,9 +100,10 @@ export async function editarLancamento(tx: Tx, id: string, input: EdicaoInput) {
   if (antes.origem === "apuracao") throw new Error("Lançamento de apuração não pode ser editado; reverta a apuração");
   if (antes.origem === "conciliacao") throw new Error("Lançamento de conciliação não pode ser editado; desfaça a conciliação");
   if (antes.origem === "estorno") throw new Error("Lançamento de estorno não pode ser editado");
+  if (antes.origem === "abertura") throw new Error("Saldos iniciais: altere em Lançamentos > Saldos iniciais");
   await exigirSemTitulo(tx, id);
   await exigirContasValidas(tx, input.empresaId, input.partidas);
-  const competencia = input.competencia ?? primeiroDiaDoMes(input.data);
+  const competencia = primeiroDiaDoMes(input.competencia ?? input.data);
   await tx.update(lancamentos).set({
     data: input.data, competencia, dataPagamento: input.dataPagamento ?? null,
     historico: input.historico, documento: input.documento ?? null, updatedAt: new Date(),
@@ -117,6 +119,7 @@ export async function editarLancamento(tx: Tx, id: string, input: EdicaoInput) {
 
 /**
  * Cria lançamento inverso na data informada e marca o original como estornado. Retorna o estorno.
+ * Competência do original (relatórios são por competência: o par se anula no mesmo mês); com ela fechada, a da data.
  * `origem: "apuracao"` no estorno da apuração, para a DRE (que ignora apuração) continuar mostrando o ano.
  */
 export async function estornarLancamento(
@@ -126,7 +129,8 @@ export async function estornarLancamento(
   if (!orig) throw new Error("Lançamento não encontrado");
   if (orig.status === "estornado") throw new Error("Lançamento já estornado");
   const estorno = await criarLancamento(tx, {
-    empresaId: orig.empresaId, data, historico: `Estorno do lançamento ${orig.numero}: ${orig.historico}`,
+    empresaId: orig.empresaId, data, competencia: competenciaDoEstorno(orig.competencia, data, await mesesFechados(tx, orig.empresaId)),
+    historico: `Estorno do lançamento ${orig.numero}: ${orig.historico}`,
     documento: orig.documento, origem, estornoDeId: orig.id, usuarioId,
     partidas: [...orig.partidas].sort((a, b) => a.ordem - b.ordem).map((p) => ({ contaId: p.contaId, debito: p.credito, credito: p.debito })),
   });
@@ -143,6 +147,10 @@ export async function mesesFechados(tx: Pick<Tx, "select">, empresaId: string) {
   const fs = await tx.select({ c: fechamentos.competencia }).from(fechamentos).where(eq(fechamentos.empresaId, empresaId));
   return new Set(fs.map((f) => f.c));
 }
+
+/** Estorno na competência do original; ela fechada → mês da data do estorno (o trigger barra mês fechado). */
+export const competenciaDoEstorno = (original: string, data: string, fechados: ReadonlySet<string>) =>
+  fechados.has(primeiroDiaDoMes(original)) ? primeiroDiaDoMes(data) : primeiroDiaDoMes(original);
 
 /**
  * A própria data se o mês está aberto (estorno e novo lançamento no mês do original, sem contar em dobro);

@@ -283,7 +283,8 @@ function Classificar({ t, contas, todasContas, fechados, pendente, enviar, inici
   const travado = avisos.includes("clientes") && !ciente;
   const set = (i: number, p: Partial<Linha>) => setLinhas((ls) => ls.map((l, k) => (k === i ? { ...l, ...p } : l)));
   const contras = linhas.map((l) => ({ contaId: l.contaId ?? "", valor: reais(l.valor) }));
-  const comp = `${competencia || t.data.slice(0, 7)}-01`;
+  // só a receita/despesa direta escolhe a competência; o resto fica no mês do lançamento (o servidor exige)
+  const comp = direta ? `${competencia || t.data.slice(0, 7)}-01` : primeiroDiaDoMes(dataLancamento ?? t.data);
 
   const previa = montarPrevia(() => {
     if (linhas.some((l) => !l.contaId)) throw new Error("Escolha a conta em todas as linhas para ver as partidas.");
@@ -304,7 +305,7 @@ function Classificar({ t, contas, todasContas, fechados, pendente, enviar, inici
         enviar({
           transacaoId: t.id,
           partidas: linhas.map((l) => ({ contaId: l.contaId ?? "", valor: l.valor })),
-          historico, documento, competencia,
+          historico, documento, competencia: comp.slice(0, 7),
           criarRegra: criaRegra && !separada ? regra : undefined,
           confirmarSemTitulo: avisos.includes("clientes") && ciente,
           contraparte,
@@ -342,15 +343,17 @@ function Classificar({ t, contas, todasContas, fechados, pendente, enviar, inici
         <Label htmlFor="historico">Histórico</Label>
         <Input id="historico" value={historico} onChange={(e) => setHistorico(e.target.value)} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className={cn("grid gap-3", direta && "grid-cols-2")}>
         <div className="grid gap-2">
           <Label htmlFor="documento">Documento</Label>
           <Input id="documento" value={documento} onChange={(e) => setDocumento(e.target.value)} />
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="competencia">Competência</Label>
-          <Input id="competencia" type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} />
-        </div>
+        {direta && (
+          <div className="grid gap-2">
+            <Label htmlFor="competencia">Competência</Label>
+            <Input id="competencia" type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} />
+          </div>
+        )}
       </div>
       {onAdiantamento && comp > primeiroDiaDoMes(t.data) && (
         <Alert className={alertaCls}>

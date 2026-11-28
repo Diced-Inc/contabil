@@ -4,7 +4,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "cn";
-import { fmtData, fmtSaldoDC, fmtValor, hoje, isoData, lerAno } from "@/lib/format";
+import { fmtCompetencia, fmtData, fmtSaldoDC, fmtValor, hoje, isoData, lerAno } from "@/lib/format";
 import { correr, semEstornos } from "@/lib/relatorios/movimentos";
 import { razao360, type Contrapartida, type Razao360 } from "@/lib/relatorios/razao";
 import { Carregando } from "@/components/page-header";
@@ -73,6 +73,7 @@ function Secao({ r, v, empresaId, ano, de, quebra }: {
         <TableHeader>
           <TableRow>
             <TableHead className="w-24">Data</TableHead>
+            <TableHead className="w-20" title="Competência">Comp.</TableHead>
             <TableHead className="w-14">Nº</TableHead>
             <TableHead>Histórico</TableHead>
             <TableHead className="w-[26%] print:w-auto">Contrapartida</TableHead>
@@ -85,12 +86,13 @@ function Secao({ r, v, empresaId, ano, de, quebra }: {
         <TableBody>
           {v.movimentos.length === 0 ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">Sem movimento no período</TableCell>
+              <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">Sem movimento no período</TableCell>
             </TableRow>
           ) : (
             v.movimentos.map((m, i) => (
               <LinhaLancamento key={`${m.lancamentoId}-${i}`} id={m.lancamentoId}>
                 <TableCell className="py-1.5">{fmtData(m.data)}</TableCell>
+                <TableCell className="py-1.5">{fmtCompetencia(m.competencia)}</TableCell>
                 <TableCell className="py-1.5">
                   <Link href={`/e/${empresaId}/lancamentos/${m.lancamentoId}`} className="text-primary underline-offset-2 hover:underline print:text-foreground">
                     {m.numero}
@@ -107,7 +109,7 @@ function Secao({ r, v, empresaId, ano, de, quebra }: {
         </TableBody>
         <TableFooter className="border-t-2 border-t-foreground/70">
           <TableRow>
-            <TableCell colSpan={4} className="py-1.5">Totais e saldo final</TableCell>
+            <TableCell colSpan={5} className="py-1.5">Totais e saldo final</TableCell>
             <TableCell className="py-1.5 text-right">{fmtValor(v.totais.debitos)}</TableCell>
             <TableCell className="py-1.5 text-right">{fmtValor(v.totais.creditos)}</TableCell>
             <TableCell className="py-1.5 text-right whitespace-nowrap">{fmtSaldoDC(v.saldoFinal, natureza)}</TableCell>

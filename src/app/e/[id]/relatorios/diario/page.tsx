@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { DataRange, lerPeriodo } from "@/components/data-range";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fmtData, fmtValor } from "@/lib/format";
+import { fmtCompetencia, fmtData, fmtValor } from "@/lib/format";
 import { diario } from "@/lib/relatorios/diario";
 import { Carregando } from "@/components/page-header";
 import { getEmpresa } from "../../empresa";
@@ -31,6 +31,7 @@ async function Diario({ params, searchParams }: PageProps<"/e/[id]/relatorios/di
           <TableHeader>
             <TableRow>
               <TableHead className="w-24">Data</TableHead>
+              <TableHead className="w-20" title="Competência">Comp.</TableHead>
               <TableHead>Conta</TableHead>
               <TableHead className="w-28 text-right">Débito</TableHead>
               <TableHead className="w-28 text-right">Crédito</TableHead>
@@ -40,6 +41,7 @@ async function Diario({ params, searchParams }: PageProps<"/e/[id]/relatorios/di
             <TableBody key={l.id} className="break-inside-avoid border-b">
               <TableRow className="bg-muted/40 hover:bg-muted/40">
                 <TableCell className="py-1.5 font-semibold">{fmtData(l.data)}</TableCell>
+                <TableCell className="py-1.5 font-semibold">{fmtCompetencia(l.competencia)}</TableCell>
                 <TableCell colSpan={3} className="py-1.5 whitespace-normal">
                   <span className="font-semibold">Lançamento nº {l.numero}</span>
                   {l.status === "estornado" && <span className="ml-2 text-muted-foreground">(estornado)</span>}
@@ -50,6 +52,7 @@ async function Diario({ params, searchParams }: PageProps<"/e/[id]/relatorios/di
               </TableRow>
               {l.partidas.map((p) => (
                 <TableRow key={p.id} className="tabular-nums">
+                  <TableCell className="py-1" />
                   <TableCell className="py-1" />
                   <TableCell className="py-1">
                     <span className="mr-2 font-mono text-xs text-muted-foreground">{p.conta.codigo}</span>

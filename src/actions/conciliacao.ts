@@ -13,7 +13,7 @@ import {
   transferirEntreContas, zerarTransitoria,
 } from "@/lib/conciliacao";
 import { NOME_OUTRA_CONTA } from "@/lib/classificacao/transferencias";
-import { IDS_OPERACAO, NOMES_A_IDENTIFICAR, PAI_A_IDENTIFICAR } from "@/lib/operacoes";
+import { competenciaSeparada, IDS_OPERACAO, NOMES_A_IDENTIFICAR, PAI_A_IDENTIFICAR } from "@/lib/operacoes";
 import { contaDeTitulo } from "@/lib/sem-titulo";
 import { cents, fmtCompetencia, fmtData, fromCents, parseValorBR, somenteDigitos } from "@/lib/format";
 import { requireUser } from "@/supabase/server";
@@ -94,7 +94,7 @@ export async function reclassificar(empresaId: string, input: ReclassificacaoInp
   if (!fora.d) return res;
   const { extrato, novo, estorno } = fora.d;
   const quando = estorno === novo ? `estorno e novo lançamento em ${fmtData(novo)}` : `novo lançamento em ${fmtData(novo)}`;
-  return { ...res, aviso: `Mês ${fmtCompetencia(extrato)} fechado: ${quando}, competência ${fmtCompetencia(r.data.competencia ?? extrato)}.` };
+  return { ...res, aviso: `Mês ${fmtCompetencia(extrato)} fechado: ${quando}, competência ${fmtCompetencia(novo)}.` };
 }
 
 const valorSchema = z.string().transform(parseValorBR).pipe(z.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inválido (use até 2 casas decimais)."));
@@ -360,20 +360,29 @@ export async function classificarEmLote(empresaId: string, input: ClassificacaoL
   if (!txs.length) return { aprovadas: 0, erros: ["Nenhuma transação encontrada."] };
 
   const entrada = cents(txs[0].valor) > 0;
+  if (competencia && txs.some((t) => competenciaSeparada(`${competencia}-01`, t.data))) {
+    const [c] = await db.select({ codigo: planoContas.codigo, nome: planoContas.nome }).from(planoContas)
+      .where(and(eq(planoContas.id, contaId), eq(planoContas.empresaId, empresaId)));
+    if (c && !c.codigo.startsWith("3."))
+      return { aprovadas: 0, erros: [`Competência ${fmtCompetencia(`${competencia}-01`)} fora do mês do extrato só vale para receita/despesa (reconhece na competência e baixa no extrato). Para ${c.codigo} ${c.nome}, use a competência do mês de cada transação.`] };
+  }
   let aprovadas = 0;
   const erros: string[] = [];
   for (const t of txs) {
     try {
       if (t.status !== "pendente") throw new Error("Transação não está mais pendente");
       if (cents(t.valor) > 0 !== entrada) throw new Error(entrada ? "Não é entrada" : "Não é saída");
-      await db.transaction((tx) =>
-        classificarTransacao(tx, {
-          empresaId, transacaoId: t.id, usuarioId: user.id, documento,
-          partidas: [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }],
-          historico: aplicarTemplate(historicoTemplate, t).trim() || "Conciliação bancária",
-          competencia: competencia ? `${competencia}-01` : undefined, confirmarSemTitulo,
-        }),
-      );
+      const base = {
+        empresaId, transacaoId: t.id, usuarioId: user.id, documento,
+        partidas: [{ contaId, valor: fromCents(Math.abs(cents(t.valor))) }],
+        historico: aplicarTemplate(historicoTemplate, t).trim() || "Conciliação bancária",
+      };
+      // competência em outro mês: reconhecimento na competência + baixa no extrato (o banco fica no mês do extrato)
+      await db.transaction(async (tx) => {
+        if (competencia && competenciaSeparada(`${competencia}-01`, t.data))
+          await lancarDireta(tx, { ...base, competencia: `${competencia}-01`, contraparte: t.memo });
+        else await classificarTransacao(tx, { ...base, confirmarSemTitulo });
+      });
       aprovadas++;
     } catch (e) {
       erros.push(`${t.memo.slice(0, 40) || t.id.slice(0, 8)}: ${msg(e)}`);

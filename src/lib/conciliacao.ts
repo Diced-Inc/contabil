@@ -72,9 +72,14 @@ export async function classificarTransacao(tx: Tx, input: {
     const fora = contas.find((c) => !contaServe(op, c, entrada));
     if (fora) throw new Error(`A conta ${fora.codigo} ${fora.nome} não cabe na operação ${OPERACOES[op].rotulo}`);
   }
+  // Lançamento do banco fica na competência da própria data: o saldo do banco por competência bate com o extrato.
+  // Competência em outro mês é reconhecimento + baixa (lancarDireta) ou adiantamento.
+  const data = input.data ?? t.data;
+  const competencia = primeiroDiaDoMes(input.competencia ?? data);
+  if (competencia !== primeiroDiaDoMes(data))
+    throw new Error(`Competência ${fmtCompetencia(competencia)} fora do mês do lançamento (${fmtCompetencia(data)}): use Receita/Despesa direta, que reconhece na competência e baixa no extrato, ou Adiantamento`);
   const l = await criarLancamento(tx, {
-    empresaId: input.empresaId, data: input.data ?? t.data, dataPagamento: t.data,
-    competencia: input.competencia ?? primeiroDiaDoMes(t.data),
+    empresaId: input.empresaId, data, dataPagamento: t.data, competencia,
     historico: input.historico, documento: input.documento ?? null, origem: "conciliacao", usuarioId: input.usuarioId,
     partidas: partidasClassificacao(t.valor, t.contaBanco, input.partidas),
   });
@@ -265,7 +270,8 @@ export async function alterarIgnorada(tx: Tx, empresaId: string, transacaoId: st
 
 /**
  * Estorna e classifica de novo, na mesma transação do Postgres: estorno na data do original e novo lançamento na
- * do extrato; mês fechado vai para hoje, com a competência do extrato. Retorna as datas se alguma saiu do lugar.
+ * do extrato; mês fechado vai para hoje (data e competência: mês fechado não recebe lançamento por nenhuma das duas).
+ * Retorna as datas se alguma saiu do lugar.
  */
 export async function reclassificarTransacao(tx: Tx, input: {
   empresaId: string; transacaoId: string; partidas: Contrapartida[]; historico: string; documento?: string | null;
@@ -277,7 +283,7 @@ export async function reclassificarTransacao(tx: Tx, input: {
   if (baixa) throw new Error("Transação baixou um título: desfaça a conciliação em vez de reclassificar");
   const data = dataNoMesAberto(t.data, hoje(), await mesesFechados(tx, input.empresaId), "reclassificar");
   const { data: estorno } = await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId, "reclassificar");
-  await classificarTransacao(tx, { ...input, data });
+  await classificarTransacao(tx, { ...input, data, competencia: primeiroDiaDoMes(data) });
   return data === t.data ? null : { extrato: t.data, novo: data, estorno };
 }
 

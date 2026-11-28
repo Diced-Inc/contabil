@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique, uniqueIndex, index,
+  check, pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { MotivoEncerramento } from "@/lib/ciclo";
@@ -19,7 +19,7 @@ export const papelEnum = pgEnum("papel_conta", [
 ]);
 export const statusTransacaoEnum = pgEnum("status_transacao", ["pendente", "classificada", "transferencia", "ignorada"]);
 export const origemSugestaoEnum = pgEnum("origem_sugestao", ["regra", "ia", "transferencia"]);
-export const origemLancEnum = pgEnum("origem_lancamento", ["manual", "conciliacao", "apuracao", "estorno"]);
+export const origemLancEnum = pgEnum("origem_lancamento", ["manual", "conciliacao", "apuracao", "estorno", "abertura"]);
 export const statusLancEnum = pgEnum("status_lancamento", ["aprovado", "estornado"]);
 export const tipoMatchEnum = pgEnum("tipo_match", ["memo_contem", "documento", "valor_exato"]);
 export const sinalEnum = pgEnum("sinal", ["entrada", "saida", "qualquer"]);
@@ -128,7 +128,7 @@ export const lancamentos = pgTable("lancamentos", {
   createdBy: uuid("created_by"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, () => [check("lancamentos_competencia_mes", sql`extract(day from competencia) = 1`)]);
 
 export const partidas = pgTable("partidas", {
   id: id(),

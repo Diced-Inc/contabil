@@ -1,37 +1,39 @@
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import { lancamentos, partidas, planoContas } from "@/db/schema";
-import { cents } from "@/lib/format";
+import { cents, primeiroDiaDoMes } from "@/lib/format";
 import { compararCodigo } from "./hierarquia";
 import { correr } from "./movimentos";
 
 export type Contrapartida = { codigo: string; nome: string };
 
 /**
- * Razão de várias contas no período [de, ate] (mesmo ano): saldo em 31/12 do ano anterior, saldo anterior a `de`,
- * movimentos (data do lançamento, ordem data/nº) com saldo corrente D − C, totais e saldo final.
+ * Razão de várias contas no período [de, ate] (mesmo ano), por competência como os demais relatórios: saldo em 31/12
+ * do ano anterior, saldo anterior ao mês de `de`, movimentos (ordem competência/data/nº) com saldo corrente D − C,
+ * totais e saldo final.
  * "todas": contas com movimento no período ou saldo anterior ≠ 0. Contas de outra empresa são ignoradas.
  */
-export async function razao360(empresaId: string, contaIds: string[] | "todas", de: string, ate: string) {
+export async function razao360(empresaId: string, contaIds: string[] | "todas", de: string, ate: string, exec: typeof db | Tx = db) {
   if (contaIds !== "todas" && !contaIds.length) return [];
   const inicioAno = `${de.slice(0, 4)}-01-01`;
+  const deMes = primeiroDiaDoMes(de);
   const filtroConta = contaIds === "todas" ? undefined : inArray(partidas.contaId, contaIds);
   const daEmpresa = eq(lancamentos.empresaId, empresaId);
 
   const [saldos, movs] = await Promise.all([
-    db
+    exec
       .select({
         contaId: partidas.contaId,
-        anoAnterior: sql<string>`coalesce(sum(${partidas.debito} - ${partidas.credito}) filter (where ${lancamentos.data} < ${inicioAno}), 0)::text`,
-        anterior: sql<string>`coalesce(sum(${partidas.debito} - ${partidas.credito}) filter (where ${lancamentos.data} < ${de}), 0)::text`,
+        anoAnterior: sql<string>`coalesce(sum(${partidas.debito} - ${partidas.credito}) filter (where ${lancamentos.competencia} < ${inicioAno}), 0)::text`,
+        anterior: sql<string>`coalesce(sum(${partidas.debito} - ${partidas.credito}) filter (where ${lancamentos.competencia} < ${deMes}), 0)::text`,
       })
       .from(partidas)
       .innerJoin(lancamentos, eq(lancamentos.id, partidas.lancamentoId))
-      .where(and(daEmpresa, filtroConta, sql`${lancamentos.data} < ${de}`))
+      .where(and(daEmpresa, filtroConta, sql`${lancamentos.competencia} < ${deMes}`))
       .groupBy(partidas.contaId),
-    db
+    exec
       .select({
-        contaId: partidas.contaId, lancamentoId: lancamentos.id, data: lancamentos.data, numero: lancamentos.numero,
+        contaId: partidas.contaId, lancamentoId: lancamentos.id, data: lancamentos.data, competencia: lancamentos.competencia, numero: lancamentos.numero,
         historico: lancamentos.historico, estornoDeId: lancamentos.estornoDeId, debito: partidas.debito, credito: partidas.credito,
         contrapartidas: sql<Contrapartida[]>`(
           select coalesce(json_agg(distinct jsonb_build_object('codigo', pc.codigo, 'nome', pc.nome)), '[]'::json)
@@ -41,8 +43,8 @@ export async function razao360(empresaId: string, contaIds: string[] | "todas", 
       })
       .from(partidas)
       .innerJoin(lancamentos, eq(lancamentos.id, partidas.lancamentoId))
-      .where(and(daEmpresa, filtroConta, gte(lancamentos.data, de), lte(lancamentos.data, ate)))
-      .orderBy(asc(lancamentos.data), asc(lancamentos.numero), asc(partidas.ordem)),
+      .where(and(daEmpresa, filtroConta, gte(lancamentos.competencia, deMes), lte(lancamentos.competencia, ate)))
+      .orderBy(asc(lancamentos.competencia), asc(lancamentos.data), asc(lancamentos.numero), asc(partidas.ordem)),
   ]);
 
   const saldoDe = new Map(saldos.map((s) => [s.contaId, s]));
@@ -51,7 +53,7 @@ export async function razao360(empresaId: string, contaIds: string[] | "todas", 
     ? [...new Set([...movsDe.keys(), ...saldos.filter((s) => cents(s.anterior) !== 0).map((s) => s.contaId)])]
     : contaIds;
   if (!ids.length) return [];
-  const contas = await db
+  const contas = await exec
     .select({ id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, natureza: planoContas.natureza })
     .from(planoContas)
     .where(and(eq(planoContas.empresaId, empresaId), inArray(planoContas.id, ids)));
