@@ -711,9 +711,11 @@ function Adiantamento({ t, contas, fechados, pendente, enviar }: {
 }) {
   const entrada = cents(t.valor) > 0;
   const tipo = tipoDaEntrada(entrada);
-  const [contraparte, setContraparte] = useState(() => contraparteDoMemo(t.memo));
+  // nome sem o CPF/CNPJ (que vai para o campo próprio)
+  const nome = contraparteDoMemo(t.memo.replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, " ").replace(/\s+/g, " ").trim());
+  const [contraparte, setContraparte] = useState(nome);
   const [documento, setDocumento] = useState(() => documentoDoMemo(t.memo) ?? "");
-  const [historico, setHistorico] = useState(() => `${NOMES_ADIANTAMENTO[tipo]}: ${contraparteDoMemo(t.memo)}`);
+  const [historico, setHistorico] = useState(`${NOMES_ADIANTAMENTO[tipo]}: ${nome}`);
   const conta = acharConta(contas, CONTA_ADIANTAMENTO[tipo]);
   const contaId = conta?.id ?? `nova:${tipo}`;
   const todas = conta ? contas : [...contas, { id: contaId, codigo: `${CONTA_ADIANTAMENTO[tipo].criar!.pai}.nova`, nome: `${NOMES_ADIANTAMENTO[tipo]} (será criada)` }];

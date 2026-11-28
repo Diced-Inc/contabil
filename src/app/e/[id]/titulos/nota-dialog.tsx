@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { cents, fmtValor, fromCents, parseValorBR, somarMeses } from "@/lib/format";
 import { parcelasIguais, rotuloNota } from "@/lib/notas";
 import { contasDeContrapartida, type TipoTitulo } from "@/lib/operacoes";
-import { NOMES_RETENCAO, TIPOS_RETENCAO, type TipoRetencao } from "@/lib/tributos";
+import { acharConta, NOMES_RETENCAO, TIPOS_RETENCAO, type TipoRetencao } from "@/lib/tributos";
 import { PreviaLancamentos } from "../conciliacao/previa-lancamentos";
 import { previaNota } from "./previa-nota";
 
@@ -65,7 +65,10 @@ function Form({ empresaId, cnpj, contas, fechados, lembradas, tipoInicial, onFei
   const [doc, setDoc] = useState("");
   const [bruto, setBruto] = useState("");
   const [rets, setRets] = useState<Ret[]>([]);
-  const [contaId, setContaId] = useState<string | null>(lembradas[tipoInicial]);
+  /** Sem nota anterior: receita de serviço (a maioria das empresas) ou de mercadoria; a pagar, o contador escolhe. */
+  const padrao = (t: TipoTitulo, servicoNota = true) => lembradas[t]
+    ?? (t === "receber" ? acharConta(contas, { prefixo: "3.1", re: servicoNota ? /^venda de servicos$/ : /^venda de mercadorias$/ })?.id ?? null : null);
+  const [contaId, setContaId] = useState<string | null>(() => padrao(tipoInicial));
   const [vencimento, setVencimento] = useState("");
   const [nParcelas, setNParcelas] = useState("1");
   const [descricao, setDescricao] = useState("");
@@ -111,7 +114,7 @@ function Form({ empresaId, cnpj, contas, fechados, lembradas, tipoInicial, onFei
     <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); enviar(); }}>
       <div className="inline-flex w-fit rounded-lg border bg-muted p-[3px] text-sm">
         {([["receber", "Emitida pela empresa (a receber)"], ["pagar", "Recebida de fornecedor (a pagar)"]] as const).map(([k, r]) => (
-          <button key={k} type="button" onClick={() => { setTipo(k); setContaId(lembradas[k]); setRets((rs) => rs.map((x) => ({ ...x, contaId: null }))); }}
+          <button key={k} type="button" onClick={() => { setTipo(k); setContaId(padrao(k, servico)); setRets((rs) => rs.map((x) => ({ ...x, contaId: null }))); }}
             className={cn("rounded-md px-3 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground", tipo === k && "bg-card text-foreground shadow-xs")}>
             {r}
           </button>
