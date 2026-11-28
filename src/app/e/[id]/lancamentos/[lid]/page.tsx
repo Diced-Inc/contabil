@@ -15,7 +15,7 @@ import { dataNoMesAberto, mesesFechados, type RetratoLancamento } from "@/lib/la
 import { requireUser } from "@/supabase/server";
 import { getEmpresa } from "../../empresa";
 import { FormLancamento } from "../form-lancamento";
-import { ACOES_LOG, ORIGENS, getLancamento, listarContasAnaliticas, listarLog } from "../queries";
+import { ACOES_LOG, ORIGENS, cadeiaDoLancamento, getLancamento, listarContasAnaliticas, listarLog } from "../queries";
 import { transacaoDoLancamento } from "../../conciliacao/queries";
 import { DesfazerConciliacaoDialog, EstornarDialog } from "./estornar-dialog";
 
@@ -50,7 +50,7 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
   const { editar } = await searchParams;
   await getEmpresa(id);
   if (!z.uuid().safeParse(lid).success) notFound();
-  const [l, log, user] = await Promise.all([getLancamento(id, lid), listarLog(lid), requireUser()]);
+  const [l, log, user, cadeia] = await Promise.all([getLancamento(id, lid), listarLog(lid), requireUser(), cadeiaDoLancamento(id, lid)]);
   if (!l) notFound();
   const base = `/e/${id}/lancamentos`;
   const editavel = l.origem === "manual" && l.status === "aprovado";
@@ -136,6 +136,54 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
         )}
       </dl>
 
+      {cadeia.length > 0 && (
+        <>
+          <h2 className="mb-1 text-sm font-semibold">Cadeia de reclassificação</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Original, estornos e substitutos ligados a este lançamento, na ordem em que foram criados.</p>
+          <TablePanel className="mb-8">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-20">Nº</TableHead>
+                  <TableHead className="w-44">Papel</TableHead>
+                  <TableHead className="w-28">Movimento no banco</TableHead>
+                  <TableHead className="w-28">Data contábil</TableHead>
+                  <TableHead className="w-24">Competência</TableHead>
+                  <TableHead className="w-40">Alterado em</TableHead>
+                  <TableHead className="w-52">Usuário</TableHead>
+                  <TableHead>Motivo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cadeia.map((c) => (
+                  <TableRow key={c.id} className={c.id === lid ? "bg-accent/50" : undefined}>
+                    <TableCell>
+                      {c.id === lid ? <span className="font-semibold">{c.numero}</span> : (
+                        <Link href={`${base}/${c.id}`} className="text-primary underline-offset-4 hover:underline">{c.numero}</Link>
+                      )}
+                      {c.status === "estornado" && <span className="ml-1 text-xs text-muted-foreground line-through">estornado</span>}
+                    </TableCell>
+                    <TableCell className="whitespace-normal">
+                      {c.estornoDe ? `Estorno do nº ${c.estornoDe}` : c.substitui ? `Substitui o nº ${c.substitui}` : "Original"}
+                      {c.estornoDe && c.substitui ? ` (substitui o nº ${c.substitui})` : ""}
+                    </TableCell>
+                    <TableCell>{c.dataBanco ? fmtData(c.dataBanco) : "-"}</TableCell>
+                    <TableCell>{fmtData(c.data)}</TableCell>
+                    <TableCell>{fmtCompetencia(c.competencia)}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.createdAt.toLocaleString("pt-BR", { timeZone: TZ })}</TableCell>
+                    <TableCell className="truncate">{c.usuario ?? "-"}</TableCell>
+                    <TableCell className="whitespace-normal">
+                      {c.motivo ?? "-"}
+                      {c.loteId && <span className="ml-1 font-mono text-xs text-muted-foreground">lote {c.loteId.slice(0, 8)}</span>}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TablePanel>
+        </>
+      )}
+
       <h2 className="mb-3 text-sm font-semibold">Partidas</h2>
       <TablePanel className="mb-8">
         <Table>
@@ -187,10 +235,13 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
                 <TableRow key={g.id}>
                   <TableCell><Badge variant="muted">{ACOES_LOG[g.acao]}</Badge></TableCell>
                   <TableCell>
-                    {!g.usuarioId ? "-" : g.usuarioId === user.id ? (user.email ?? "você") : g.usuarioId.slice(0, 8)}
+                    {!g.usuarioId ? "-" : g.usuarioId === user.id ? (user.email ?? "você") : (g.email ?? g.usuarioId.slice(0, 8))}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{g.createdAt.toLocaleString("pt-BR", { timeZone: TZ })}</TableCell>
-                  <TableCell className="whitespace-normal">{resumo(g.acao, g.antes, g.depois)}</TableCell>
+                  <TableCell className="whitespace-normal">
+                    {resumo(g.acao, g.antes, g.depois)}
+                    {g.motivo && <span className="block text-xs text-muted-foreground">Motivo: {g.motivo}{g.loteId && ` (lote ${g.loteId.slice(0, 8)})`}</span>}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
