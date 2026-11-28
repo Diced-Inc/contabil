@@ -8,6 +8,7 @@ import { Carregando, PageHeader } from "@/components/page-header";
 import { checar, resumir, type ItemChecagem, type StatusChecagem } from "@/lib/checagem";
 import { lerAno } from "@/lib/format";
 import { getEmpresa } from "../empresa";
+import { CorrigirEstornos } from "./corrigir-estornos";
 
 const DESCRICAO = "Conferências de consistência do exercício. Itens com erro impedem a apuração do resultado.";
 
@@ -73,6 +74,7 @@ async function Checagem({ params, searchParams }: PageProps<"/e/[id]/checagem">)
                 <p className="text-sm text-muted-foreground">{i.detalhe}</p>
                 {!!i.itens?.length && <Detalhes itens={i.itens} />}
               </div>
+              {!!i.correcoes?.length && <CorrigirEstornos empresaId={id} correcoes={i.correcoes} />}
               {i.link && (
                 <Link href={i.link} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   Ver

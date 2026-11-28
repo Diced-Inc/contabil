@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { itemSaldoBanco, itemSaldoInicial, mesesSemLancamento, mesesSocioSemProLabore, naturezaInvertida, regrasPatrimoniais, resumir } from "./checagem";
+import { itemEstornoForaDoMes, itemSaldoBanco, itemSaldoInicial, mesesSemLancamento, mesesSocioSemProLabore, naturezaInvertida, regrasPatrimoniais, resumir } from "./checagem";
 import { cents, fromCents } from "./format";
 import { diferencaSaldoBanco } from "./saldo-dia";
 
@@ -178,5 +178,21 @@ describe("itemSaldoInicial", () => {
     expect(itemSaldoInicial("2025-01-03", null, "/e/x")).toMatchObject({ status: "alerta", titulo: "Sem saldos iniciais", link: "/e/x/lancamentos/saldos-iniciais" });
     expect(itemSaldoInicial("2025-01-03", { data: "2024-12-31" }, "/e/x")).toMatchObject({ status: "ok", detalhe: "Abertura em 31/12/2024." });
     expect(itemSaldoInicial(null, null, "/e/x").status).toBe("ok");
+  });
+});
+
+describe("itemEstornoForaDoMes", () => {
+  const par = (n: number, oComp: string, eComp: string, bloqueio: string | null = null) => ({
+    estorno: { id: `e${n}`, numero: 70 + n, data: `${eComp.slice(0, 8)}20`, competencia: eComp },
+    original: { id: `o${n}`, numero: n, data: `${oComp.slice(0, 8)}04`, competencia: oComp },
+    valor: "100.00", bloqueio,
+  }) as unknown as Parameters<typeof itemEstornoForaDoMes>[0][number];
+  it("alerta com os pares do ano e a prévia do Corrigir; ok sem pares", () => {
+    const i = itemEstornoForaDoMes([par(30, "2026-09-01", "2026-10-01"), par(36, "2026-09-01", "2026-10-01"), par(5, "2024-01-01", "2024-02-01")], 2026, "/e/x");
+    expect([i.status, i.correcoes?.map((c) => c.estornoId)]).toEqual(["alerta", ["e30", "e36"]]);
+    expect(i.detalhe).toContain("R$ 200,00");
+    expect(i.detalhe).toContain("09/2026");
+    expect(i.itens?.[0]).toEqual({ texto: "Lançamento 30 (09/2026) estornado pelo 100 em 10/2026 · R$ 100,00", link: "/e/x/lancamentos/o30" });
+    expect(itemEstornoForaDoMes([], 2026, "/e/x").status).toBe("ok");
   });
 });

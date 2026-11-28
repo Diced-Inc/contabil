@@ -9,6 +9,7 @@ import { adiantamentosAntigos, DIAS_ADIANTAMENTO_ANTIGO } from "./adiantamentos"
 import { listarAdiantamentos } from "./adiantamentos-registro";
 import { balanco, type TotaisBalanco } from "./relatorios/balanco";
 import { saldos, type LinhaSaldo } from "./relatorios/saldos";
+import { estornosForaDoMes, type EstornoForaDoMes } from "./reclassificacao-registro";
 import { contaDeTitulo } from "./sem-titulo";
 
 export type StatusChecagem = "ok" | "alerta" | "erro";
@@ -20,6 +21,13 @@ export type ItemChecagem = {
   link?: string;
   /** Detalhamento opcional, cada linha com link; `grupo` agrupa as linhas na tela. */
   itens?: { texto: string; link: string; grupo?: string }[];
+  /** Estornos fora do mês do original que o botão Corrigir resolve (prévia do que ele lança). */
+  correcoes?: CorrecaoEstorno[];
+};
+export type CorrecaoEstorno = {
+  estornoId: string; valor: string; bloqueio: string | null;
+  original: { id: string; numero: number; data: string; competencia: string };
+  estorno: { numero: number; data: string; competencia: string };
 };
 
 const LIMITE_SEM_DOCUMENTO = 1000;
@@ -237,6 +245,32 @@ export function itemAdiantamentosAntigos(
   };
 }
 
+/**
+ * Alerta: estorno aprovado em competência diferente da do lançamento estornado, com o mês do original aberto (código
+ * antigo da reclassificação: estorno no mês seguinte e novo no mês do extrato, que conta em dobro). Pares do `ano`.
+ */
+export function itemEstornoForaDoMes(pares: Pick<EstornoForaDoMes, "estorno" | "original" | "valor" | "bloqueio">[], ano: number, base: string): ItemChecagem {
+  const ps = pares.filter((p) => [p.estorno.competencia, p.original.competencia].some((c) => c.startsWith(`${ano}-`)));
+  const id = "estorno-fora-do-mes";
+  if (!ps.length)
+    return { id, titulo: "Estornos na competência do lançamento original", status: "ok", detalhe: "Nenhum estorno fora do mês do lançamento que ele estorna." };
+  const total = ps.reduce((s, p) => s + cents(p.valor), 0);
+  const meses = [...new Set(ps.map((p) => p.original.competencia))].sort();
+  return {
+    id, titulo: "Reclassificação com estorno fora do mês do original", status: "alerta",
+    detalhe: `${ps.length} estorno(s) em outra competência que o lançamento estornado (R$ ${fmtValor(fromCents(total))}): ${listaMeses(meses)} conta(m) o original e o novo lançamento, e o mês do estorno fica negativo. Corrigir estorna cada estorno e o lança de novo na data e competência do original.`,
+    itens: ps.map((p) => ({
+      texto: `Lançamento ${p.original.numero} (${fmtCompetencia(p.original.competencia)}) estornado pelo ${p.estorno.numero} em ${fmtCompetencia(p.estorno.competencia)} · R$ ${fmtValor(p.valor)}${p.bloqueio ? ` · ${p.bloqueio}` : ""}`,
+      link: `${base}/lancamentos/${p.original.id}`,
+    })),
+    correcoes: ps.map((p) => ({
+      estornoId: p.estorno.id, valor: p.valor, bloqueio: p.bloqueio,
+      original: { id: p.original.id, numero: p.original.numero, data: p.original.data, competencia: p.original.competencia },
+      estorno: { numero: p.estorno.numero, data: p.estorno.data, competencia: p.estorno.competencia },
+    })),
+  };
+}
+
 /** Alerta "sem saldo inicial": a empresa tem movimento e nenhum lançamento de abertura ativo. */
 export function itemSaldoInicial(primeiroMov: string | null, abertura: { data: string } | null, base: string): ItemChecagem {
   const link = `${base}/lancamentos/saldos-iniciais`;
@@ -257,7 +291,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   const fim = dez < hoje() ? dez : hoje();
   const base = `/e/${empresaId}`;
 
-  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos, inicio, semPar, ads] = await Promise.all([
+  const [bal, bancos, estado, linhas, pendentes, semDoc, porMes, socio, vencidos, inicio, semPar, ads, foraDoMes] = await Promise.all([
     balanco(empresaId, ano),
     listarContasComSaldo(empresaId, fim),
     carregarEstado(db, empresaId),
@@ -294,6 +328,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
     ]).then(([mov, [criada], abertura]) => ({ mov, criada: criada?.d ?? null, abertura })),
     listarTransferenciasSemPar(empresaId, fim),
     listarAdiantamentos(db, empresaId),
+    estornosForaDoMes(db, empresaId),
   ]);
 
   const itens: ItemChecagem[] = [];
@@ -303,6 +338,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
 
   itens.push(itemAdiantamentosAntigos(ads, hoje(), base));
   itens.push(itemSaldoInicial(inicio.mov, inicio.abertura ?? null, base));
+  itens.push(itemEstornoForaDoMes(foraDoMes, ano, base));
 
   // 2. Bancos
   for (const b of bancos.filter((b) => b.ativa)) itens.push(itemSaldoBanco(b, base, fim));

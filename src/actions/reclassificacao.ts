@@ -104,13 +104,15 @@ export async function desfazerLoteAction(empresaId: string, loteId: string, moti
 }
 
 /** "Corrigir" da checagem: estornos fora do mês do original voltam para a competência do original. */
-export async function corrigirEstornosAction(empresaId: string, motivo: string): Promise<{ erro: string } | ResultadoLote> {
+export async function corrigirEstornosAction(empresaId: string, motivo: string, estornoIds: string[]): Promise<{ erro: string } | ResultadoLote> {
   const user = await requireUser();
   if (!z.uuid().safeParse(empresaId).success) return { erro: "Empresa inválida." };
   const m = motivoSchema.safeParse(motivo);
   if (!m.success) return { erro: m.error.issues[0].message };
+  const ids = z.array(z.uuid()).min(1, "Nenhum estorno a corrigir.").safeParse(estornoIds);
+  if (!ids.success) return { erro: ids.error.issues[0].message };
   try {
-    return await corrigirEstornosForaDoMes(db, { empresaId, motivo: m.data, usuarioId: user.id });
+    return await corrigirEstornosForaDoMes(db, { empresaId, motivo: m.data, ids: ids.data, usuarioId: user.id });
   } catch (e) {
     return { erro: mensagem(e) };
   } finally {
