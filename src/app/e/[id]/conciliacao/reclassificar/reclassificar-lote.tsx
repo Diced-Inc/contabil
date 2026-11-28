@@ -54,6 +54,7 @@ export function ReclassificarLote({ empresaId, contas, bancos, lotes }: {
 }) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
+  const [calculando, calcular] = useTransition();
   const [filtro, setFiltro] = useState<Filtro>(FILTRO);
   const [destino, setDestino] = useState<Destino>({ operacao: "receita_direta", contaId: null, competencia: "", confirmar: false });
   const [previa, setPrevia] = useState<{ dados: PreviaReclassificacao; alvo: AlvoInput } | null>(null);
@@ -75,7 +76,7 @@ export function ReclassificarLote({ empresaId, contas, bancos, lotes }: {
     competencia: direta && destino.competencia ? destino.competencia : null, confirmarSemTitulo: clientes && destino.confirmar,
   });
 
-  const verPrevia = () => iniciar(async () => {
+  const verPrevia = () => calcular(async () => {
     const a = alvo();
     const r = await previaReclassificacao(empresaId, filtro, a);
     if ("erro" in r) return void toast.error(r.erro);
@@ -128,19 +129,19 @@ export function ReclassificarLote({ empresaId, contas, bancos, lotes }: {
             </select>
           </Campo>
           <Campo rotulo="Valor (absoluto) de / até">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2 [&>input]:min-w-0">
               <Input inputMode="decimal" value={filtro.valorMin} onChange={(e) => f({ valorMin: e.target.value })} placeholder="mín." aria-label="Valor mínimo" />
               <Input inputMode="decimal" value={filtro.valorMax} onChange={(e) => f({ valorMax: e.target.value })} placeholder="máx." aria-label="Valor máximo" />
             </div>
           </Campo>
           <Campo rotulo="Data do extrato de / até">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2 [&>input]:min-w-0">
               <Input type="date" value={filtro.de} onChange={(e) => f({ de: e.target.value })} aria-label="Data inicial" />
               <Input type="date" value={filtro.ate} onChange={(e) => f({ ate: e.target.value })} aria-label="Data final" />
             </div>
           </Campo>
           <Campo rotulo="Competência de / até">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2 [&>input]:min-w-0">
               <Input type="month" value={filtro.compDe} onChange={(e) => f({ compDe: e.target.value })} aria-label="Competência inicial" />
               <Input type="month" value={filtro.compAte} onChange={(e) => f({ compAte: e.target.value })} aria-label="Competência final" />
             </div>
@@ -185,15 +186,15 @@ export function ReclassificarLote({ empresaId, contas, bancos, lotes }: {
           </label>
         )}
         <div>
-          <Button onClick={verPrevia} disabled={pendente}>
+          <Button onClick={verPrevia} disabled={calculando || pendente}>
             <Eye />
-            {pendente && !confirmar ? "Calculando..." : "Ver prévia"}
+            {calculando ? "Calculando..." : "Ver prévia"}
           </Button>
         </div>
       </section>
 
       {previa && <Previa empresaId={empresaId} dados={previa.dados} contas={contas} onExecutar={() => setConfirmar(true)} enviar={aEnviar.length} />}
-      {resultado && <Resultado r={resultado} onDesfazer={resultado.feitas ? () => setDesfazer({
+      {resultado && <Resultado r={resultado} onDesfazer={resultado.feitas && resultado.titulo === "Reclassificação em lote" ? () => setDesfazer({
         loteId: resultado.loteId, quando: new Date().toISOString(), motivo, email: null, usuarioId: null, estornados: resultado.feitas, novos: 0, tipo: "reclassificacao",
       }) : undefined} />}
 

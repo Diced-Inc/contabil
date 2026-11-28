@@ -145,13 +145,13 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-20">Nº</TableHead>
-                  <TableHead className="w-44">Papel</TableHead>
+                  <TableHead className="w-36">Papel</TableHead>
                   <TableHead className="w-28">Movimento no banco</TableHead>
                   <TableHead className="w-28">Data contábil</TableHead>
                   <TableHead className="w-24">Competência</TableHead>
                   <TableHead className="w-40">Alterado em</TableHead>
-                  <TableHead className="w-52">Usuário</TableHead>
-                  <TableHead>Motivo</TableHead>
+                  <TableHead className="w-44">Usuário</TableHead>
+                  <TableHead className="min-w-80">Motivo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

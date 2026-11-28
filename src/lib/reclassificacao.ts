@@ -231,7 +231,7 @@ export function efeitoLote(itens: ItemLote[], base: BaseSaldo[], contas: Readonl
   const todas = [...new Set([...baseDe.keys(), ...delta.keys()])];
   const porAno = anos.map((ano) => {
     const resultado = todas.filter((id) => classe(info(id).codigo, "3"));
-    const mov = (id: string) => -(baseDe.get(id) ?? []).reduce((s, b) => s + (b.ano === ano ? cents(b.semApuracao) : 0), 0);
+    const mov = (id: string) => 0 - (baseDe.get(id) ?? []).reduce((s, b) => s + (b.ano === ano ? cents(b.semApuracao) : 0), 0);
     const dreContas = resultado.filter((id) => soma(delta.get(id), Infinity, ano) !== 0)
       .map((id) => ({ ...info(id), antes: mov(id), depois: mov(id) - soma(delta.get(id), Infinity, ano) })).sort(porCodigo);
     const liquido = {
