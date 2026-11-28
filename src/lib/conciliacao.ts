@@ -193,10 +193,12 @@ export async function lancarDireta(tx: Tx, input: {
  * Analítica criada sob demanda (ex.: "Bancos – Outra Conta", "Pagamentos a identificar"): devolve a ativa com esse
  * nome ou cria no próximo código livre do grupo sintético `paiCodigo`.
  */
-export async function contaSobDemanda(tx: Tx, empresaId: string, p: { paiCodigo: string; nome: string; natureza: "D" | "C" }) {
+export async function contaSobDemanda(tx: Tx, empresaId: string, p: { paiCodigo: string; nome: string; natureza: "D" | "C"; soNoPai?: boolean }) {
   const sel = { id: planoContas.id, codigo: planoContas.codigo, nome: planoContas.nome, papel: planoContas.papel };
+  // soNoPai: só reaproveita a conta com o mesmo nome dentro do grupo (nome repetido em outro grupo não serve)
   const [ja] = await tx.select(sel).from(planoContas)
-    .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.nome, p.nome), eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true)));
+    .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.nome, p.nome), eq(planoContas.tipo, "analitica"), eq(planoContas.ativa, true),
+      p.soNoPai ? sql`${planoContas.parentId} = (select id from plano_contas where empresa_id = ${empresaId} and codigo = ${p.paiCodigo})` : undefined));
   if (ja) return ja;
   const [pai] = await tx.select(sel).from(planoContas)
     .where(and(eq(planoContas.empresaId, empresaId), eq(planoContas.codigo, p.paiCodigo), eq(planoContas.tipo, "sintetica")))

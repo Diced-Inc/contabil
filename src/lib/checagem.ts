@@ -270,7 +270,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM lancamentos l
       WHERE l.empresa_id = ${empresaId} AND l.status = 'aprovado' AND l.origem NOT IN ('apuracao', 'estorno')
-        AND coalesce(trim(l.documento), '') = '' AND l.data BETWEEN ${ini} AND ${fim}
+        AND coalesce(trim(l.documento), '') = '' AND l.data BETWEEN ${ini} AND ${fim} AND ${foraDaAbertura("l")}
         AND (SELECT sum(p.debito) FROM partidas p WHERE p.lancamento_id = l.id) >= ${LIMITE_SEM_DOCUMENTO}`),
     db.execute<{ mes: string }>(sql`
       SELECT DISTINCT l.competencia::text AS mes FROM lancamentos l
@@ -280,7 +280,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
         coalesce(sum(p.debito) FILTER (WHERE pc.nome ~* 's[óo]cio'), 0)::text AS socio,
         coalesce(sum(p.debito) FILTER (WHERE pc.nome ~* 'pr[óo][- ]?labore'), 0)::text AS prolabore
       FROM lancamentos l JOIN partidas p ON p.lancamento_id = l.id JOIN plano_contas pc ON pc.id = p.conta_id
-      WHERE l.empresa_id = ${empresaId} AND l.competencia BETWEEN ${ini} AND ${fim}
+      WHERE l.empresa_id = ${empresaId} AND l.competencia BETWEEN ${ini} AND ${fim} AND ${foraDaAbertura("l")}
       GROUP BY 1, 2, 3`),
     db.execute<{ tipo: "receber" | "pagar"; n: number }>(sql`
       SELECT tipo, count(*)::int AS n FROM titulos

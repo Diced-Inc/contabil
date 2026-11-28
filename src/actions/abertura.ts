@@ -60,7 +60,7 @@ export async function criarContaAberturaAction(empresaId: string, input: z.input
       const [pai] = await tx.select({ codigo: planoContas.codigo }).from(planoContas)
         .where(and(eq(planoContas.id, r.data.paiId), eq(planoContas.empresaId, empresaId), eq(planoContas.tipo, "sintetica")));
       if (!pai || !patrimonial(pai.codigo)) throw new Error("Grupo inválido: escolha um grupo do Ativo, Passivo ou PL");
-      return contaSobDemanda(tx, empresaId, { paiCodigo: pai.codigo, nome: r.data.nome, natureza: r.data.natureza });
+      return contaSobDemanda(tx, empresaId, { paiCodigo: pai.codigo, nome: r.data.nome, natureza: r.data.natureza, soNoPai: true });
     });
     revalidatePath(`/e/${empresaId}`, "layout");
     return { conta };

@@ -61,13 +61,10 @@ export async function salvarAbertura(tx: Tx, p: {
   const atual = await aberturaAtiva(tx, p.empresaId);
   for (const d of [p.data, atual?.data].filter((x): x is string => !!x))
     if (fechados.has(primeiroDiaDoMes(d))) throw new Error(`O mês ${fmtCompetencia(d)} está fechado: reabra-o em Fechamento para mudar os saldos iniciais`);
-  if (!p.confirmar) {
-    const [antes] = await tx.execute<{ n: number; d: string | null }>(sql`
-      SELECT count(*)::int AS n, min(l.data)::text AS d FROM lancamentos l
-      WHERE l.empresa_id = ${p.empresaId} AND (l.data < ${p.data} OR l.competencia < ${primeiroDiaDoMes(p.data)}) AND ${foraDaAbertura("l")}`);
-    if (antes?.n)
-      return { confirmar: `${antes.n} lançamento(s) antes de ${fmtData(p.data)} (o primeiro em ${fmtData(antes.d!)}): os saldos iniciais costumam ser do dia anterior ao primeiro movimento. Salvar mesmo assim?` };
-  }
+  // mesma regra da tela: movimento (lançamento por data ou competência, ou extrato) até a data da abertura, inclusive
+  const primeiro = p.confirmar ? null : await primeiroMovimento(tx, p.empresaId);
+  if (primeiro && primeiro <= p.data)
+    return { confirmar: `A empresa tem movimento desde ${fmtData(primeiro)}, antes ou no dia dos saldos iniciais (${fmtData(p.data)}): esse movimento não parte deles e o do próprio dia contaria duas vezes. Os saldos costumam ser do dia anterior ao primeiro movimento. Salvar mesmo assim?` };
   if (atual) await estornarLancamento(tx, atual.id, atual.data, p.usuarioId);
   const lancamento = await criarLancamento(tx, {
     empresaId: p.empresaId, data: p.data, historico: `Saldos iniciais em ${fmtData(p.data)}`, origem: "abertura", usuarioId: p.usuarioId, partidas,
