@@ -2,7 +2,7 @@ import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { baixas, contasBancarias, lancamentos, partidas, planoContas, regras, transacoesBancarias } from "@/db/schema";
 import { cents, fmtCompetencia, fmtData, fmtValor, fromCents, hoje, primeiroDiaDoMes } from "./format";
-import { criarLancamento, dataNoMesAberto, estornarLancamento, mesesFechados, type PartidaInput } from "./lancamentos";
+import { contextoLog, criarLancamento, dataNoMesAberto, estornarLancamento, mesesFechados, type PartidaInput } from "./lancamentos";
 import {
   competenciaSeparada, contaServe, dataReconhecimento, OPERACOES, partidasClassificacao, type Contrapartida, type ItemBaixa,
   type Operacao, type TipoTitulo,
@@ -17,7 +17,7 @@ export type NovaRegra = {
 };
 
 /** Transação da empresa com a conta contábil do banco, travada para a transação do Postgres. */
-async function travar(tx: Tx, empresaId: string, transacaoId: string) {
+export async function travar(tx: Tx, empresaId: string, transacaoId: string) {
   const [t] = await tx
     .select({
       id: transacoesBancarias.id, contaBancariaId: transacoesBancarias.contaBancariaId, data: transacoesBancarias.data,
@@ -285,6 +285,7 @@ export async function reclassificarTransacao(tx: Tx, input: {
   if (baixa) throw new Error("Transação baixou um título: desfaça a conciliação em vez de reclassificar");
   const data = dataNoMesAberto(t.data, hoje(), await mesesFechados(tx, input.empresaId), "reclassificar");
   const { data: estorno } = await desfazerConciliacao(tx, input.empresaId, input.transacaoId, input.usuarioId, "reclassificar");
+  await contextoLog(tx, { substituiId: t.lancamentoId }); // o novo aponta para o estornado (histórico original → novo)
   await classificarTransacao(tx, { ...input, data, competencia: primeiroDiaDoMes(data) });
   return data === t.data ? null : { extrato: t.data, novo: data, estorno };
 }

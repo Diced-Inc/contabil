@@ -159,6 +159,10 @@ export function operacaoSugerida(op: unknown, c: ContaComPapel | null | undefine
   return operacaoDaConta(c, entrada);
 }
 
+/** Contraparte padrão do título/adiantamento: o memo sem o prefixo do tipo de operação bancária. */
+export const contraparteDoMemo = (memo: string) =>
+  memo.replace(/^((pix|ted|doc|tev|boleto|pagto|pagamento|pag|transf\w*|recebid[oa]|enviad[oa]|rec|env)\b[\s:-]*)+/gi, "").trim().slice(0, 80) || memo.slice(0, 80);
+
 // ---------- partidas ----------
 
 export type Contrapartida = { contaId: string; valor: string };

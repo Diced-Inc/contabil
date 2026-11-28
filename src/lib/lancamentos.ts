@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { baixas, fechamentos, lancamentos, partidas, lancamentoLog, parcelamentoLancamentos, planoContas, titulos } from "@/db/schema";
 import { cents, fmtCompetencia, fromCents, primeiroDiaDoMes, hoje } from "./format";
@@ -160,4 +160,15 @@ export function dataNoMesAberto(data: string, hoje: string, fechados: ReadonlySe
   if (!fechados.has(primeiroDiaDoMes(data))) return data;
   if (fechados.has(primeiroDiaDoMes(hoje))) throw new Error(`Reabra o mês ${fmtCompetencia(hoje)} em Fechamento para ${acao}`);
   return hoje;
+}
+
+/**
+ * Carimba o que esta transação do Postgres gravar daqui em diante (set_config local: some no commit/rollback, seguro
+ * no pooler em modo transação). `loteId`/`motivo` vão para todo lancamento_log; `substituiId` para todo lançamento
+ * novo (DEFAULTs da 0024). Chame `substituiId` depois do estorno, para o estorno não se marcar como substituto.
+ */
+export async function contextoLog(tx: Pick<Tx, "execute">, c: { loteId?: string; motivo?: string; substituiId?: string | null }) {
+  const pares = ([["app.lote_id", c.loteId], ["app.motivo", c.motivo], ["app.substitui_id", c.substituiId]] as const)
+    .filter(([, v]) => v !== undefined);
+  if (pares.length) await tx.execute(sql`select ${sql.join(pares.map(([k, v]) => sql`set_config(${k}, ${v ?? ""}, true)`), sql`, `)}`);
 }

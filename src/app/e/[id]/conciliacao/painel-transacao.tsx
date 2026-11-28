@@ -24,7 +24,7 @@ import { Valor } from "@/components/valor";
 import { cents, fmtCompetencia, fmtData, fmtValor, fromCents, hoje, parseValorBR, primeiroDiaDoMes, valorParaInput } from "@/lib/format";
 import { SINAIS, TIPOS_MATCH, type Sinal, type TipoMatch } from "@/lib/classificacao/regras";
 import {
-  competenciaSeparada, contaPadrao, contasDaOperacao, contasDiferencaPadrao, dataReconhecimento, distribuirBaixa, explicacao,
+  competenciaSeparada, contaPadrao, contraparteDoMemo, contasDaOperacao, contasDiferencaPadrao, dataReconhecimento, distribuirBaixa, explicacao,
   historicoBaixa, historicoTitulo, lancamentosDireta, NOMES_A_IDENTIFICAR, OPERACOES, operacaoDaConta, operacoesPara,
   MEMO_IMPOSTO, PAI_A_IDENTIFICAR, partidasBaixas, partidasClassificacao, partidasTitulo, rankearTitulos, type LancPrevia, type Operacao,
   type TipoTitulo,
@@ -39,9 +39,6 @@ const selectCls =
 const centavos = (s: string) => cents(parseValorBR(s) || 0);
 const reais = (s: string) => fromCents(centavos(s));
 const alertaCls = "border-warning/25 bg-warning-soft text-warning *:data-[slot=alert-description]:text-warning/90";
-/** Contraparte padrão do título: o memo sem o prefixo do tipo de operação bancária. */
-const contraparteDoMemo = (memo: string) =>
-  memo.replace(/^((pix|ted|doc|tev|boleto|pagto|pagamento|pag|transf\w*|recebid[oa]|enviad[oa]|rec|env)\b[\s:-]*)+/gi, "").trim().slice(0, 80) || memo.slice(0, 80);
 
 /** Dados da empresa que o painel usa: contas, títulos, meses fechados e saldo das contas de imposto. */
 export type ContextoPainel = {

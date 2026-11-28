@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCheck, CircleStop, ListChecks, MoreHorizontal, PencilLine, RotateCcw, Sparkles, Undo2 } from "lucide-react";
+import { Ban, CheckCheck, CircleStop, ListChecks, MoreHorizontal, PencilLine, Repeat2, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { aprovarEmLote, desfazerConciliacao, desfazerEmLote, ignorarEmLote, reativarTransacao, sugerirComIA } from "@/actions/conciliacao";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ContaOpcao } from "@/components/conta-select";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -448,6 +448,10 @@ export function Conciliadas({ empresaId, transacoes, contas, fechados, vazio }: 
           <Undo2 />
           Desfazer selecionadas ({selecionadas.length})
         </Button>
+        <Link href={`/e/${empresaId}/conciliacao/reclassificar`} className={buttonVariants({ variant: "outline" })}>
+          <Repeat2 />
+          Reclassificar em lote
+        </Link>
         <span className="ml-auto text-xs font-medium">{transacoes.length} conciliadas no período</span>
       </div>
       {transacoes.length === 0 ? (
