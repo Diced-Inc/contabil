@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import Link from "next/link";
-import { BookOpen, Plus, Search, X } from "lucide-react";
+import { BookOpen, Plus, Scale, Search, X } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -21,10 +21,16 @@ function ultimoDiaDoMes(d: string) {
 }
 
 const novoBtn = (id: string) => (
-  <Link href={`/e/${id}/lancamentos/novo`} className={buttonVariants()}>
-    <Plus />
-    Novo lançamento
-  </Link>
+  <>
+    <Link href={`/e/${id}/lancamentos/saldos-iniciais`} className={buttonVariants({ variant: "outline" })}>
+      <Scale />
+      Saldos iniciais
+    </Link>
+    <Link href={`/e/${id}/lancamentos/novo`} className={buttonVariants()}>
+      <Plus />
+      Novo lançamento
+    </Link>
+  </>
 );
 
 async function Lista({ params, searchParams }: PageProps<"/e/[id]/lancamentos">) {

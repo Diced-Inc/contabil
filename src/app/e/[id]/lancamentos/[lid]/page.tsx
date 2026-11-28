@@ -104,6 +104,12 @@ async function Detalhe({ params, searchParams }: PageProps<"/e/[id]/lancamentos/
                 Editar
               </Link>
             )}
+            {l.origem === "abertura" && !estornado && (
+              <Link href={`${base}/saldos-iniciais`} className={buttonVariants({ variant: "outline" })}>
+                <Pencil />
+                Alterar em Saldos iniciais
+              </Link>
+            )}
             {estornavel && <EstornarDialog empresaId={id} lancamentoId={lid} numero={l.numero} dataSugerida={dataEstorno} />}
             {desfazerTx && <DesfazerConciliacaoDialog empresaId={id} transacaoId={desfazerTx} numero={l.numero} />}
           </>

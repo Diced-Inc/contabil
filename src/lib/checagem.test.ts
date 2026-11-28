@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { itemSaldoBanco, mesesSemLancamento, mesesSocioSemProLabore, naturezaInvertida, regrasPatrimoniais, resumir } from "./checagem";
+import { itemSaldoBanco, itemSaldoInicial, mesesSemLancamento, mesesSocioSemProLabore, naturezaInvertida, regrasPatrimoniais, resumir } from "./checagem";
 import { cents, fromCents } from "./format";
 import { diferencaSaldoBanco } from "./saldo-dia";
 
@@ -170,5 +170,13 @@ describe("saldo do banco × OFX", () => {
     const i = itemSaldoBanco(b("10.27", "0.00"), "/e/x", "2026-11-27");
     expect(i).toMatchObject({ status: "alerta", titulo: "Saldo bancário não confere: Itau Tavapps" });
     expect(i.detalhe).toContain("sobram R$ -10,00");
+  });
+});
+
+describe("itemSaldoInicial", () => {
+  it("alerta só com movimento e sem abertura ativa", () => {
+    expect(itemSaldoInicial("2025-01-03", null, "/e/x")).toMatchObject({ status: "alerta", titulo: "Sem saldos iniciais", link: "/e/x/lancamentos/saldos-iniciais" });
+    expect(itemSaldoInicial("2025-01-03", { data: "2024-12-31" }, "/e/x")).toMatchObject({ status: "ok", detalhe: "Abertura em 31/12/2024." });
+    expect(itemSaldoInicial(null, null, "/e/x").status).toBe("ok");
   });
 });

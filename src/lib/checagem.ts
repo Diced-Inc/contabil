@@ -4,6 +4,7 @@ import { listarContasComSaldo, type ContaComSaldo } from "@/app/e/[id]/bancos/qu
 import { listarTransferenciasSemPar } from "@/app/e/[id]/conciliacao/queries";
 import { carregarEstado, mesesDoAno } from "./fechamento";
 import { cents, fmtCompetencia, fmtData, fmtValor, fromCents, hoje, primeiroDiaDoMes } from "./format";
+import { aberturaAtiva, foraDaAbertura, primeiroMovimento } from "./abertura-registro";
 import { adiantamentosAntigos, DIAS_ADIANTAMENTO_ANTIGO } from "./adiantamentos";
 import { listarAdiantamentos } from "./adiantamentos-registro";
 import { balanco, type TotaisBalanco } from "./relatorios/balanco";
@@ -236,6 +237,19 @@ export function itemAdiantamentosAntigos(
   };
 }
 
+/** Alerta "sem saldo inicial": a empresa tem movimento e nenhum lançamento de abertura ativo. */
+export function itemSaldoInicial(primeiroMov: string | null, abertura: { data: string } | null, base: string): ItemChecagem {
+  const link = `${base}/lancamentos/saldos-iniciais`;
+  if (abertura)
+    return { id: "saldo-inicial", titulo: "Saldos iniciais lançados", status: "ok", detalhe: `Abertura em ${fmtData(abertura.data)}.`, link };
+  if (!primeiroMov)
+    return { id: "saldo-inicial", titulo: "Sem movimento, sem saldos iniciais", status: "ok", detalhe: "Lance os saldos iniciais antes do primeiro movimento." };
+  return {
+    id: "saldo-inicial", titulo: "Sem saldos iniciais", status: "alerta", link,
+    detalhe: `Há movimento desde ${fmtData(primeiroMov)} e nenhum saldo inicial: bancos, capital social e demais saldos partem de zero. Lance o balancete do dia anterior em Saldos iniciais.`,
+  };
+}
+
 /** Checagens de consistência do exercício `ano` (até hoje, se for o ano corrente). */
 export async function checar(empresaId: string, ano: number): Promise<ItemChecagem[]> {
   const ini = `${ano}-01-01`;
@@ -259,8 +273,8 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
         AND coalesce(trim(l.documento), '') = '' AND l.data BETWEEN ${ini} AND ${fim}
         AND (SELECT sum(p.debito) FROM partidas p WHERE p.lancamento_id = l.id) >= ${LIMITE_SEM_DOCUMENTO}`),
     db.execute<{ mes: string }>(sql`
-      SELECT DISTINCT competencia::text AS mes FROM lancamentos
-      WHERE empresa_id = ${empresaId} AND competencia BETWEEN ${ini} AND ${fim}`),
+      SELECT DISTINCT l.competencia::text AS mes FROM lancamentos l
+      WHERE l.empresa_id = ${empresaId} AND l.competencia BETWEEN ${ini} AND ${fim} AND ${foraDaAbertura("l")}`),
     db.execute<{ mes: string; status: "aprovado" | "estornado"; origem: string; socio: string; prolabore: string }>(sql`
       SELECT l.competencia::text AS mes, l.status, l.origem,
         coalesce(sum(p.debito) FILTER (WHERE pc.nome ~* 's[óo]cio'), 0)::text AS socio,
@@ -272,14 +286,12 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
       SELECT tipo, count(*)::int AS n FROM titulos
       WHERE empresa_id = ${empresaId} AND status IN ('aberto', 'parcial') AND vencimento < ${hoje()} AND vencimento <= ${fim}
       GROUP BY tipo`),
-    // primeiro movimento da empresa (lançamento ou OFX); sem nenhum, a data de cadastro
-    db.execute<{ d: string }>(sql`
-      SELECT coalesce(
-        least(
-          (SELECT min(least(data, competencia)) FROM lancamentos WHERE empresa_id = ${empresaId} AND origem <> 'abertura'),
-          (SELECT min(t.data) FROM transacoes_bancarias t JOIN contas_bancarias cb ON cb.id = t.conta_bancaria_id
-           WHERE cb.empresa_id = ${empresaId})),
-        (SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date FROM empresas WHERE id = ${empresaId}))::text AS d`),
+    // primeiro movimento da empresa (lançamento fora da abertura ou OFX); sem nenhum, a data de cadastro
+    Promise.all([
+      primeiroMovimento(db, empresaId),
+      db.execute<{ d: string }>(sql`SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date::text AS d FROM empresas WHERE id = ${empresaId}`),
+      aberturaAtiva(db, empresaId),
+    ]).then(([mov, [criada], abertura]) => ({ mov, criada: criada?.d ?? null, abertura })),
     listarTransferenciasSemPar(empresaId, fim),
     listarAdiantamentos(db, empresaId),
   ]);
@@ -290,6 +302,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   itens.push(...regrasPatrimoniais(linhas, { base, ano, totais: bal.atual, semPar }));
 
   itens.push(itemAdiantamentosAntigos(ads, hoje(), base));
+  itens.push(itemSaldoInicial(inicio.mov, inicio.abertura ?? null, base));
 
   // 2. Bancos
   for (const b of bancos.filter((b) => b.ativa)) itens.push(itemSaldoBanco(b, base, fim));
@@ -352,7 +365,7 @@ export async function checar(empresaId: string, ano: number): Promise<ItemChecag
   });
 
   // 8. Meses sem lançamento
-  const vazios = mesesSemLancamento(ano, [...porMes].map((m) => m.mes), { ate: fim, inicio: inicio[0]?.d ?? ini, hoje: hoje() });
+  const vazios = mesesSemLancamento(ano, [...porMes].map((m) => m.mes), { ate: fim, inicio: inicio.mov ?? inicio.criada ?? ini, hoje: hoje() });
   itens.push({
     id: "meses-vazios", titulo: vazios.length ? "Meses sem lançamentos" : "Todos os meses com lançamentos",
     status: vazios.length ? "alerta" : "ok",
