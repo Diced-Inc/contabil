@@ -1,5 +1,5 @@
 import {
-  check, pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique, uniqueIndex, index,
+  type AnyPgColumn, check, pgTable, pgEnum, uuid, text, numeric, date, timestamp, boolean, integer, jsonb, unique, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { MotivoEncerramento } from "@/lib/ciclo";
@@ -125,10 +125,19 @@ export const lancamentos = pgTable("lancamentos", {
   origem: origemLancEnum("origem").notNull(),
   status: statusLancEnum("status").notNull().default("aprovado"),
   estornoDeId: uuid("estorno_de_id"),
+  /**
+   * Reclassificação: o lançamento estornado que este substitui (original → estorno → substituto). Preenchido pelo
+   * contexto da transação do Postgres (`contextoLog`), que também carimba lote_id/motivo no log.
+   */
+  substituiId: uuid("substitui_id").references((): AnyPgColumn => lancamentos.id, { onDelete: "set null" })
+    .default(sql`nullif(current_setting('app.substitui_id', true), '')::uuid`),
   createdBy: uuid("created_by"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, () => [check("lancamentos_competencia_mes", sql`extract(day from competencia) = 1`)]);
+}, (t) => [
+  check("lancamentos_competencia_mes", sql`extract(day from competencia) = 1`),
+  index("lancamentos_substitui_idx").on(t.substituiId),
+]);
 
 export const partidas = pgTable("partidas", {
   id: id(),
@@ -299,8 +308,12 @@ export const lancamentoLog = pgTable("lancamento_log", {
   usuarioId: uuid("usuario_id"),
   antes: jsonb("antes"),
   depois: jsonb("depois"),
+  /** Reclassificação em lote, desfazer lote e correções: o mesmo uuid em todas as linhas do lote (contextoLog). */
+  loteId: uuid("lote_id").default(sql`nullif(current_setting('app.lote_id', true), '')::uuid`),
+  /** Por que mudou (obrigatório no lote). */
+  motivo: text("motivo").default(sql`nullif(current_setting('app.motivo', true), '')`),
   createdAt: createdAt(),
-});
+}, (t) => [index("lancamento_log_lote_idx").on(t.loteId).where(sql`${t.loteId} is not null`)]);
 
 /** Quem vê todas as empresas e as telas contábeis. user_id referencia auth.users (FK na migration 0007). */
 export const contadores = pgTable("contadores", {

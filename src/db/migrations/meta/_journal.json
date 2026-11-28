@@ -169,6 +169,13 @@
       "when": 1795838566147,
       "tag": "0023_periodo_competencia",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795870414580,
+      "tag": "0024_reclassificacao_lote",
+      "breakpoints": true
     }
   ]
 }
