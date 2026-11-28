@@ -74,7 +74,7 @@ async function Checagem({ params, searchParams }: PageProps<"/e/[id]/checagem">)
                 <p className="text-sm text-muted-foreground">{i.detalhe}</p>
                 {!!i.itens?.length && <Detalhes itens={i.itens} />}
               </div>
-              {!!i.correcoes?.length && <CorrigirEstornos empresaId={id} correcoes={i.correcoes} />}
+              {!!i.correcoes?.length && <CorrigirEstornos key={i.correcoes.map((c) => c.estornoId + (c.bloqueio ?? "")).join()} empresaId={id} correcoes={i.correcoes} />}
               {i.link && (
                 <Link href={i.link} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   Ver

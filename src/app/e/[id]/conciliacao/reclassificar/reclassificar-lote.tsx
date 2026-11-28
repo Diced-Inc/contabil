@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CalendarX2, CircleCheck, CircleX, Eye, FileText, Info, ListRestart, Repeat2, SkipForward, TriangleAlert, Undo2 } from "lucide-react";
@@ -31,6 +31,8 @@ import { PreviaLancamentos } from "../previa-lancamentos";
 const selectCls =
   "h-9 w-full cursor-pointer rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 const TZ = "America/Sao_Paulo";
+/** Igual ao limite da action (tempo da função). */
+const LIMITE = 500;
 /** D − C em centavos: "1.234,56 D" / "C". */
 const dc = (c: number) => (c === 0 ? "0,00" : `${fmtValor(Math.abs(c) / 100)} ${c > 0 ? "D" : "C"}`);
 
@@ -69,8 +71,10 @@ export function ReclassificarLote({ empresaId, contas, bancos, lotes }: {
   const direta = op === "receita_direta" || op === "despesa_direta";
   const contaEscolhida = ativas.find((c) => c.id === destino.contaId);
   const clientes = contaDeTitulo(contaEscolhida) === "clientes";
-  const f = (p: Partial<Filtro>) => { setFiltro((x) => ({ ...x, ...p })); setPrevia(null); };
-  const d = (p: Partial<Destino>) => { setDestino((x) => ({ ...x, ...p })); setPrevia(null); };
+  // muda o formulário → a prévia em voo (se houver) é descartada ao chegar
+  const versao = useRef(0);
+  const f = (p: Partial<Filtro>) => { versao.current++; setFiltro((x) => ({ ...x, ...p })); setPrevia(null); };
+  const d = (p: Partial<Destino>) => { versao.current++; setDestino((x) => ({ ...x, ...p })); setPrevia(null); };
   const alvo = (): AlvoInput => ({
     operacao: op, contaId: op === "adiantamento" ? null : destino.contaId,
     competencia: direta && destino.competencia ? destino.competencia : null, confirmarSemTitulo: clientes && destino.confirmar,
@@ -78,12 +82,15 @@ export function ReclassificarLote({ empresaId, contas, bancos, lotes }: {
 
   const verPrevia = () => calcular(async () => {
     const a = alvo();
+    const v = versao.current;
     const r = await previaReclassificacao(empresaId, filtro, a);
+    if (v !== versao.current) return;
     if ("erro" in r) return void toast.error(r.erro);
     setResultado(null);
     setPrevia({ dados: r, alvo: a });
   });
-  const aEnviar = previa ? previa.dados.itens.filter((i) => i.tipo !== "bloqueada").map((i) => i.transacaoId) : [];
+  // só as que reclassificam (o servidor reconfere cada uma travada); já no destino não precisam ir
+  const aEnviar = previa ? previa.dados.itens.filter((i) => i.tipo === "reclassificar").map((i) => i.transacaoId) : [];
   const executar = () => iniciar(async () => {
     if (!previa) return;
     const r = await executarReclassificacao(empresaId, { transacaoIds: aEnviar, alvo: previa.alvo, motivo });
@@ -207,7 +214,7 @@ export function ReclassificarLote({ empresaId, contas, bancos, lotes }: {
             <DialogDescription>
               Cada uma vira estorno do lançamento atual + lançamento novo, numa transação do banco por item. Nada é editado no lugar; dá para
               desfazer o lote depois (de novo por estorno + novo).
-              {!!previa?.dados.resumo.puladas && ` ${previa.dados.resumo.puladas} já no destino serão puladas.`}
+              {!!previa?.dados.resumo.puladas && ` ${previa.dados.resumo.puladas} já no destino ficam como estão.`}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
@@ -348,9 +355,10 @@ function Previa({ empresaId, dados, contas, onExecutar, enviar }: { empresaId: s
             </button>
           ))}
         </div>
-        <Button className="ml-auto" onClick={onExecutar} disabled={!enviar}>
+        {enviar > LIMITE && <span className="ml-auto text-xs text-danger">Mais de {LIMITE} por lote: refine o filtro (por período, por exemplo).</span>}
+        <Button className={enviar > LIMITE ? undefined : "ml-auto"} onClick={onExecutar} disabled={!enviar || enviar > LIMITE}>
           <Repeat2 />
-          {resumo.reclassificar ? `Reclassificar ${resumo.reclassificar}` : `Executar (${resumo.puladas} já no destino)`}
+          Reclassificar {resumo.reclassificar}
         </Button>
       </div>
       <ul className="divide-y overflow-hidden rounded-xl border bg-card shadow-card">
