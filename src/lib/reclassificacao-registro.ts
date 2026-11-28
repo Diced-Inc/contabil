@@ -15,7 +15,7 @@ import { cents, fromCents, primeiroDiaDoMes } from "./format";
 import { contextoLog, criarLancamento, estornarLancamento, mesesFechados, type PartidaInput } from "./lancamentos";
 import { contraparteDoMemo } from "./operacoes";
 import {
-  bloqueioCorrecao, estornoForaDoMes, PREFIXO_CORRECAO, PREFIXO_DESFAZER, situacao, type Alvo, type BaseSaldo, type Candidata,
+  bloqueioCorrecao, estornoForaDoMes, lancamentosCorrecao, PREFIXO_CORRECAO, PREFIXO_DESFAZER, situacao, type Alvo, type BaseSaldo, type Candidata,
   type ContextoLote, type ParEstorno,
 } from "./reclassificacao";
 import { cancelarTitulo } from "./titulos";
@@ -133,6 +133,7 @@ export async function reclassificarLote(exec: Exec, p: {
   empresaId: string; transacaoIds: string[]; alvo: Alvo; motivo: string; usuarioId?: string | null;
 }) {
   if (p.motivo.trim().length < 5) throw new Error("Informe o motivo da reclassificação (vai para o histórico de cada lançamento)");
+  if ([PREFIXO_DESFAZER, PREFIXO_CORRECAO].some((x) => p.motivo.trim().startsWith(x))) throw new Error("Escreva o motivo com outras palavras (esse início é reservado)");
   const txs = await exec.select({ id: transacoesBancarias.id, memo: transacoesBancarias.memo }).from(transacoesBancarias)
     .innerJoin(contasBancarias, eq(contasBancarias.id, transacoesBancarias.contaBancariaId))
     .where(and(eq(contasBancarias.empresaId, p.empresaId), inArray(transacoesBancarias.id, [...new Set(p.transacaoIds)])))
@@ -215,7 +216,12 @@ export async function desfazerLote(exec: Exec, p: { empresaId: string; loteId: s
 
 // ---------- estorno fora do mês do original ----------
 
-/** Estornos aprovados em competência diferente da do original, com o mês do original aberto; `bloqueio` se não dá para corrigir. */
+/**
+ * Estornos aprovados em competência diferente da do original, com o mês do original aberto; `bloqueio` se não dá para
+ * corrigir. Fica de fora o estorno que foi para outro mês de propósito: o mês do original estava fechado quando ele foi
+ * criado (competenciaDoEstorno/dataNoMesAberto mandam estorno e novo para o mês aberto; reabrir depois não é erro).
+ * O estado do mês naquele momento sai do log de fechamento/reabertura.
+ */
 export async function estornosForaDoMes(exec: Exec, empresaId: string) {
   const rows = await exec.execute<{
     eId: string; eNumero: number; eData: string; eCompetencia: string; eHistorico: string; eDocumento: string | null; eStatus: "aprovado";
@@ -232,6 +238,10 @@ export async function estornosForaDoMes(exec: Exec, empresaId: string) {
     FROM lancamentos e JOIN lancamentos o ON o.id = e.estorno_de_id
     WHERE e.empresa_id = ${empresaId} AND e.origem = 'estorno' AND e.status = 'aprovado' AND e.competencia <> o.competencia
       AND NOT EXISTS (SELECT 1 FROM fechamentos f WHERE f.empresa_id = ${empresaId} AND f.competencia = o.competencia)
+      AND coalesce((SELECT g.acao::text FROM lancamento_log g
+        WHERE g.empresa_id = e.empresa_id AND g.acao IN ('fechamento', 'reabertura') AND g.depois->>'competencia' = o.competencia::text
+          AND g.created_at <= e.created_at
+        ORDER BY g.created_at DESC LIMIT 1), 'reabertura') <> 'fechamento'
     ORDER BY o.data, o.numero`);
   const fechados = await mesesFechados(exec, empresaId);
   return [...rows].map((r) => {
@@ -262,11 +272,9 @@ export async function corrigirEstornosForaDoMes(exec: Exec, p: { empresaId: stri
     if (b) throw new Error(b);
     await estornarLancamento(tx, x.estorno.id, x.estorno.data, p.usuarioId);
     await contextoLog(tx, { substituiId: x.estorno.id });
-    const o = x.original;
+    const [, novo] = lancamentosCorrecao(x); // o mesmo que a prévia e o teste usam
     await criarLancamento(tx, {
-      empresaId: p.empresaId, data: o.data, competencia: o.competencia, historico: `Estorno do lançamento ${o.numero}: ${o.historico}`,
-      documento: o.documento, origem: "estorno", estornoDeId: o.id, usuarioId: p.usuarioId,
-      partidas: o.partidas.map((q) => ({ contaId: q.contaId, debito: q.credito, credito: q.debito })),
+      empresaId: p.empresaId, ...novo, documento: x.original.documento, origem: "estorno", estornoDeId: x.original.id, usuarioId: p.usuarioId,
     });
     return {};
   });

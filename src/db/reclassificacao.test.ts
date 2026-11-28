@@ -12,9 +12,9 @@ class Desfazer extends Error {}
 
 describe.skipIf(!temBanco)("reclassificação em lote (Postgres)", async () => {
   const { db } = await import("@/db");
-  const { contasBancarias, empresas, fechamentos, importacoes, planoContas, transacoesBancarias } = await import("@/db/schema");
+  const { contasBancarias, empresas, fechamentos, importacoes, lancamentoLog, planoContas, transacoesBancarias } = await import("@/db/schema");
   const { classificarTransacao } = await import("@/lib/conciliacao");
-  const { criarLancamento } = await import("@/lib/lancamentos");
+  const { criarLancamento, estornarLancamento } = await import("@/lib/lancamentos");
   const { situacao } = await import("@/lib/reclassificacao");
   const reg = await import("@/lib/reclassificacao-registro");
   afterAll(() => db.$client.end());
@@ -103,6 +103,8 @@ describe.skipIf(!temBanco)("reclassificação em lote (Postgres)", async () => {
 
       // mês fechado bloqueia (não manda para hoje)
       await tx.insert(fechamentos).values({ empresaId: e.id, competencia: "2025-03-01" });
+      const F = await reg.reclassificarLote(tx, { empresaId: e.id, transacaoIds: [t1], alvo: ad, motivo: "mês fechado não reclassifica" });
+      expect([F.feitas, F.erros.map((x) => x.motivo)]).toEqual([0, ["Mês 03/2025 fechado: reabra em Fechamento (em sequência) para reclassificar"]]);
       const D = await reg.desfazerLote(tx, { empresaId: e.id, loteId: A.loteId, motivo: "teste mês fechado" });
       expect(D.erros.map((x) => x.motivo)).toEqual(["Mês 03/2025 fechado: reabra em Fechamento para desfazer", "Mês 03/2025 fechado: reabra em Fechamento para desfazer"]);
       await tx.execute(sql`delete from fechamentos where empresa_id = ${e.id}`);
@@ -131,6 +133,22 @@ describe.skipIf(!temBanco)("reclassificação em lote (Postgres)", async () => {
         origem: "estorno", estornoDeId: orig.id, partidas: [{ contaId: banco.id, credito: "50.00" }, { contaId: serv.id, debito: "50.00" }],
       });
       await tx.execute(sql`update lancamentos set status = 'estornado' where id = ${orig.id}`);
+      // fora de lote nada fica carimbado (o contexto do lote não vaza para a mesma transação)
+      const [semCarimbo] = await tx.execute<{ s: number; g: number }>(sql`
+        SELECT (SELECT count(*)::int FROM lancamentos WHERE id IN (${orig.id}, ${est.id}) AND substitui_id IS NOT NULL) AS s,
+          (SELECT count(*)::int FROM lancamento_log WHERE lancamento_id IN (${orig.id}, ${est.id}) AND (lote_id IS NOT NULL OR motivo IS NOT NULL)) AS g`);
+      expect(semCarimbo).toEqual({ s: 0, g: 0 });
+      // estorno em outro mês de propósito (o mês do original estava fechado) não é alerta, mesmo depois de reabrir
+      const ago = await criarLancamento(tx, {
+        empresaId: e.id, data: "2025-08-04", historico: "Agosto", origem: "conciliacao",
+        partidas: [{ contaId: banco.id, debito: "9.00" }, { contaId: serv.id, credito: "9.00" }],
+      });
+      await tx.insert(fechamentos).values({ empresaId: e.id, competencia: "2025-08-01" });
+      await tx.insert(lancamentoLog).values({ empresaId: e.id, acao: "fechamento", depois: { competencia: "2025-08-01" }, createdAt: sql`now() - interval '1 hour'` });
+      const legit = await estornarLancamento(tx, ago.id, "2025-09-10");
+      expect(legit.competencia).toBe("2025-09-01");
+      await tx.execute(sql`delete from fechamentos where empresa_id = ${e.id}`);
+      await tx.insert(lancamentoLog).values({ empresaId: e.id, acao: "reabertura", depois: { competencia: "2025-08-01" }, createdAt: sql`now() + interval '1 hour'` });
       const pares = await reg.estornosForaDoMes(tx, e.id);
       expect(pares.map((p) => [p.estorno.id, p.bloqueio])).toEqual([[est.id, null]]);
       const K = await reg.corrigirEstornosForaDoMes(tx, { empresaId: e.id, motivo: "Moodlr: setembro em dobro" });

@@ -72,7 +72,7 @@ export async function previaReclassificacao(empresaId: string, filtroIn: FiltroL
 }
 export type PreviaReclassificacao = Exclude<Awaited<ReturnType<typeof previaReclassificacao>>, { erro: string }>;
 
-const execSchema = z.object({ transacaoIds: z.array(z.uuid()).min(1, "Nenhuma transação a reclassificar.").max(2000), alvo: alvoSchema, motivo: motivoSchema });
+const execSchema = z.object({ transacaoIds: z.array(z.uuid()).min(1, "Nenhuma transação a reclassificar.").max(500, "No máximo 500 transações por lote: refine o filtro (por período, por exemplo)."), alvo: alvoSchema, motivo: motivoSchema });
 
 /** Cada transação na sua transação do Postgres; devolve feitas, puladas e erros com o motivo. */
 export async function executarReclassificacao(empresaId: string, input: z.input<typeof execSchema>): Promise<{ erro: string } | ResultadoLote> {

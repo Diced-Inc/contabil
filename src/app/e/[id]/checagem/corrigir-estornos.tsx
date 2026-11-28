@@ -6,6 +6,7 @@ import { Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { corrigirEstornosAction } from "@/actions/reclassificacao";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,7 +20,9 @@ export function CorrigirEstornos({ empresaId, correcoes }: { empresaId: string; 
   const [aberto, setAberto] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [pendente, iniciar] = useTransition();
-  const ok = correcoes.filter((c) => !c.bloqueio);
+  const [marcados, setMarcados] = useState(() => new Set(correcoes.filter((c) => !c.bloqueio).map((c) => c.estornoId)));
+  const ok = correcoes.filter((c) => !c.bloqueio && marcados.has(c.estornoId));
+  const marcar = (id: string, v: boolean) => setMarcados((s) => { const n = new Set(s); if (v) n.add(id); else n.delete(id); return n; });
   // a correção tira o original da competência dele (− valor) e devolve no mês do estorno (+ valor), em módulo
   const porMes = new Map<string, number>();
   for (const c of ok) {
@@ -36,15 +39,15 @@ export function CorrigirEstornos({ empresaId, correcoes }: { empresaId: string; 
   });
   return (
     <Dialog open={aberto} onOpenChange={setAberto}>
-      <DialogTrigger render={<Button variant="outline" size="sm" disabled={!ok.length} />}>
+      <DialogTrigger render={<Button variant="outline" size="sm" disabled={correcoes.every((c) => c.bloqueio)} />}>
         <Wrench />
         Corrigir
       </DialogTrigger>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Corrigir {ok.length} estorno(s) fora do mês do original</DialogTitle>
+          <DialogTitle>Corrigir estornos fora do mês do original</DialogTitle>
           <DialogDescription>
-            Para cada par: estorna o estorno na data e competência dele e lança o estorno de novo na data e competência do original.
+            Para cada par marcado: estorna o estorno na data e competência dele e lança o estorno de novo na data e competência do original.
             O original e o estorno passam a se anular no mesmo mês; nada é editado ou apagado. Os dois lançamentos levam o motivo e o mesmo lote.
           </DialogDescription>
         </DialogHeader>
@@ -52,6 +55,7 @@ export function CorrigirEstornos({ empresaId, correcoes }: { empresaId: string; 
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>Original</TableHead>
                 <TableHead>Estorno hoje</TableHead>
                 <TableHead>Estorno corrigido</TableHead>
@@ -61,6 +65,10 @@ export function CorrigirEstornos({ empresaId, correcoes }: { empresaId: string; 
             <TableBody>
               {correcoes.map((c) => (
                 <TableRow key={c.estornoId} className={c.bloqueio ? "text-muted-foreground" : undefined}>
+                  <TableCell>
+                    <Checkbox aria-label={`Corrigir o estorno nº ${c.estorno.numero}`} disabled={!!c.bloqueio}
+                      checked={!c.bloqueio && marcados.has(c.estornoId)} onCheckedChange={(v) => marcar(c.estornoId, !!v)} />
+                  </TableCell>
                   <TableCell>nº {c.original.numero} · {fmtData(c.original.data)}</TableCell>
                   <TableCell>nº {c.estorno.numero} · {fmtCompetencia(c.estorno.competencia)}</TableCell>
                   <TableCell>{c.bloqueio ?? `${fmtData(c.original.data)} · ${fmtCompetencia(c.original.competencia)}`}</TableCell>
@@ -80,7 +88,7 @@ export function CorrigirEstornos({ empresaId, correcoes }: { empresaId: string; 
           <Textarea id="motivo-correcao" rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)}
             placeholder="ex.: reclassificação de 20/10 deixou o estorno em outubro e o novo em setembro" />
         </div>
-        <Button onClick={enviar} disabled={pendente || motivo.trim().length < 5}>
+        <Button onClick={enviar} disabled={pendente || !ok.length || motivo.trim().length < 5}>
           <Wrench />
           {pendente ? "Corrigindo..." : `Corrigir ${ok.length} par(es)`}
         </Button>
